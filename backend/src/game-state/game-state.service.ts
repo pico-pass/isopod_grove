@@ -4,8 +4,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { randomBytes } from 'crypto';
 import { Model, Types } from 'mongoose';
-import { GameState, GameStateDocument } from './schemas/game-state.schema';
+import {
+  GameState,
+  GameStateDocument,
+  Terrarium,
+} from './schemas/game-state.schema';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -18,6 +23,7 @@ import {
   FEEDER_REFILL_TARGET,
   FEEDER_REFILL_THRESHOLD,
   MAX_ADVANCE_SECONDS,
+  MAX_TERRARIUMS,
   MISTER_REFILL_TARGET,
   MISTER_REFILL_THRESHOLD,
   OBSERVE_COOLDOWN_MS,
@@ -26,13 +32,24 @@ import {
   canBreedInEnvironment,
   clamp,
   getAutoIncomeRate,
+  getBaseBreedSeconds,
   getBreedInterval,
   getCapacity,
   getPopulationCount,
+  getTerrariumCost,
   isComfortable,
   pickRandomOfRarity,
   rollRarity,
 } from './game-engine';
+
+interface LegacyGameState {
+  food?: number;
+  humidity?: number;
+  temperature?: number;
+  population?: Record<string, number>;
+  breeding?: Record<string, number>;
+  upgrades?: Record<string, number>;
+}
 
 const dayKey = (now = Date.now()) => {
   const d = new Date(now);
@@ -58,14 +75,20 @@ export class GameStateService {
   async createInitialState(userId: string): Promise<GameStateDocument> {
     return this.gameStateModel.create({
       userId: new Types.ObjectId(userId),
-      population: { vulgare: 6 },
-      discovered: ['vulgare'],
+      terrariums: [
+        {
+          terrariumId: this.newTerrariumId(),
+          name: '사육장 1',
+          population: { pandaKing: 6 },
+        },
+      ],
+      discovered: ['pandaKing'],
       daily: { day: dayKey(), feed: 0, observe: 0, births: 0, claimed: [] },
       logs: [
         {
           at: Date.now(),
           type: 'leaf',
-          text: '공벌레 6마리와 함께 작은 숲을 시작했어요.',
+          text: '쿠바리스 판다킹 6마리와 함께 작은 숲을 시작했어요.',
         },
       ],
     });
@@ -86,12 +109,10 @@ export class GameStateService {
 
     const speciesList = await this.speciesService.findAll();
     const speciesById = new Map(speciesList.map((s) => [s.speciesId, s]));
-    const spaceLevel = gameState.upgrades.get('space') || 0;
     const soilLevel = gameState.upgrades.get('soil') || 0;
     const nurseryLevel = gameState.upgrades.get('nursery') || 0;
     const hasFeeder = (gameState.upgrades.get('feeder') || 0) > 0;
     const hasMister = (gameState.upgrades.get('mister') || 0) > 0;
-    const capacity = getCapacity(spaceLevel);
 
     let remaining = clamp(seconds, 0, MAX_ADVANCE_SECONDS);
     let earned = 0;
@@ -102,59 +123,68 @@ export class GameStateService {
       remaining -= step;
 
       gameState.stats.played += step;
-      const count = getPopulationCount(gameState.population);
-      gameState.food = clamp(
-        gameState.food - (0.015 + count * 0.0015) * step,
-        0,
-        100,
-      );
-      gameState.humidity = clamp(gameState.humidity - 0.023 * step, 0, 100);
       const ambient = 24 + Math.sin(gameState.stats.played / 700) * 2.7;
-      gameState.temperature +=
-        (ambient - gameState.temperature) * Math.min(1, step * 0.002);
 
-      if (hasFeeder && gameState.food < FEEDER_REFILL_THRESHOLD) {
-        gameState.food = FEEDER_REFILL_TARGET;
-      }
-      if (hasMister && gameState.humidity < MISTER_REFILL_THRESHOLD) {
-        gameState.humidity = MISTER_REFILL_TARGET;
-      }
+      // 사육장마다 환경·수익·번식을 따로 계산한다.
+      for (const terrarium of gameState.terrariums) {
+        const count = getPopulationCount(terrarium.population);
+        terrarium.food = clamp(
+          terrarium.food - (0.015 + count * 0.0015) * step,
+          0,
+          100,
+        );
+        terrarium.humidity = clamp(terrarium.humidity - 0.023 * step, 0, 100);
+        terrarium.temperature +=
+          (ambient - terrarium.temperature) * Math.min(1, step * 0.002);
 
-      const comfortable = isComfortable(
-        gameState.food,
-        gameState.humidity,
-        gameState.temperature,
-      );
-      const rate = getAutoIncomeRate(
-        gameState.population,
-        speciesList,
-        soilLevel,
-        comfortable,
-      );
-      const income = rate * step;
-      gameState.pending += income;
-      earned += income;
+        if (hasFeeder && terrarium.food < FEEDER_REFILL_THRESHOLD) {
+          terrarium.food = FEEDER_REFILL_TARGET;
+        }
+        if (hasMister && terrarium.humidity < MISTER_REFILL_THRESHOLD) {
+          terrarium.humidity = MISTER_REFILL_TARGET;
+        }
 
-      if (
-        canBreedInEnvironment(
-          gameState.food,
-          gameState.humidity,
-          gameState.temperature,
-        )
-      ) {
-        let capacityLeft = capacity - getPopulationCount(gameState.population);
+        const comfortable = isComfortable(
+          terrarium.food,
+          terrarium.humidity,
+          terrarium.temperature,
+        );
+        const rate = getAutoIncomeRate(
+          terrarium.population,
+          speciesList,
+          soilLevel,
+          comfortable,
+        );
+        const income = rate * step;
+        gameState.pending += income;
+        earned += income;
+
+        if (
+          !canBreedInEnvironment(
+            terrarium.food,
+            terrarium.humidity,
+            terrarium.temperature,
+          )
+        ) {
+          continue;
+        }
+        let capacityLeft =
+          getCapacity(terrarium.spaceLevel) - getPopulationCount(terrarium.population);
         for (const species of speciesList) {
-          const current = gameState.population.get(species.speciesId) || 0;
+          const current = terrarium.population.get(species.speciesId) || 0;
           if (current < 2) continue;
-          const limit = getBreedInterval(species.breed, nurseryLevel);
+          const limit = getBreedInterval(
+            getBaseBreedSeconds(species.rarity),
+            nurseryLevel,
+          );
           const progressed = Math.min(
             limit,
-            (gameState.breeding.get(species.speciesId) || 0) + step,
+            (terrarium.breeding.get(species.speciesId) || 0) + step,
           );
-          gameState.breeding.set(species.speciesId, progressed);
+          terrarium.breeding.set(species.speciesId, progressed);
           if (progressed >= limit && capacityLeft > 0) {
-            gameState.breeding.set(species.speciesId, 0);
-            gameState.population.set(species.speciesId, current + 1);
+            terrarium.breeding.set(species.speciesId, 0);
+            terrarium.population.set(species.speciesId, current + 1);
             capacityLeft--;
             babies.set(
               species.speciesId,
@@ -181,29 +211,126 @@ export class GameStateService {
     return { gameState, births: totalBirths, earned };
   }
 
-  async care(userId: string, action: CareAction) {
+  async addTerrarium(userId: string, name?: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+
+    const owned = gameState.terrariums.length;
+    if (owned >= MAX_TERRARIUMS) {
+      throw new BadRequestException(
+        `사육장은 최대 ${MAX_TERRARIUMS}개까지 만들 수 있어요.`,
+      );
+    }
+    const cost = getTerrariumCost(owned);
+    if (gameState.coins < cost) {
+      throw new BadRequestException(
+        `새 사육장에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`,
+      );
+    }
+
+    const terrariumName = name?.trim() || `사육장 ${owned + 1}`;
+    const terrariumId = this.newTerrariumId();
+    gameState.coins -= cost;
+    gameState.xp += 20;
+    gameState.terrariums.push({
+      terrariumId,
+      name: terrariumName,
+      spaceLevel: 0,
+      food: 85,
+      humidity: 78,
+      temperature: 24,
+      population: new Map(),
+      breeding: new Map(),
+    });
+    this.pushLog(
+      gameState,
+      'sprout',
+      `${terrariumName}을(를) 새로 만들었어요. -${cost.toLocaleString('ko-KR')} G`,
+    );
+
+    await gameState.save();
+    return {
+      gameState,
+      terrariumId,
+      message: `${terrariumName}이(가) 생겼어요!`,
+    };
+  }
+
+  // 한 종의 모든 개체를 다른 사육장으로 옮긴다.
+  async moveSpecies(
+    userId: string,
+    speciesId: string,
+    fromTerrariumId: string,
+    toTerrariumId: string,
+  ) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (fromTerrariumId === toTerrariumId) {
+      throw new BadRequestException('같은 사육장으로는 이사할 수 없어요.');
+    }
+    const from = this.getTerrarium(gameState, fromTerrariumId);
+    const to = this.getTerrarium(gameState, toTerrariumId);
+
+    const count = from.population.get(speciesId) || 0;
+    if (count < 1) {
+      throw new BadRequestException(`${from.name}에 없는 종이에요.`);
+    }
+    const room = getCapacity(to.spaceLevel) - getPopulationCount(to.population);
+    if (count > room) {
+      throw new BadRequestException(
+        `${to.name}에 자리가 부족해요. (필요 ${count}마리 / 남은 자리 ${Math.max(0, room)}마리)`,
+      );
+    }
+
+    const alreadyThere = to.population.get(speciesId) || 0;
+    to.population.set(speciesId, alreadyThere + count);
+    // 도착지에 같은 종이 이미 있으면 그쪽 번식 진행도를 유지하고, 없으면 진행도도 함께 옮긴다.
+    if (!alreadyThere) {
+      to.breeding.set(speciesId, from.breeding.get(speciesId) || 0);
+    }
+    from.population.delete(speciesId);
+    from.breeding.delete(speciesId);
+
+    const species = await this.speciesService.findOne(speciesId);
+    const speciesName = species?.name ?? speciesId;
+    this.pushLog(
+      gameState,
+      'leaf',
+      `${speciesName} ${count}마리가 ${from.name}에서 ${to.name}(으)로 이사했어요.`,
+    );
+
+    await gameState.save();
+    return {
+      gameState,
+      message: `${speciesName} ${count}마리가 ${to.name}(으)로 이사했어요!`,
+    };
+  }
+
+  async care(userId: string, action: CareAction, terrariumId?: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
     this.resetDailyIfNeeded(gameState);
+    const terrarium = this.getTerrarium(gameState, terrariumId);
+    const cooldownKey = `${terrarium.terrariumId}:${action}`;
     const now = Date.now();
-    if ((gameState.cooldowns.get(action) || 0) > now) {
+    if ((gameState.cooldowns.get(cooldownKey) || 0) > now) {
       throw new BadRequestException('조금만 기다려 주세요.');
     }
 
     let message: string;
     if (action === 'feed') {
-      gameState.food = clamp(gameState.food + 30, 0, 100);
+      terrarium.food = clamp(terrarium.food + 30, 0, 100);
       gameState.daily.feed++;
       gameState.xp += 4;
       message = '신선한 낙엽을 채웠어요. 맛있게 먹어!';
     } else if (action === 'mist') {
-      gameState.humidity = 78;
+      terrarium.humidity = 78;
       message = '숲이 촉촉해졌어요. 습도 78%';
     } else {
-      gameState.temperature = 24;
+      terrarium.temperature = 24;
       message = '포근한 24°C로 맞췄어요.';
     }
-    gameState.cooldowns.set(action, now + CARE_COOLDOWN_MS);
+    gameState.cooldowns.set(cooldownKey, now + CARE_COOLDOWN_MS);
 
     await gameState.save();
     return { gameState, message };
@@ -212,7 +339,7 @@ export class GameStateService {
   async observe(userId: string, speciesId: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
-    if (!((gameState.population.get(speciesId) || 0) > 0)) {
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
       throw new BadRequestException('아직 만나지 못한 식구예요.');
     }
     this.resetDailyIfNeeded(gameState);
@@ -262,16 +389,16 @@ export class GameStateService {
     };
   }
 
-  async explore(userId: string) {
+  async explore(userId: string, terrariumId?: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
 
-    const spaceLevel = gameState.upgrades.get('space') || 0;
-    const capacity = getCapacity(spaceLevel);
-    const count = getPopulationCount(gameState.population);
+    const terrarium = this.getTerrarium(gameState, terrariumId);
+    const capacity = getCapacity(terrarium.spaceLevel);
+    const count = getPopulationCount(terrarium.population);
     if (count + EXPLORE_YIELD > capacity) {
       throw new BadRequestException(
-        '새 식구 2마리를 위한 자리가 부족해요. 사육장을 확장하거나 분양해 주세요.',
+        `${terrarium.name}에 새 식구 2마리를 위한 자리가 부족해요. 사육장을 확장하거나 분양·이사해 주세요.`,
       );
     }
     if (gameState.coins < EXPLORE_COST) {
@@ -285,9 +412,9 @@ export class GameStateService {
     const rarity = rollRarity(Math.random(), RARITIES);
     const species = pickRandomOfRarity(speciesList, rarity, Math.random());
     const isNew = !gameState.discovered.includes(species.speciesId);
-    gameState.population.set(
+    terrarium.population.set(
       species.speciesId,
-      (gameState.population.get(species.speciesId) || 0) + EXPLORE_YIELD,
+      (terrarium.population.get(species.speciesId) || 0) + EXPLORE_YIELD,
     );
     if (isNew) gameState.discovered.push(species.speciesId);
     gameState.xp += isNew ? 25 : 10;
@@ -295,7 +422,7 @@ export class GameStateService {
     this.pushLog(
       gameState,
       'search',
-      `${species.name} 2마리를 만났어요.${isNew ? ' 도감에 새롭게 기록했어요!' : ''}`,
+      `${species.name} 2마리를 만나 ${terrarium.name}에 데려왔어요.${isNew ? ' 도감에 새롭게 기록했어요!' : ''}`,
     );
 
     await gameState.save();
@@ -307,20 +434,26 @@ export class GameStateService {
     };
   }
 
-  async sell(userId: string, speciesId: string, quantity: number) {
+  async sell(
+    userId: string,
+    speciesId: string,
+    quantity: number,
+    terrariumId?: string,
+  ) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
+    const terrarium = this.getTerrarium(gameState, terrariumId);
 
     const species = await this.speciesService.findOne(speciesId);
     if (!species) throw new BadRequestException('분양 수량을 확인해 주세요.');
 
-    const current = gameState.population.get(speciesId) || 0;
+    const current = terrarium.population.get(speciesId) || 0;
     if (current - quantity < 2) {
       throw new BadRequestException('번식을 위해 2마리는 남겨둬야 해요.');
     }
 
     const amount = species.price * quantity;
-    gameState.population.set(speciesId, current - quantity);
+    terrarium.population.set(speciesId, current - quantity);
     gameState.coins += amount;
     gameState.stats.sold += quantity;
     gameState.stats.earned += amount;
@@ -338,7 +471,7 @@ export class GameStateService {
     };
   }
 
-  async upgrade(userId: string, upgradeId: string) {
+  async upgrade(userId: string, upgradeId: string, terrariumId?: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
 
@@ -346,7 +479,12 @@ export class GameStateService {
     if (!upgrade)
       throw new BadRequestException('존재하지 않는 업그레이드예요.');
 
-    const currentLevel = gameState.upgrades.get(upgradeId) || 0;
+    // 공간 확장은 사육장별, 나머지 업그레이드는 계정 전체에 적용된다.
+    const terrarium =
+      upgradeId === 'space' ? this.getTerrarium(gameState, terrariumId) : null;
+    const currentLevel = terrarium
+      ? terrarium.spaceLevel
+      : gameState.upgrades.get(upgradeId) || 0;
     if (currentLevel >= upgrade.max) {
       throw new BadRequestException('이미 최고 단계예요.');
     }
@@ -359,12 +497,16 @@ export class GameStateService {
     }
 
     gameState.coins -= cost;
-    gameState.upgrades.set(upgradeId, currentLevel + 1);
+    if (terrarium) {
+      terrarium.spaceLevel = currentLevel + 1;
+    } else {
+      gameState.upgrades.set(upgradeId, currentLevel + 1);
+    }
     gameState.xp += 20;
     this.pushLog(
       gameState,
       'sprout',
-      `${upgrade.name} Lv. ${currentLevel + 1} 업그레이드!`,
+      `${terrarium ? `${terrarium.name} ` : ''}${upgrade.name} Lv. ${currentLevel + 1} 업그레이드!`,
     );
 
     await gameState.save();
@@ -442,10 +584,78 @@ export class GameStateService {
     if (gameState.logs.length > 60) gameState.logs.splice(60);
   }
 
-  private getOrNull(userId: string): Promise<GameStateDocument | null> {
-    return this.gameStateModel
+  private newTerrariumId(): string {
+    return randomBytes(4).toString('hex');
+  }
+
+  private getTerrarium(
+    gameState: GameStateDocument,
+    terrariumId?: string,
+  ): Terrarium {
+    const terrarium = terrariumId
+      ? gameState.terrariums.find((t) => t.terrariumId === terrariumId)
+      : gameState.terrariums[0];
+    if (!terrarium) {
+      throw new BadRequestException('존재하지 않는 사육장이에요.');
+    }
+    return terrarium;
+  }
+
+  private totalOf(gameState: GameStateDocument, speciesId: string): number {
+    return gameState.terrariums.reduce(
+      (sum, t) => sum + (t.population.get(speciesId) || 0),
+      0,
+    );
+  }
+
+  private async getOrNull(userId: string): Promise<GameStateDocument | null> {
+    const doc = await this.gameStateModel
       .findOne({ userId: new Types.ObjectId(userId) })
       .exec();
+    return doc ? this.ensureTerrariums(doc) : null;
+  }
+
+  // 사육장이 여러 개가 되기 전에 만들어진 저장 데이터(최상위 환경/식구/번식/공간 업그레이드)를
+  // 사육장 1개짜리 구조로 옮긴다. 조건부 update라 동시에 여러 요청이 와도 한 번만 적용된다.
+  private async ensureTerrariums(
+    doc: GameStateDocument,
+  ): Promise<GameStateDocument> {
+    if (doc.terrariums.length > 0) return doc;
+
+    const legacy = (await this.gameStateModel.collection.findOne({
+      _id: doc._id,
+    })) as unknown as LegacyGameState | null;
+    const first = {
+      terrariumId: 't1',
+      name: '사육장 1',
+      spaceLevel: legacy?.upgrades?.space ?? 0,
+      food: legacy?.food ?? 85,
+      humidity: legacy?.humidity ?? 78,
+      temperature: legacy?.temperature ?? 24,
+      population: legacy?.population ?? {},
+      breeding: legacy?.breeding ?? {},
+    };
+    await this.gameStateModel.collection.updateOne(
+      {
+        _id: doc._id,
+        $or: [
+          { terrariums: { $exists: false } },
+          { terrariums: { $size: 0 } },
+        ],
+      },
+      {
+        $set: { terrariums: [first] },
+        $unset: {
+          food: '',
+          humidity: '',
+          temperature: '',
+          population: '',
+          breeding: '',
+          'upgrades.space': '',
+        },
+      },
+    );
+    return (await this.gameStateModel.findById(doc._id).exec()) ?? doc;
   }
 
   private async getOrThrow(userId: string): Promise<GameStateDocument> {

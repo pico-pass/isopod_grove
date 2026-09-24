@@ -1,18 +1,21 @@
-import type { GameState, Species } from '../api/types';
+import type { GameState, Species, Terrarium } from '../api/types';
 import { RARITIES, formatNumber } from '../utils/gameCalc';
+import { SpeciesImage } from './SpeciesImage';
 
 export function MarketView({
   gameState,
+  terrarium,
   species,
   onSell,
   onExplore,
 }: {
   gameState: GameState;
+  terrarium: Terrarium;
   species: Species[];
   onSell: (speciesId: string, quantity: number) => void;
   onExplore: () => void;
 }) {
-  const owned = species.filter((sp) => (gameState.population[sp.speciesId] || 0) > 0);
+  const owned = species.filter((sp) => (terrarium.population[sp.speciesId] || 0) > 0);
 
   return (
     <section className="view active">
@@ -24,11 +27,14 @@ export function MarketView({
         </div>
       </div>
 
-      <div className="info-banner">❤️ 번식할 수 있도록 종마다 2마리는 사육장에 남겨둬요.</div>
+      <div className="info-banner">
+        📍 <b>{terrarium.name}</b> 기준이에요. 분양과 탐색은 지금 선택한 사육장에서 이루어져요.
+        <br />❤️ 번식할 수 있도록 종마다 2마리는 사육장에 남겨둬요.
+      </div>
 
       <div className="market-grid">
         {owned.map((sp) => {
-          const n = gameState.population[sp.speciesId] || 0;
+          const n = terrarium.population[sp.speciesId] || 0;
           const available = Math.max(0, n - 2);
           const bulk = Math.min(5, available);
           return (
@@ -36,7 +42,7 @@ export function MarketView({
               <span className="pill" style={{ color: RARITIES[sp.rarity].color }}>
                 {RARITIES[sp.rarity].name}
               </span>
-              <img src="/assets/isopod.png" alt={sp.name} style={{ filter: sp.filter }} />
+              <SpeciesImage species={sp} style={{ filter: sp.filter }} />
               <h3>{sp.name}</h3>
               <p>
                 보유 {n}마리 · 분양 가능 {available}마리
@@ -69,7 +75,7 @@ export function MarketView({
         <div>
           <p className="eyebrow">FOREST EXPLORATION</p>
           <h2>새로운 식구를 만날 시간</h2>
-          <p>탐색 한 번에 같은 종 2마리를 데려와요. 중복 종도 만날 수 있어요.</p>
+          <p>탐색 한 번에 같은 종 2마리를 {terrarium.name}으로 데려와요. 중복 종도 만날 수 있어요.</p>
           <div className="odds">
             {RARITIES.map((r) => (
               <span key={r.name}>

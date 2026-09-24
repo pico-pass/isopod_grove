@@ -1,4 +1,4 @@
-import type { GameState, Upgrade } from '../api/types';
+import type { GameState, Terrarium, Upgrade } from '../api/types';
 import { formatNumber, upgradeCost } from '../utils/gameCalc';
 
 const ICONS: Record<string, string> = {
@@ -23,11 +23,15 @@ function effectText(upgrade: Upgrade, level: number): string {
 
 export function UpgradesView({
   gameState,
+  terrarium,
   upgrades,
+  onSelectTerrarium,
   onUpgrade,
 }: {
   gameState: GameState;
+  terrarium: Terrarium;
   upgrades: Upgrade[];
+  onSelectTerrarium: (terrariumId: string) => void;
   onUpgrade: (upgradeId: string) => void;
 }) {
   return (
@@ -40,9 +44,24 @@ export function UpgradesView({
         </div>
       </div>
 
+      {gameState.terrariums.length > 1 && (
+        <label className="terrarium-picker">
+          공간 확장 대상 사육장
+          <select value={terrarium.terrariumId} onChange={(e) => onSelectTerrarium(e.target.value)}>
+            {gameState.terrariums.map((t) => (
+              <option key={t.terrariumId} value={t.terrariumId}>
+                {t.name} (공간 Lv. {t.spaceLevel})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       <div className="upgrade-grid">
         {upgrades.map((u) => {
-          const level = gameState.upgrades[u.upgradeId] || 0;
+          // 공간 확장은 사육장별, 나머지는 계정 전체에 적용된다.
+          const perTerrarium = u.upgradeId === 'space';
+          const level = perTerrarium ? terrarium.spaceLevel : gameState.upgrades[u.upgradeId] || 0;
           const maxed = level >= u.max;
           const cost = upgradeCost(u.cost, u.factor, level);
           return (
@@ -52,6 +71,7 @@ export function UpgradesView({
                 Lv. {level} / {u.max}
               </span>
               <h2>{u.name}</h2>
+              {perTerrarium && <span className="upgrade-target">📍 {terrarium.name}</span>}
               <p>{u.description}</p>
               <div className="upgrade-effect">
                 {effectText(u, level)} {maxed ? '' : `→ ${effectText(u, level + 1)}`}

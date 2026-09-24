@@ -54,6 +54,42 @@ export class LogEntry {
 }
 export const LogEntrySchema = SchemaFactory.createForClass(LogEntry);
 
+// 사육장 하나. 환경(먹이/습도/온도)과 식구·번식 진행이 사육장마다 따로 관리된다.
+@Schema({
+  _id: false,
+  toJSON: { flattenMaps: true },
+  toObject: { flattenMaps: true },
+})
+export class Terrarium {
+  @Prop({ required: true })
+  terrariumId: string;
+
+  @Prop({ required: true })
+  name: string;
+
+  // 공간 확장 업그레이드 단계 (수용량 = BASE_CAPACITY + spaceLevel * CAPACITY_PER_LEVEL)
+  @Prop({ default: 0, min: 0 })
+  spaceLevel: number;
+
+  @Prop({ default: 85, min: 0, max: 100 })
+  food: number;
+
+  @Prop({ default: 78, min: 0, max: 100 })
+  humidity: number;
+
+  @Prop({ default: 24 })
+  temperature: number;
+
+  // key: speciesId, value: 이 사육장에 있는 마리 수
+  @Prop({ type: Map, of: Number, default: {} })
+  population: Map<string, number>;
+
+  // key: speciesId, value: 번식 진행 시간(초)
+  @Prop({ type: Map, of: Number, default: {} })
+  breeding: Map<string, number>;
+}
+export const TerrariumSchema = SchemaFactory.createForClass(Terrarium);
+
 @Schema({
   timestamps: true,
   collection: 'game_states',
@@ -73,28 +109,15 @@ export class GameState {
   @Prop({ default: 0, min: 0 })
   xp: number;
 
-  @Prop({ default: 85, min: 0, max: 100 })
-  food: number;
-
-  @Prop({ default: 78, min: 0, max: 100 })
-  humidity: number;
-
-  @Prop({ default: 24 })
-  temperature: number;
-
-  // key: speciesId, value: 보유 마리 수
-  @Prop({ type: Map, of: Number, default: {} })
-  population: Map<string, number>;
+  // 보유 사육장 목록 (최대 MAX_TERRARIUMS개). 첫 번째가 기본 사육장이다.
+  @Prop({ type: [TerrariumSchema], default: [] })
+  terrariums: Terrarium[];
 
   // 지금까지 발견(도감 등록)한 speciesId 목록
-  @Prop({ type: [String], default: ['vulgare'] })
+  @Prop({ type: [String], default: ['pandaKing'] })
   discovered: string[];
 
-  // key: speciesId, value: 번식 진행 시간(초)
-  @Prop({ type: Map, of: Number, default: {} })
-  breeding: Map<string, number>;
-
-  // key: upgradeId, value: 현재 레벨
+  // key: upgradeId, value: 현재 레벨 (공간 확장은 사육장별이라 Terrarium.spaceLevel에 저장)
   @Prop({ type: Map, of: Number, default: {} })
   upgrades: Map<string, number>;
 
@@ -107,7 +130,7 @@ export class GameState {
   @Prop({ type: StatsSchema, default: () => ({}) })
   stats: Stats;
 
-  // key: 행동 id('feed' | 'mist' | 'climate' | 'observe'), value: 쿨다운 해제 시각(ms epoch)
+  // key: 'observe' 또는 `${terrariumId}:${'feed' | 'mist' | 'climate'}`, value: 쿨다운 해제 시각(ms epoch)
   @Prop({ type: Map, of: Number, default: {} })
   cooldowns: Map<string, number>;
 

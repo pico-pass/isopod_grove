@@ -6,6 +6,7 @@ export interface Species {
   price: number;
   rate: number;
   breed: number;
+  image?: string;
   filter: string;
   description: string;
 }
@@ -49,18 +50,25 @@ export interface LogEntry {
   text: string;
 }
 
+export interface Terrarium {
+  terrariumId: string;
+  name: string;
+  spaceLevel: number;
+  food: number;
+  humidity: number;
+  temperature: number;
+  population: Record<string, number>;
+  breeding: Record<string, number>;
+}
+
 export interface GameState {
   _id: string;
   userId: string;
   coins: number;
   pending: number;
   xp: number;
-  food: number;
-  humidity: number;
-  temperature: number;
-  population: Record<string, number>;
+  terrariums: Terrarium[];
   discovered: string[];
-  breeding: Record<string, number>;
   upgrades: Record<string, number>;
   daily: DailyProgress;
   stats: Stats;
@@ -77,6 +85,7 @@ export interface ActionResult {
   message?: string;
   coins?: number;
   species?: Species;
+  terrariumId?: string;
   isNew?: boolean;
   births?: number;
   earned?: number;

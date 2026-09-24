@@ -398,23 +398,19 @@ main {
 }
 .creature {
   position: absolute;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: radial-gradient(circle, rgba(238, 242, 233, 0.55), rgba(238, 242, 233, 0.15) 70%);
-  border: 2px solid rgba(238, 242, 233, 0.6);
-  transition: left 1.2s ease, top 1.2s ease, transform 0.2s ease;
+  padding: 0;
+  border: 0;
+  background: none;
+  transition: left 2.6s ease-in-out, top 2.6s ease-in-out, transform 0.2s ease;
   filter: drop-shadow(1px 4px 4px rgba(6, 27, 20, 0.7));
 }
 .creature:hover {
-  transform: scale(1.08);
-  border-color: var(--lime);
+  transform: scale(1.12);
 }
 .creature img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 .scene-bottom {
   position: absolute;
@@ -586,6 +582,117 @@ main {
 .resident b {
   margin-left: auto;
   color: var(--gold);
+}
+.resident-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.resident-main > span:nth-of-type(1) {
+  flex: 1;
+  min-width: 0;
+}
+.move-select {
+  flex-shrink: 0;
+  max-width: 150px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.move-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.terrarium-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.terrarium-tab {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.terrarium-tab small {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+.terrarium-tab.active {
+  border-color: var(--lime);
+  color: var(--text);
+  background: var(--panel2);
+}
+.terrarium-tab.add {
+  border-style: dashed;
+  color: var(--green);
+}
+.terrarium-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.terrarium-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.terrarium-picker select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+}
+.upgrade-target {
+  display: inline-block;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  color: var(--lime);
+}
+.breed-progress {
+  display: block;
+  height: 5px;
+  margin: 6px 0 3px;
+  border-radius: 999px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.breed-progress i {
+  display: block;
+  height: 100%;
+  background: var(--lime);
+  transition: width 5s linear;
+}
+.breed-progress i.idle {
+  background: var(--muted);
+}
+.breed-status {
+  display: block;
 }
 
 /* Right column */

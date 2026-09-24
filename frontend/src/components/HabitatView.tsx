@@ -1,18 +1,30 @@
 import { useEffect, useState } from 'react';
-import type { GameState, Quest, Species } from '../api/types';
+import type { GameState, Quest, Species, Terrarium } from '../api/types';
+import { WanderingCreatures } from './WanderingCreatures';
 import {
+  MAX_TERRARIUMS,
   RARITIES,
+  canBreedInEnvironment,
+  formatDuration,
   formatNumber,
   getAutoIncomeRate,
+  getBaseBreedSeconds,
+  getBreedInterval,
   getCapacity,
   getPopulationCount,
+  getTerrariumCost,
   isComfortable,
 } from '../utils/gameCalc';
+import { SpeciesImage } from './SpeciesImage';
 
 export function HabitatView({
   gameState,
+  terrarium,
   species,
   quests,
+  onSelectTerrarium,
+  onAddTerrarium,
+  onMove,
   onCare,
   onObserve,
   onCollect,
@@ -20,8 +32,12 @@ export function HabitatView({
   onClaim,
 }: {
   gameState: GameState;
+  terrarium: Terrarium;
   species: Species[];
   quests: Quest[];
+  onSelectTerrarium: (terrariumId: string) => void;
+  onAddTerrarium: () => void;
+  onMove: (speciesId: string, toTerrariumId: string) => void;
   onCare: (action: 'feed' | 'mist' | 'climate') => void;
   onObserve: (speciesId: string) => void;
   onCollect: () => void;
@@ -35,20 +51,36 @@ export function HabitatView({
   }, []);
 
   const speciesById = new Map(species.map((s) => [s.speciesId, s]));
-  const spaceLevel = gameState.upgrades.space || 0;
+  const spaceLevel = terrarium.spaceLevel;
   const soilLevel = gameState.upgrades.soil || 0;
+  const nurseryLevel = gameState.upgrades.nursery || 0;
   const capacity = getCapacity(spaceLevel);
-  const count = getPopulationCount(gameState.population);
-  const comfortable = isComfortable(gameState.food, gameState.humidity, gameState.temperature);
-  const rate = getAutoIncomeRate(gameState.population, species, soilLevel, comfortable);
+  const count = getPopulationCount(terrarium.population);
+  const comfortable = isComfortable(terrarium.food, terrarium.humidity, terrarium.temperature);
+  const canBreed = canBreedInEnvironment(terrarium.food, terrarium.humidity, terrarium.temperature);
+  // 수익은 모든 사육장이 함께 모으므로 전체 합계를 보여준다.
+  const rate = gameState.terrariums.reduce(
+    (sum, t) =>
+      sum +
+      getAutoIncomeRate(
+        t.population,
+        species,
+        soilLevel,
+        isComfortable(t.food, t.humidity, t.temperature),
+      ),
+    0,
+  );
+  const otherTerrariums = gameState.terrariums.filter((t) => t.terrariumId !== terrarium.terrariumId);
+  const atMaxTerrariums = gameState.terrariums.length >= MAX_TERRARIUMS;
+  const addCost = getTerrariumCost(gameState.terrariums.length);
 
-  const residentIds = Object.keys(gameState.population).filter(
-    (id) => (gameState.population[id] || 0) > 0,
+  const residentIds = Object.keys(terrarium.population).filter(
+    (id) => (terrarium.population[id] || 0) > 0,
   );
 
   const cooldownRemaining = (action: string) => {
     if (!now) return 0;
-    const until = gameState.cooldowns[action] || 0;
+    const until = gameState.cooldowns[`${terrarium.terrariumId}:${action}`] || 0;
     return Math.max(0, Math.ceil((until - now) / 1000));
   };
 
@@ -67,6 +99,34 @@ export function HabitatView({
 
       <div className="game-columns">
         <div className="habitat-column">
+          <div className="terrarium-tabs" role="tablist" aria-label="사육장 선택">
+            {gameState.terrariums.map((t) => {
+              const active = t.terrariumId === terrarium.terrariumId;
+              return (
+                <button
+                  key={t.terrariumId}
+                  role="tab"
+                  aria-selected={active}
+                  className={`terrarium-tab${active ? ' active' : ''}`}
+                  onClick={() => onSelectTerrarium(t.terrariumId)}
+                >
+                  <span>{t.name}</span>
+                  <small>
+                    {getPopulationCount(t.population)}/{getCapacity(t.spaceLevel)}
+                  </small>
+                </button>
+              );
+            })}
+            <button
+              className="terrarium-tab add"
+              disabled={atMaxTerrariums || gameState.paused || gameState.coins < addCost}
+              onClick={onAddTerrarium}
+              title={`사육장 ${gameState.terrariums.length}/${MAX_TERRARIUMS}개`}
+            >
+              {atMaxTerrariums ? `최대 ${MAX_TERRARIUMS}개` : `＋ 사육장 추가 · ${formatNumber(addCost)} G`}
+            </button>
+          </div>
+
           <div className="stat-row">
             <div className="stat">
               <span className="stat-icon green">🐛</span>
@@ -80,7 +140,7 @@ export function HabitatView({
             <div className="stat">
               <span className="stat-icon amber">💰</span>
               <div>
-                <span className="stat-label">분당 예상 수익</span>
+                <span className="stat-label">분당 예상 수익{gameState.terrariums.length > 1 ? ' (전체)' : ''}</span>
                 <strong>
                   {Math.round(rate * 60)} <small>G</small>
                 </strong>
@@ -101,25 +161,15 @@ export function HabitatView({
             <img className="terrain-image" src="/assets/terrarium.webp" alt="이끼와 낙엽이 있는 작은 숲 사육장" />
             <div className="terrain-shade" />
             <div className="scene-top">
-              <span className="habitat-badge">🍃 이끼 숲 사육장 <b>Lv. {spaceLevel + 1}</b></span>
+              <span className="habitat-badge">🍃 {terrarium.name} <b>Lv. {spaceLevel + 1}</b></span>
             </div>
-            <div className="creatures">
-              {residentIds.map((id, i) => {
-                const sp = speciesById.get(id);
-                if (!sp) return null;
-                return (
-                  <button
-                    key={id}
-                    className="creature"
-                    style={{ left: `${8 + ((i * 21) % 74)}%`, top: `${14 + ((i * 17) % 60)}%` }}
-                    onClick={() => onObserve(id)}
-                    title={`${sp.name} 관찰하기`}
-                  >
-                    <img src="/assets/isopod.png" alt={sp.name} style={{ filter: sp.filter }} draggable={false} />
-                  </button>
-                );
-              })}
-            </div>
+            <WanderingCreatures
+              key={terrarium.terrariumId}
+              population={terrarium.population}
+              speciesById={speciesById}
+              paused={gameState.paused}
+              onObserve={onObserve}
+            />
             <div className="scene-bottom">
               <span>
                 <i className="live-dot" />
@@ -138,30 +188,30 @@ export function HabitatView({
           <div className="environment-bar">
             <div>
               <span>
-                💧 습도 <b>{Math.round(gameState.humidity)}%</b>
+                💧 습도 <b>{Math.round(terrarium.humidity)}%</b>
               </span>
               <div className="meter">
-                <i style={{ width: `${Math.min(100, Math.max(0, gameState.humidity))}%` }} />
+                <i style={{ width: `${Math.min(100, Math.max(0, terrarium.humidity))}%` }} />
               </div>
               <small>쾌적 65–85%</small>
             </div>
             <div>
               <span>
-                🌡️ 온도 <b>{gameState.temperature.toFixed(1)}°C</b>
+                🌡️ 온도 <b>{terrarium.temperature.toFixed(1)}°C</b>
               </span>
               <div className="meter amber">
-                <i style={{ width: `${Math.min(100, (gameState.temperature / 35) * 100)}%` }} />
+                <i style={{ width: `${Math.min(100, (terrarium.temperature / 35) * 100)}%` }} />
               </div>
               <small>쾌적 20–26°C</small>
             </div>
             <div>
               <span>
-                🌿 먹이 <b>{Math.round(gameState.food)}%</b>
+                🌿 먹이 <b>{Math.round(terrarium.food)}%</b>
               </span>
               <div className="meter green">
-                <i style={{ width: `${Math.min(100, Math.max(0, gameState.food))}%` }} />
+                <i style={{ width: `${Math.min(100, Math.max(0, terrarium.food))}%` }} />
               </div>
-              <small>{gameState.upgrades.feeder ? '자동으로 채워져요' : gameState.food < 25 ? '먹이를 채워 주세요' : '넉넉해요'}</small>
+              <small>{gameState.upgrades.feeder ? '자동으로 채워져요' : terrarium.food < 25 ? '먹이를 채워 주세요' : '넉넉해요'}</small>
             </div>
           </div>
 
@@ -211,17 +261,60 @@ export function HabitatView({
             {residentIds.map((id) => {
               const sp = speciesById.get(id);
               if (!sp) return null;
+              const residents = terrarium.population[id] || 0;
+              const interval = getBreedInterval(getBaseBreedSeconds(sp.rarity), nurseryLevel);
+              const progress = Math.min(interval, terrarium.breeding[id] || 0);
+              const ratio = interval > 0 ? progress / interval : 0;
+              const breedStatus =
+                residents < 2
+                  ? '번식하려면 2마리 이상 필요해요'
+                  : !canBreed
+                    ? '환경이 좋지 않아 번식이 멈췄어요'
+                    : count >= capacity
+                      ? '공간이 가득 차서 기다리는 중이에요'
+                      : `다음 새끼까지 ${formatDuration(interval - progress)}`;
+              const breedActive = residents >= 2 && canBreed && count < capacity;
               return (
-                <button key={id} className="resident" onClick={() => onObserve(id)}>
-                  <img src="/assets/isopod.png" alt={sp.name} style={{ filter: sp.filter }} />
+                <div key={id} className="resident">
+                  <button className="resident-main" onClick={() => onObserve(id)}>
+                  <SpeciesImage species={sp} style={{ filter: sp.filter }} />
                   <span>
                     <span className="resident-name">{sp.name}</span>
                     <small>
                       {RARITIES[sp.rarity].name} · 분당 {(sp.rate * 60 * (1 + soilLevel * 0.25)).toFixed(1)} G / 마리
                     </small>
+                    <span className="breed-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(ratio * 100)} aria-label={`${sp.name} 번식 진행률`}>
+                      <i className={breedActive ? undefined : 'idle'} style={{ width: `${ratio * 100}%` }} />
+                    </span>
+                    <small className="breed-status">
+                      🥚 {Math.floor(ratio * 100)}% · {breedStatus}
+                    </small>
                   </span>
-                  <b>{gameState.population[id]}마리</b>
-                </button>
+                  <b>{residents}마리</b>
+                  </button>
+                  {otherTerrariums.length > 0 && (
+                    <select
+                      className="move-select"
+                      value=""
+                      disabled={gameState.paused}
+                      aria-label={`${sp.name} 이사 보내기`}
+                      onChange={(e) => {
+                        if (e.target.value) onMove(id, e.target.value);
+                      }}
+                    >
+                      <option value="">이사 ▾</option>
+                      {otherTerrariums.map((t) => {
+                        const room = getCapacity(t.spaceLevel) - getPopulationCount(t.population);
+                        const fits = room >= residents;
+                        return (
+                          <option key={t.terrariumId} value={t.terrariumId} disabled={!fits}>
+                            {t.name} · 여유 {Math.max(0, room)}마리{fits ? '' : ' (자리 부족)'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+                </div>
               );
             })}
           </div>

@@ -1,7 +1,7 @@
 import type { ActionResult, CareAction, GameState, Quest, Species, Upgrade } from './types';
 import { authStorage } from '../auth/authStorage';
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
 export interface AuthUser {
   _id: string;
@@ -45,12 +45,17 @@ export const api = {
   getGameState: () => request<GameState>('/game-state'),
 
   advance: (seconds: number) => post<ActionResult>('/game-state/advance', { seconds }),
-  care: (action: CareAction) => post<ActionResult>('/game-state/care', { action }),
+  care: (action: CareAction, terrariumId?: string) =>
+    post<ActionResult>('/game-state/care', { action, terrariumId }),
   observe: (speciesId: string) => post<ActionResult>('/game-state/observe', { speciesId }),
   collect: () => post<ActionResult>('/game-state/collect'),
-  explore: () => post<ActionResult>('/game-state/explore'),
-  sell: (speciesId: string, quantity: number) =>
-    post<ActionResult>('/game-state/sell', { speciesId, quantity }),
-  upgrade: (upgradeId: string) => post<ActionResult>('/game-state/upgrade', { upgradeId }),
+  explore: (terrariumId?: string) => post<ActionResult>('/game-state/explore', { terrariumId }),
+  sell: (speciesId: string, quantity: number, terrariumId?: string) =>
+    post<ActionResult>('/game-state/sell', { speciesId, quantity, terrariumId }),
+  upgrade: (upgradeId: string, terrariumId?: string) =>
+    post<ActionResult>('/game-state/upgrade', { upgradeId, terrariumId }),
+  addTerrarium: (name?: string) => post<ActionResult>('/game-state/terrariums', { name }),
+  moveSpecies: (speciesId: string, fromTerrariumId: string, toTerrariumId: string) =>
+    post<ActionResult>('/game-state/move', { speciesId, fromTerrariumId, toTerrariumId }),
   claim: (questId: string) => post<ActionResult>('/game-state/claim', { questId }),
 };

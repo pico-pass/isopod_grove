@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import type { GameState, Species } from '../api/types';
-import { RARITIES } from '../utils/gameCalc';
+import { RARITIES, getTotalPopulationBySpecies } from '../utils/gameCalc';
+import { SpeciesImage } from './SpeciesImage';
 
 type Filter = 'all' | 'found' | 'undiscovered';
 
 export function CollectionView({ gameState, species }: { gameState: GameState; species: Species[] }) {
   const [filter, setFilter] = useState<Filter>('all');
   const discovered = gameState.discovered;
+  const totals = getTotalPopulationBySpecies(gameState);
   const percent = species.length ? Math.round((discovered.length / species.length) * 100) : 0;
 
   const list = species.filter((sp) => {
@@ -57,11 +59,11 @@ export function CollectionView({ gameState, species }: { gameState: GameState; s
               ) : (
                 <span className="pill">🔒 미발견</span>
               )}
-              <img src="/assets/isopod.png" alt={found ? sp.name : ''} style={{ filter: found ? sp.filter : 'grayscale(1) brightness(0.4)' }} />
+              <SpeciesImage species={sp} alt={found ? sp.name : ''} style={{ filter: found ? sp.filter : 'grayscale(1) brightness(0.4)' }} />
               <h3>{found ? sp.name : '아직 만나지 못한 친구'}</h3>
               <p>{found ? sp.latin : '숲을 탐색하며 발견해 보세요'}</p>
               <div className="card-bottom">
-                <span>{found ? `${gameState.population[sp.speciesId] || 0}마리 보유` : '???'}</span>
+                <span>{found ? `${totals[sp.speciesId] || 0}마리 보유` : '???'}</span>
                 <span>{found ? `${sp.price} G` : '미발견'}</span>
               </div>
             </div>

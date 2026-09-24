@@ -4,6 +4,11 @@ export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
 export const SOIL_RATE_BONUS_PER_LEVEL = 0.25;
 export const NURSERY_TIME_REDUCTION_PER_LEVEL = 0.12;
+// 희귀도(일반~신화)별 번식 주기(초): 5분 / 20분 / 60분 / 4시간 / 10시간마다 +1마리
+export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
+export const MAX_TERRARIUMS = 10;
+export const TERRARIUM_BASE_COST = 2500;
+export const TERRARIUM_COST_FACTOR = 2.5;
 export const EXPLORE_COST = 180;
 export const EXPLORE_YIELD = 2;
 export const FEEDER_REFILL_THRESHOLD = 40;
@@ -21,6 +26,13 @@ export const clamp = (value: number, min: number, max: number) =>
 
 export function getCapacity(spaceLevel: number): number {
   return BASE_CAPACITY + spaceLevel * CAPACITY_PER_LEVEL;
+}
+
+// 사육장을 하나 더 추가하는 비용. ownedCount는 현재 보유한 사육장 수(2번째 = 2,500 G, 이후 2.5배씩).
+export function getTerrariumCost(ownedCount: number): number {
+  return Math.round(
+    TERRARIUM_BASE_COST * Math.pow(TERRARIUM_COST_FACTOR, ownedCount - 1),
+  );
 }
 
 export function getPopulationCount(population: Map<string, number>): number {
@@ -72,6 +84,10 @@ export function getAutoIncomeRate(
   return (
     base * (1 + soilLevel * SOIL_RATE_BONUS_PER_LEVEL) * (comfortable ? 1 : 0.4)
   );
+}
+
+export function getBaseBreedSeconds(rarity: number): number {
+  return BREED_SECONDS_BY_RARITY[rarity] ?? BREED_SECONDS_BY_RARITY[0];
 }
 
 export function getBreedInterval(

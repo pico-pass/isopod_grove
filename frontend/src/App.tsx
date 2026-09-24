@@ -19,6 +19,7 @@ function App() {
   const { gameState, species, upgrades, quests, loading, error, toast, runAction } =
     useGameEngine(user?._id ?? null);
   const [view, setView] = useState<ViewKey>('habitat');
+  const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
 
   if (authLoading) {
     return (
@@ -50,6 +51,13 @@ function App() {
   }
 
   const level = Math.floor(gameState.xp / 100) + 1;
+  const terrarium =
+    gameState.terrariums.find((t) => t.terrariumId === selectedTerrariumId) ??
+    gameState.terrariums[0];
+  const totalPopulation = gameState.terrariums.reduce(
+    (sum, t) => sum + getPopulationCount(t.population),
+    0,
+  );
 
   return (
     <>
@@ -58,7 +66,7 @@ function App() {
         <Sidebar
           view={view}
           onChange={setView}
-          populationCount={getPopulationCount(gameState.population)}
+          populationCount={totalPopulation}
           discoveredCount={gameState.discovered.length}
           speciesTotal={species.length}
           level={level}
@@ -70,10 +78,19 @@ function App() {
               gameState={gameState}
               species={species}
               quests={quests}
-              onCare={(action) => runAction(() => api.care(action))}
+              terrarium={terrarium}
+              onSelectTerrarium={setSelectedTerrariumId}
+              onAddTerrarium={async () => {
+                const result = await runAction(() => api.addTerrarium());
+                if (result?.terrariumId) setSelectedTerrariumId(result.terrariumId);
+              }}
+              onMove={(speciesId, toTerrariumId) =>
+                runAction(() => api.moveSpecies(speciesId, terrarium.terrariumId, toTerrariumId))
+              }
+              onCare={(action) => runAction(() => api.care(action, terrarium.terrariumId))}
               onObserve={(speciesId) => runAction(() => api.observe(speciesId))}
               onCollect={() => runAction(() => api.collect())}
-              onExplore={() => runAction(() => api.explore())}
+              onExplore={() => runAction(() => api.explore(terrarium.terrariumId))}
               onClaim={(questId) => runAction(() => api.claim(questId))}
             />
           )}
@@ -81,16 +98,21 @@ function App() {
           {view === 'market' && (
             <MarketView
               gameState={gameState}
+              terrarium={terrarium}
               species={species}
-              onSell={(speciesId, quantity) => runAction(() => api.sell(speciesId, quantity))}
-              onExplore={() => runAction(() => api.explore())}
+              onSell={(speciesId, quantity) =>
+                runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId))
+              }
+              onExplore={() => runAction(() => api.explore(terrarium.terrariumId))}
             />
           )}
           {view === 'upgrades' && (
             <UpgradesView
               gameState={gameState}
+              terrarium={terrarium}
               upgrades={upgrades}
-              onUpgrade={(upgradeId) => runAction(() => api.upgrade(upgradeId))}
+              onSelectTerrarium={setSelectedTerrariumId}
+              onUpgrade={(upgradeId) => runAction(() => api.upgrade(upgradeId, terrarium.terrariumId))}
             />
           )}
           {view === 'journal' && <JournalView gameState={gameState} />}

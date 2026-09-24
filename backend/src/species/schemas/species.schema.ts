@@ -26,6 +26,9 @@ export class Species {
   @Prop({ required: true, min: 0 })
   breed: number;
 
+  @Prop({ default: '/assets/isopod.png' })
+  image: string;
+
   @Prop({ default: 'none' })
   filter: string;
 

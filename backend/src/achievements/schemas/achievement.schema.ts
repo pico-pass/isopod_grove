@@ -1,0 +1,57 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument } from 'mongoose';
+
+export type AchievementDocument = HydratedDocument<Achievement>;
+
+export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
+
+// 진행도를 재는 기준. discovered/terrariums는 population 시딩이 아니라 계정 자체에서 읽는다.
+export type AchievementStatKey =
+  | 'births'
+  | 'sold'
+  | 'explored'
+  | 'earned'
+  | 'discovered'
+  | 'terrariums';
+
+@Schema({ collection: 'achievements' })
+export class Achievement {
+  @Prop({ required: true, unique: true })
+  achievementId: string;
+
+  @Prop({ required: true })
+  label: string;
+
+  @Prop({ required: true })
+  description: string;
+
+  @Prop({ required: true })
+  icon: string;
+
+  @Prop({ required: true })
+  type: AchievementType;
+
+  // type === 'stat'일 때만 사용
+  @Prop()
+  statKey?: AchievementStatKey;
+
+  @Prop()
+  target?: number;
+
+  // type === 'collectionRarity'일 때만 사용 (0~4)
+  @Prop()
+  rarity?: number;
+
+  @Prop({ required: true, min: 0 })
+  reward: number;
+
+  // 완료 시 G 보상과 별도로 지급하는 숲 탐색권 개수(없으면 0장)
+  @Prop({ default: 0, min: 0 })
+  ticketReward: number;
+
+  // 완료 시 G 보상과 별도로 지급하는 다이아 개수(없으면 0개)
+  @Prop({ default: 0, min: 0 })
+  diamondReward: number;
+}
+
+export const AchievementSchema = SchemaFactory.createForClass(Achievement);

@@ -4,7 +4,7 @@ import type { Response } from 'express';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService } from './auth.service';
-import { UsersService } from '../users/users.service';
+import { UsersService, effectiveDisplayName } from '../users/users.service';
 import type { UserDocument } from '../users/schemas/user.schema';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
 
@@ -33,7 +33,10 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@Req() req: { user: AuthenticatedUser }) {
-    return this.usersService.findById(req.user.userId);
+  async me(@Req() req: { user: AuthenticatedUser }) {
+    const user = await this.usersService.findById(req.user.userId);
+    if (!user) return user;
+    // nickname을 정했으면 구글 프로필 이름 대신 그걸 displayName으로 보여준다.
+    return { ...user.toObject(), displayName: effectiveDisplayName(user) };
   }
 }

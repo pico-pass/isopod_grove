@@ -7,4 +7,11 @@ export const QUESTS_SEED = [
     target: 2,
     reward: 120,
   },
+  {
+    questId: 'explore',
+    label: '숲 탐색 1번 하기',
+    target: 1,
+    reward: 100,
+    ticketReward: 1,
+  },
 ];

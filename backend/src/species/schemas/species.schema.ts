@@ -17,8 +17,13 @@ export class Species {
   @Prop({ required: true, min: 0, max: 4 })
   rarity: number;
 
+  // 지금 분양 마켓에서 실제로 적용되는 가격. 시세 변동으로 주기적으로 바뀐다.
   @Prop({ required: true, min: 0 })
   price: number;
+
+  // 희귀도 기준 원래 가격(기준가). 시세가 지금 비싼지 싼지 비교하는 기준이며, 변동하지 않는다.
+  @Prop({ default: 0, min: 0 })
+  basePrice: number;
 
   @Prop({ required: true, min: 0 })
   rate: number;

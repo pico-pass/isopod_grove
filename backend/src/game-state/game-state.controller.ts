@@ -9,9 +9,12 @@ import { ObserveDto } from './dto/observe.dto';
 import { SellDto } from './dto/sell.dto';
 import { UpgradeDto } from './dto/upgrade.dto';
 import { ClaimDto } from './dto/claim.dto';
+import { ClaimAchievementDto } from './dto/claim-achievement.dto';
 import { ExploreDto } from './dto/explore.dto';
+import { BuyTicketDto } from './dto/buy-ticket.dto';
 import { CreateTerrariumDto } from './dto/create-terrarium.dto';
 import { MoveSpeciesDto } from './dto/move-species.dto';
+import { SetNicknameDto } from './dto/set-nickname.dto';
 
 @Controller('game-state')
 @UseGuards(JwtAuthGuard)
@@ -45,7 +48,19 @@ export class GameStateController {
 
   @Post('explore')
   explore(@CurrentUser() user: AuthenticatedUser, @Body() dto: ExploreDto) {
-    return this.gameStateService.explore(user.userId, dto?.terrariumId);
+    return this.gameStateService.explore(
+      user.userId,
+      dto?.terrariumId,
+      dto?.useTicket,
+    );
+  }
+
+  @Post('buy-ticket')
+  buyTicket(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BuyTicketDto,
+  ) {
+    return this.gameStateService.buyTicket(user.userId, dto?.quantity ?? 1);
   }
 
   @Post('sell')
@@ -91,5 +106,24 @@ export class GameStateController {
   @Post('claim')
   claim(@CurrentUser() user: AuthenticatedUser, @Body() dto: ClaimDto) {
     return this.gameStateService.claim(user.userId, dto.questId);
+  }
+
+  @Post('claim-achievement')
+  claimAchievement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ClaimAchievementDto,
+  ) {
+    return this.gameStateService.claimAchievement(
+      user.userId,
+      dto.achievementId,
+    );
+  }
+
+  @Post('set-nickname')
+  setNickname(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SetNicknameDto,
+  ) {
+    return this.gameStateService.setNickname(user.userId, dto.nickname);
   }
 }

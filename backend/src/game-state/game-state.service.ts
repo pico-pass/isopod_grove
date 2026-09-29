@@ -14,27 +14,36 @@ import {
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
+import { AchievementsService } from '../achievements/achievements.service';
+import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { RARITIES } from '../species/species.seed-data';
 import { CareAction } from './dto/care.dto';
 import {
   CARE_COOLDOWN_MS,
+  DIAMONDS_PER_LEVEL,
   EXPLORE_COST,
+  EXPLORE_TICKET_PRICE,
   EXPLORE_YIELD,
+  MAX_FREE_EXPLORE_TICKETS,
   FEEDER_REFILL_TARGET,
   FEEDER_REFILL_THRESHOLD,
   MAX_ADVANCE_SECONDS,
   MAX_TERRARIUMS,
   MISTER_REFILL_TARGET,
   MISTER_REFILL_THRESHOLD,
+  NEW_SPECIES_DIAMONDS_BY_RARITY,
+  NICKNAME_CHANGE_COST,
   OBSERVE_COOLDOWN_MS,
   OBSERVE_REWARD,
   STEP_SECONDS,
   canBreedInEnvironment,
   clamp,
+  getAchievementProgress,
   getAutoIncomeRate,
   getBaseBreedSeconds,
   getBreedInterval,
   getCapacity,
+  getLevel,
   getPopulationCount,
   getTerrariumCost,
   isComfortable,
@@ -64,7 +73,25 @@ export class GameStateService {
     private readonly speciesService: SpeciesService,
     private readonly upgradesService: UpgradesService,
     private readonly questsService: QuestsService,
+    private readonly achievementsService: AchievementsService,
+    private readonly usersService: UsersService,
   ) {}
+
+  // 경험치는 항상 이 메서드를 통해서만 더한다. 레벨이 오르면 다이아를 지급한다.
+  private grantXp(gameState: GameStateDocument, amount: number) {
+    const before = getLevel(gameState.xp);
+    gameState.xp += amount;
+    const after = getLevel(gameState.xp);
+    if (after > before) {
+      const diamonds = (after - before) * DIAMONDS_PER_LEVEL;
+      gameState.diamonds += diamonds;
+      this.pushLog(
+        gameState,
+        'diamond',
+        `레벨 업! Lv. ${after} 달성으로 💎 ${diamonds}개를 받았어요.`,
+      );
+    }
+  }
 
   findByUserId(userId: string): Promise<GameState | null> {
     return this.gameStateModel
@@ -190,7 +217,7 @@ export class GameStateService {
               species.speciesId,
               (babies.get(species.speciesId) || 0) + 1,
             );
-            gameState.xp += 8;
+            this.grantXp(gameState, 8);
             gameState.stats.births++;
             gameState.daily.births++;
           }
@@ -231,7 +258,7 @@ export class GameStateService {
     const terrariumName = name?.trim() || `사육장 ${owned + 1}`;
     const terrariumId = this.newTerrariumId();
     gameState.coins -= cost;
-    gameState.xp += 20;
+    this.grantXp(gameState, 20);
     gameState.terrariums.push({
       terrariumId,
       name: terrariumName,
@@ -321,7 +348,7 @@ export class GameStateService {
     if (action === 'feed') {
       terrarium.food = clamp(terrarium.food + 30, 0, 100);
       gameState.daily.feed++;
-      gameState.xp += 4;
+      this.grantXp(gameState, 4);
       message = '신선한 낙엽을 채웠어요. 맛있게 먹어!';
     } else if (action === 'mist') {
       terrarium.humidity = 78;
@@ -351,7 +378,7 @@ export class GameStateService {
     gameState.cooldowns.set('observe', now + OBSERVE_COOLDOWN_MS);
     gameState.coins += OBSERVE_REWARD;
     gameState.stats.earned += OBSERVE_REWARD;
-    gameState.xp++;
+    this.grantXp(gameState, 1);
     gameState.daily.observe++;
 
     const species = await this.speciesService.findOne(speciesId);
@@ -389,9 +416,10 @@ export class GameStateService {
     };
   }
 
-  async explore(userId: string, terrariumId?: string) {
+  async explore(userId: string, terrariumId?: string, useTicket = false) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
+    this.resetDailyIfNeeded(gameState);
 
     const terrarium = this.getTerrarium(gameState, terrariumId);
     const capacity = getCapacity(terrarium.spaceLevel);
@@ -401,13 +429,22 @@ export class GameStateService {
         `${terrarium.name}에 새 식구 2마리를 위한 자리가 부족해요. 사육장을 확장하거나 분양·이사해 주세요.`,
       );
     }
-    if (gameState.coins < EXPLORE_COST) {
-      throw new BadRequestException(
-        `탐색에는 ${EXPLORE_COST} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
-      );
-    }
 
-    gameState.coins -= EXPLORE_COST;
+    if (useTicket) {
+      if (gameState.explorationTickets < 1) {
+        throw new BadRequestException('숲 탐색권이 없어요.');
+      }
+      gameState.explorationTickets -= 1;
+    } else {
+      if (gameState.coins < EXPLORE_COST) {
+        throw new BadRequestException(
+          `탐색에는 ${EXPLORE_COST} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
+        );
+      }
+      gameState.coins -= EXPLORE_COST;
+    }
+    gameState.daily.explore++;
+
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);
     const species = pickRandomOfRarity(speciesList, rarity, Math.random());
@@ -416,13 +453,18 @@ export class GameStateService {
       species.speciesId,
       (terrarium.population.get(species.speciesId) || 0) + EXPLORE_YIELD,
     );
-    if (isNew) gameState.discovered.push(species.speciesId);
-    gameState.xp += isNew ? 25 : 10;
+    let newSpeciesDiamonds = 0;
+    if (isNew) {
+      gameState.discovered.push(species.speciesId);
+      newSpeciesDiamonds = NEW_SPECIES_DIAMONDS_BY_RARITY[species.rarity] ?? 0;
+      gameState.diamonds += newSpeciesDiamonds;
+    }
+    this.grantXp(gameState, isNew ? 25 : 10);
     gameState.stats.explored++;
     this.pushLog(
       gameState,
       'search',
-      `${species.name} 2마리를 만나 ${terrarium.name}에 데려왔어요.${isNew ? ' 도감에 새롭게 기록했어요!' : ''}`,
+      `${species.name} 2마리를 만나 ${terrarium.name}에 데려왔어요.${isNew ? ` 도감에 새롭게 기록했어요! 💎 ${newSpeciesDiamonds}개 획득!` : ''}${useTicket ? ' (탐색권 사용)' : ''}`,
     );
 
     await gameState.save();
@@ -431,6 +473,32 @@ export class GameStateService {
       species,
       isNew,
       message: `${species.name} 2마리가 숲에 왔어요!`,
+    };
+  }
+
+  async buyTicket(userId: string, quantity = 1) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+
+    const cost = EXPLORE_TICKET_PRICE * quantity;
+    if (gameState.coins < cost) {
+      throw new BadRequestException(
+        `탐색권 ${quantity}장에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`,
+      );
+    }
+
+    gameState.coins -= cost;
+    gameState.explorationTickets += quantity;
+    this.pushLog(
+      gameState,
+      'search',
+      `숲 탐색권 ${quantity}장을 구매했어요. -${cost.toLocaleString('ko-KR')} G`,
+    );
+
+    await gameState.save();
+    return {
+      gameState,
+      message: `숲 탐색권 ${quantity}장을 구매했어요!`,
     };
   }
 
@@ -457,7 +525,7 @@ export class GameStateService {
     gameState.coins += amount;
     gameState.stats.sold += quantity;
     gameState.stats.earned += amount;
-    gameState.xp += quantity * 3;
+    this.grantXp(gameState, quantity * 3);
     this.pushLog(
       gameState,
       'coins',
@@ -502,7 +570,7 @@ export class GameStateService {
     } else {
       gameState.upgrades.set(upgradeId, currentLevel + 1);
     }
-    gameState.xp += 20;
+    this.grantXp(gameState, 20);
     this.pushLog(
       gameState,
       'sprout',
@@ -528,15 +596,105 @@ export class GameStateService {
     gameState.daily.claimed.push(questId);
     gameState.coins += quest.reward;
     gameState.stats.earned += quest.reward;
-    gameState.xp += 15;
+    this.grantXp(gameState, 15);
+    if (quest.ticketReward) {
+      gameState.explorationTickets += quest.ticketReward;
+    }
+    const ticketText = quest.ticketReward ? ` · 🎟️ 탐색권 ${quest.ticketReward}장` : '';
     this.pushLog(
       gameState,
       'flag',
-      `오늘의 목표 달성: ${quest.label}. +${quest.reward} G`,
+      `오늘의 목표 달성: ${quest.label}. +${quest.reward} G${ticketText}`,
     );
 
     await gameState.save();
-    return { gameState, message: `목표 보상 +${quest.reward} G를 받았어요!` };
+    return {
+      gameState,
+      message: `목표 보상 +${quest.reward} G${ticketText}를 받았어요!`,
+    };
+  }
+
+  async claimAchievement(userId: string, achievementId: string) {
+    const gameState = await this.getOrThrow(userId);
+
+    const achievement = await this.achievementsService.findOne(achievementId);
+    if (!achievement) {
+      throw new BadRequestException('존재하지 않는 업적이에요.');
+    }
+    if (gameState.achievementsClaimed.includes(achievementId)) {
+      throw new BadRequestException('이미 받은 업적이에요.');
+    }
+
+    const speciesList = await this.speciesService.findAll();
+    const { progress, target } = getAchievementProgress(
+      achievement,
+      {
+        discovered: gameState.discovered,
+        terrariumCount: gameState.terrariums.length,
+        stats: gameState.stats,
+      },
+      speciesList,
+    );
+    if (progress < target) {
+      throw new BadRequestException('아직 조건을 달성하지 못했어요.');
+    }
+
+    gameState.achievementsClaimed.push(achievementId);
+    gameState.coins += achievement.reward;
+    gameState.stats.earned += achievement.reward;
+    this.grantXp(gameState, Math.min(200, Math.round(achievement.reward / 15)));
+    if (achievement.ticketReward) {
+      gameState.explorationTickets += achievement.ticketReward;
+    }
+    if (achievement.diamondReward) {
+      gameState.diamonds += achievement.diamondReward;
+    }
+    const bonusText =
+      (achievement.ticketReward ? ` · 🎟️ 탐색권 ${achievement.ticketReward}장` : '') +
+      (achievement.diamondReward ? ` · 💎 ${achievement.diamondReward}개` : '');
+    this.pushLog(
+      gameState,
+      'trophy',
+      `업적 달성: ${achievement.label}. +${achievement.reward.toLocaleString('ko-KR')} G${bonusText}`,
+    );
+
+    await gameState.save();
+    return {
+      gameState,
+      message: `업적 달성! ${achievement.label} +${achievement.reward.toLocaleString('ko-KR')} G${bonusText}`,
+    };
+  }
+
+  async setNickname(userId: string, nickname: string) {
+    const trimmed = nickname.trim();
+    if (trimmed.length < 2 || trimmed.length > 12) {
+      throw new BadRequestException('닉네임은 2~12자로 입력해 주세요.');
+    }
+
+    const gameState = await this.getOrThrow(userId);
+    if (gameState.diamonds < NICKNAME_CHANGE_COST) {
+      throw new BadRequestException(
+        `닉네임 변경에는 💎 ${NICKNAME_CHANGE_COST}개가 필요해요.`,
+      );
+    }
+    if (await this.usersService.isNicknameTaken(trimmed, userId)) {
+      throw new BadRequestException('이미 사용 중인 닉네임이에요.');
+    }
+
+    gameState.diamonds -= NICKNAME_CHANGE_COST;
+    const userDoc = await this.usersService.setNickname(userId, trimmed);
+    this.pushLog(
+      gameState,
+      'flag',
+      `닉네임을 "${trimmed}"(으)로 바꿨어요. -💎 ${NICKNAME_CHANGE_COST}`,
+    );
+
+    await gameState.save();
+    return {
+      gameState,
+      user: { ...userDoc.toObject(), displayName: effectiveDisplayName(userDoc) },
+      message: `닉네임이 "${trimmed}"(으)로 바뀌었어요!`,
+    };
   }
 
   private getDailyProgress(
@@ -550,6 +708,8 @@ export class GameStateService {
         return gameState.daily.observe;
       case 'births':
         return gameState.daily.births;
+      case 'explore':
+        return gameState.daily.explore;
       default:
         return 0;
     }
@@ -563,8 +723,14 @@ export class GameStateService {
         feed: 0,
         observe: 0,
         births: 0,
+        explore: 0,
         claimed: [],
       };
+      // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.
+      // 구매/보상으로 이미 그 이상 갖고 있다면 줄이지 않고 그대로 둔다.
+      if (gameState.explorationTickets < MAX_FREE_EXPLORE_TICKETS) {
+        gameState.explorationTickets++;
+      }
     }
   }
 

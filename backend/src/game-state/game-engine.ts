@@ -9,7 +9,10 @@ export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
 export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
-export const EXPLORE_COST = 180;
+export const EXPLORE_COST = 777;
+// 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
+export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
+export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
 export const EXPLORE_YIELD = 2;
 export const FEEDER_REFILL_THRESHOLD = 40;
 export const FEEDER_REFILL_TARGET = 85;
@@ -20,6 +23,40 @@ export const STEP_SECONDS = 5;
 export const CARE_COOLDOWN_MS = 10_000;
 export const OBSERVE_COOLDOWN_MS = 3_000;
 export const OBSERVE_REWARD = 2;
+// 다이아: 업적/새 종 발견/레벨업으로 얻는다.
+export const DIAMONDS_PER_LEVEL = 3; // 레벨이 1 오를 때마다 지급
+// 새 종을 처음 발견했을 때 지급하는 다이아(희귀도 0~4: 일반~신화)
+export const NEW_SPECIES_DIAMONDS_BY_RARITY = [1, 2, 4, 8, 15];
+export const NICKNAME_CHANGE_COST = 2000;
+export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
+export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
+
+// level(그 레벨에서 다음 레벨까지) 구간에 필요한 경험치
+export function getLevelXpRequirement(level: number): number {
+  return Math.round(LEVEL_XP_BASE * Math.pow(LEVEL_XP_GROWTH, level - 1));
+}
+
+export interface LevelProgress {
+  level: number;
+  currentXp: number; // 현재 레벨 구간에서 쌓은 경험치
+  requiredXp: number; // 다음 레벨까지 필요한 경험치
+}
+
+export function getLevelProgress(xp: number): LevelProgress {
+  let level = 1;
+  let remaining = xp;
+  let required = getLevelXpRequirement(level);
+  while (remaining >= required) {
+    remaining -= required;
+    level++;
+    required = getLevelXpRequirement(level);
+  }
+  return { level, currentXp: remaining, requiredXp: required };
+}
+
+export function getLevel(xp: number): number {
+  return getLevelProgress(xp).level;
+}
 
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -120,4 +157,50 @@ export function pickRandomOfRarity(
   const pool = speciesList.filter((s) => s.rarity === rarity);
   const index = Math.min(pool.length - 1, Math.floor(random * pool.length));
   return pool[index];
+}
+
+// ---- 업적 진행도 계산 ----
+// 프론트(gameCalc.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export interface AchievementProgressInput {
+  type: 'stat' | 'collectionRarity' | 'collectionAll';
+  statKey?: 'births' | 'sold' | 'explored' | 'earned' | 'discovered' | 'terrariums';
+  target?: number;
+  rarity?: number;
+}
+
+export interface AchievementSubject {
+  discovered: string[];
+  terrariumCount: number;
+  stats: { births: number; sold: number; explored: number; earned: number };
+}
+
+export function getAchievementProgress(
+  achievement: AchievementProgressInput,
+  subject: AchievementSubject,
+  speciesList: { speciesId: string; rarity: number }[],
+): { progress: number; target: number } {
+  if (achievement.type === 'collectionAll') {
+    return { progress: subject.discovered.length, target: speciesList.length };
+  }
+  if (achievement.type === 'collectionRarity') {
+    const ids = speciesList
+      .filter((s) => s.rarity === achievement.rarity)
+      .map((s) => s.speciesId);
+    const have = ids.filter((id) => subject.discovered.includes(id)).length;
+    return { progress: have, target: ids.length };
+  }
+  const target = achievement.target ?? 0;
+  switch (achievement.statKey) {
+    case 'discovered':
+      return { progress: subject.discovered.length, target };
+    case 'terrariums':
+      return { progress: subject.terrariumCount, target };
+    case 'births':
+    case 'sold':
+    case 'explored':
+    case 'earned':
+      return { progress: subject.stats[achievement.statKey], target };
+    default:
+      return { progress: 0, target };
+  }
 }

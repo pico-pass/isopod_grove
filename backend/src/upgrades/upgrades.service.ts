@@ -13,10 +13,13 @@ export class UpgradesService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    // 시드가 기준이다. 서버가 시작될 때마다 비용/배율/설명을 시드 값으로 덮어써서
+    // 밸런스 조정이 재시작만으로 반영되게 한다. 이미 올린 레벨(currentLevel)은
+    // GameState 쪽에 저장돼 있어 영향받지 않는다.
     for (const seed of UPGRADES_SEED) {
       await this.upgradeModel.updateOne(
         { upgradeId: seed.upgradeId },
-        { $setOnInsert: seed },
+        { $set: seed },
         { upsert: true },
       );
     }

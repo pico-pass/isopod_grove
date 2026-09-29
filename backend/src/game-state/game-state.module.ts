@@ -6,6 +6,8 @@ import { GameStateController } from './game-state.controller';
 import { SpeciesModule } from '../species/species.module';
 import { UpgradesModule } from '../upgrades/upgrades.module';
 import { QuestsModule } from '../quests/quests.module';
+import { AchievementsModule } from '../achievements/achievements.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { QuestsModule } from '../quests/quests.module';
     SpeciesModule,
     UpgradesModule,
     QuestsModule,
+    AchievementsModule,
+    UsersModule,
   ],
   providers: [GameStateService],
   controllers: [GameStateController],

@@ -99,19 +99,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     description:
       '트로글로딜로 소일!',
   },
-  {
-    speciesId: 'rubberDucky',
-    name: '쿠바리스 러버 더키',
-    image: '/assets/kong/loverducky.png',
-    latin: 'Cubaris sp. "Rubber Ducky"',
-    rarity: 0,
-    price: 35,
-    rate: 0.15,
-    breed: 70,
-    filter: 'none',
-    description:
-      '노란 오리 얼굴을 떠올리게 하는 인기 많은 친구. 한 번 마주치면 쉽게 잊기 어려운 모습이에요.',
-  },
+
   {
     speciesId: 'milktea',
     name: '쿠바리스 시트러스 밀크티',
@@ -255,7 +243,19 @@ export const SPECIES_SEED: SpeciesSeed[] = [
   },
 
 
-
+  {
+    speciesId: 'rubberDucky',
+    name: '쿠바리스 러버 더키',
+    image: '/assets/kong/loverducky.png',
+    latin: 'Cubaris sp. "Rubber Ducky"',
+    rarity: 2,
+    price: 35 ,
+    rate: 0.15,
+    breed: 70,
+    filter: 'none',
+    description:
+      '노란 오리 얼굴을 떠올리게 하는 인기 많은 친구. 한 번 마주치면 쉽게 잊기 어려운 모습이에요.',
+  },
 
   {
     speciesId: 'whiteskurspaiky',
@@ -442,18 +442,6 @@ export const SPECIES_SEED: SpeciesSeed[] = [
 
 
   {
-    speciesId: 'loverducky',
-    name: '쿠바리스 러버더키',
-    image: '/assets/kong/loverducky.png',
-    latin: 'Cubaris sp. "Rubber Ducky"',
-    rarity: 3,
-    price: 35,
-    rate: 0.15,
-    breed: 70,
-    filter: 'none',
-    description:
-      '러버더키',
-  },{
     speciesId: 'wgiteTiger',
     name: '쿠바리스 화이트타이거',
     image: '/assets/kong/whitetiger.png',

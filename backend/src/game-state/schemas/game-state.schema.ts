@@ -17,6 +17,9 @@ export class DailyProgress {
   @Prop({ default: 0 })
   births: number;
 
+  @Prop({ default: 0 })
+  explore: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }
@@ -106,6 +109,14 @@ export class GameState {
   @Prop({ default: 0, min: 0 })
   pending: number;
 
+  // 숲 탐색권 보유 개수. 탐색 시 777G 대신 1장을 쓸 수 있다.
+  @Prop({ default: 0, min: 0 })
+  explorationTickets: number;
+
+  // 다이아. 업적·새 종 발견·레벨업으로 얻고, 닉네임 변경 같은 특별한 곳에 쓴다.
+  @Prop({ default: 0, min: 0 })
+  diamonds: number;
+
   @Prop({ default: 0, min: 0 })
   xp: number;
 
@@ -133,6 +144,10 @@ export class GameState {
   // key: 'observe' 또는 `${terrariumId}:${'feed' | 'mist' | 'climate'}`, value: 쿨다운 해제 시각(ms epoch)
   @Prop({ type: Map, of: Number, default: {} })
   cooldowns: Map<string, number>;
+
+  // 이미 보상을 받은 achievementId 목록. 일일 퀘스트와 달리 초기화되지 않는다.
+  @Prop({ type: [String], default: [] })
+  achievementsClaimed: string[];
 
   @Prop({ type: [LogEntrySchema], default: [] })
   logs: LogEntry[];

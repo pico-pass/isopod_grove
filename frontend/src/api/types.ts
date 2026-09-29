@@ -4,6 +4,7 @@ export interface Species {
   latin: string;
   rarity: number;
   price: number;
+  basePrice: number;
   rate: number;
   breed: number;
   image?: string;
@@ -26,6 +27,7 @@ export interface Quest {
   label: string;
   target: number;
   reward: number;
+  ticketReward: number;
 }
 
 export interface DailyProgress {
@@ -33,6 +35,7 @@ export interface DailyProgress {
   feed: number;
   observe: number;
   births: number;
+  explore: number;
   claimed: string[];
 }
 
@@ -66,6 +69,8 @@ export interface GameState {
   userId: string;
   coins: number;
   pending: number;
+  explorationTickets: number;
+  diamonds: number;
   xp: number;
   terrariums: Terrarium[];
   discovered: string[];
@@ -73,9 +78,77 @@ export interface GameState {
   daily: DailyProgress;
   stats: Stats;
   cooldowns: Record<string, number>;
+  achievementsClaimed: string[];
   logs: LogEntry[];
   paused: boolean;
   sound: boolean;
+}
+
+export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
+export type AchievementStatKey = 'births' | 'sold' | 'explored' | 'earned' | 'discovered' | 'terrariums';
+
+export interface Achievement {
+  achievementId: string;
+  label: string;
+  description: string;
+  icon: string;
+  type: AchievementType;
+  statKey?: AchievementStatKey;
+  target?: number;
+  rarity?: number;
+  reward: number;
+  ticketReward: number;
+  diamondReward: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  isMe: boolean;
+  value: number;
+}
+
+export interface LeaderboardResult {
+  entries: LeaderboardEntry[];
+  me: (LeaderboardEntry & { inTop: boolean }) | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  text: string;
+  createdAt: number;
+}
+
+export interface AdminStats {
+  content: {
+    species: number;
+    upgrades: number;
+    quests: number;
+    achievements: number;
+  };
+  players: {
+    users: number;
+    gameStates: number;
+  };
+  economy: {
+    coins: number;
+    diamonds: number;
+    explorationTickets: number;
+  };
+  server: {
+    uptimeSeconds: number;
+    nodeVersion: string;
+    platform: string;
+    memory: {
+      rssMb: number;
+      heapUsedMb: number;
+    };
+  };
 }
 
 export type CareAction = 'feed' | 'mist' | 'climate';

@@ -9,17 +9,35 @@ import { HabitatView } from './components/HabitatView';
 import { CollectionView } from './components/CollectionView';
 import { MarketView } from './components/MarketView';
 import { UpgradesView } from './components/UpgradesView';
+import { AchievementsView } from './components/AchievementsView';
+import { RankingView } from './components/RankingView';
+import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
+import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
-import { getPopulationCount } from './utils/gameCalc';
+import { getAchievementProgress, getPopulationCount } from './utils/gameCalc';
 import './App.css';
 
 function App() {
-  const { user, loading: authLoading, logout } = useAuth();
-  const { gameState, species, upgrades, quests, loading, error, toast, runAction } =
-    useGameEngine(user?._id ?? null);
+  const { user, loading: authLoading, logout, setUser } = useAuth();
+  const {
+    gameState,
+    species,
+    upgrades,
+    quests,
+    achievements,
+    levelLeaderboard,
+    incomeLeaderboard,
+    leaderboardLoading,
+    reloadLeaderboards,
+    loading,
+    error,
+    toast,
+    runAction,
+  } = useGameEngine(user?._id ?? null);
   const [view, setView] = useState<ViewKey>('habitat');
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (authLoading) {
     return (
@@ -50,7 +68,6 @@ function App() {
     );
   }
 
-  const level = Math.floor(gameState.xp / 100) + 1;
   const terrarium =
     gameState.terrariums.find((t) => t.terrariumId === selectedTerrariumId) ??
     gameState.terrariums[0];
@@ -58,19 +75,39 @@ function App() {
     (sum, t) => sum + getPopulationCount(t.population),
     0,
   );
+  const claimableAchievements = achievements.filter((a) => {
+    if (gameState.achievementsClaimed.includes(a.achievementId)) return false;
+    const { progress, target } = getAchievementProgress(a, gameState, species);
+    return target > 0 && progress >= target;
+  }).length;
 
   return (
     <>
-      <TopBar coins={gameState.coins} user={user} onLogout={logout} />
+      <TopBar
+        coins={gameState.coins}
+        explorationTickets={gameState.explorationTickets}
+        diamonds={gameState.diamonds}
+        user={user}
+        onLogout={logout}
+        onSetNickname={(nickname) =>
+          runAction(() => api.setNickname(nickname)).then((result) => {
+            if (result?.user) setUser(result.user);
+          })
+        }
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+      />
       <div className="app-shell">
         <Sidebar
           view={view}
           onChange={setView}
           populationCount={totalPopulation}
+          claimableAchievements={claimableAchievements}
           discoveredCount={gameState.discovered.length}
           speciesTotal={species.length}
-          level={level}
           xp={gameState.xp}
+          isAdmin={user.isAdmin ?? false}
+          mobileOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
         />
         <main>
           {view === 'habitat' && (
@@ -90,7 +127,7 @@ function App() {
               onCare={(action) => runAction(() => api.care(action, terrarium.terrariumId))}
               onObserve={(speciesId) => runAction(() => api.observe(speciesId))}
               onCollect={() => runAction(() => api.collect())}
-              onExplore={() => runAction(() => api.explore(terrarium.terrariumId))}
+              onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
               onClaim={(questId) => runAction(() => api.claim(questId))}
             />
           )}
@@ -103,7 +140,8 @@ function App() {
               onSell={(speciesId, quantity) =>
                 runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId))
               }
-              onExplore={() => runAction(() => api.explore(terrarium.terrariumId))}
+              onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
+              onBuyTicket={(quantity) => runAction(() => api.buyTicket(quantity))}
             />
           )}
           {view === 'upgrades' && (
@@ -115,9 +153,27 @@ function App() {
               onUpgrade={(upgradeId) => runAction(() => api.upgrade(upgradeId, terrarium.terrariumId))}
             />
           )}
+          {view === 'achievements' && (
+            <AchievementsView
+              gameState={gameState}
+              species={species}
+              achievements={achievements}
+              onClaim={(achievementId) => runAction(() => api.claimAchievement(achievementId))}
+            />
+          )}
+          {view === 'ranking' && (
+            <RankingView
+              levelLeaderboard={levelLeaderboard}
+              incomeLeaderboard={incomeLeaderboard}
+              loading={leaderboardLoading}
+              onRefresh={reloadLeaderboards}
+            />
+          )}
           {view === 'journal' && <JournalView gameState={gameState} />}
+          {view === 'admin' && user.isAdmin && <AdminView />}
         </main>
       </div>
+      <ChatWidget currentUserId={user._id} />
       <Toast toast={toast} />
     </>
   );

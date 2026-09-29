@@ -1,5 +1,11 @@
 import type { GameState, Species, Terrarium } from '../api/types';
-import { RARITIES, formatNumber } from '../utils/gameCalc';
+import {
+  EXPLORE_COST,
+  EXPLORE_TICKET_PRICE,
+  MAX_FREE_EXPLORE_TICKETS,
+  RARITIES,
+  formatNumber,
+} from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
 
 export function MarketView({
@@ -8,12 +14,14 @@ export function MarketView({
   species,
   onSell,
   onExplore,
+  onBuyTicket,
 }: {
   gameState: GameState;
   terrarium: Terrarium;
   species: Species[];
   onSell: (speciesId: string, quantity: number) => void;
-  onExplore: () => void;
+  onExplore: (useTicket?: boolean) => void;
+  onBuyTicket: (quantity: number) => void;
 }) {
   const owned = species.filter((sp) => (terrarium.population[sp.speciesId] || 0) > 0);
 
@@ -30,6 +38,7 @@ export function MarketView({
       <div className="info-banner">
         📍 <b>{terrarium.name}</b> 기준이에요. 분양과 탐색은 지금 선택한 사육장에서 이루어져요.
         <br />❤️ 번식할 수 있도록 종마다 2마리는 사육장에 남겨둬요.
+        <br />📈 분양 시세는 5분마다 오르내려요. 비쌀 때 분양해 보세요!
       </div>
 
       <div className="market-grid">
@@ -37,6 +46,7 @@ export function MarketView({
           const n = terrarium.population[sp.speciesId] || 0;
           const available = Math.max(0, n - 2);
           const bulk = Math.min(5, available);
+          const diffPct = sp.basePrice > 0 ? Math.round(((sp.price - sp.basePrice) / sp.basePrice) * 100) : 0;
           return (
             <article className="market-card" key={sp.speciesId}>
               <span className="pill" style={{ color: RARITIES[sp.rarity].color }}>
@@ -47,7 +57,13 @@ export function MarketView({
               <p>
                 보유 {n}마리 · 분양 가능 {available}마리
                 <br />
-                한 마리당 <strong>{sp.price} G</strong>
+                한 마리당 <strong>{formatNumber(sp.price)} G</strong>{' '}
+                {Math.abs(diffPct) >= 3 && (
+                  <span className={`price-trend${diffPct > 0 ? ' up' : ' down'}`}>
+                    {diffPct > 0 ? '📈' : '📉'} {diffPct > 0 ? '+' : ''}
+                    {diffPct}%
+                  </span>
+                )}
               </p>
               <div className="sell-options">
                 <button
@@ -84,9 +100,45 @@ export function MarketView({
             ))}
           </div>
         </div>
-        <button className="button primary" disabled={gameState.paused} onClick={onExplore}>
-          숲 탐색 · 180 G →
-        </button>
+        <div className="explore-buttons">
+          <button className="button primary" disabled={gameState.paused} onClick={() => onExplore(false)}>
+            숲 탐색 · {formatNumber(EXPLORE_COST)} G →
+          </button>
+          <button
+            className="button secondary"
+            disabled={gameState.paused || gameState.explorationTickets < 1}
+            onClick={() => onExplore(true)}
+          >
+            🎟️ 탐색권으로 탐색 · 보유 {gameState.explorationTickets}장
+          </button>
+        </div>
+      </section>
+
+      <section className="panel market-explore">
+        <div>
+          <p className="eyebrow">EXPLORATION TICKETS</p>
+          <h2>🎟️ 숲 탐색권</h2>
+          <p>
+            골드 대신 탐색권 1장으로 무료 탐색을 할 수 있어요. 하루에 1장씩 무료로 채워지고(최대{' '}
+            {MAX_FREE_EXPLORE_TICKETS}장), 업적·일일 목표 보상으로도 얻을 수 있어요.
+          </p>
+        </div>
+        <div className="explore-buttons">
+          <button
+            className="button secondary"
+            disabled={gameState.paused || gameState.coins < EXPLORE_TICKET_PRICE}
+            onClick={() => onBuyTicket(1)}
+          >
+            1장 구매 · {formatNumber(EXPLORE_TICKET_PRICE)} G
+          </button>
+          <button
+            className="button secondary"
+            disabled={gameState.paused || gameState.coins < EXPLORE_TICKET_PRICE * 5}
+            onClick={() => onBuyTicket(5)}
+          >
+            5장 구매 · {formatNumber(EXPLORE_TICKET_PRICE * 5)} G
+          </button>
+        </div>
       </section>
     </section>
   );

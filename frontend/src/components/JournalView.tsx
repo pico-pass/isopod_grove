@@ -9,6 +9,8 @@ const ICONS: Record<string, string> = {
   sprout: '🌱',
   flag: '🚩',
   clock: '🕒',
+  trophy: '🏆',
+  diamond: '💎',
 };
 
 export function JournalView({ gameState }: { gameState: GameState }) {
@@ -28,6 +30,7 @@ export function JournalView({ gameState }: { gameState: GameState }) {
           ['새집을 찾은 식구', gameState.stats.sold, '마리'],
           ['지금까지 받은 골드', gameState.stats.earned, 'G'],
           ['탐색 횟수', gameState.stats.explored, '회'],
+          ['보유 다이아', gameState.diamonds, '💎'],
         ].map(([label, n, unit]) => (
           <div className="journal-stat" key={label as string}>
             {label}

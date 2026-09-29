@@ -1,4 +1,4 @@
-import type { GameState, Species } from '../api/types';
+import type { Achievement, GameState, Species } from '../api/types';
 
 export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
@@ -9,7 +9,14 @@ export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
 export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
-export const EXPLORE_COST = 180;
+export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
+export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
+export const EXPLORE_COST = 777;
+// 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
+export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
+export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
+// 다이아: 업적/새 종 발견/레벨업으로 얻는다.
+export const NICKNAME_CHANGE_COST = 2000;
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },
@@ -18,6 +25,33 @@ export const RARITIES = [
   { name: '전설', color: '#e6c37e', odds: 3.5 },
   { name: '신화', color: '#aadfc0', odds: 1.5 },
 ];
+
+// level(그 레벨에서 다음 레벨까지) 구간에 필요한 경험치
+export function getLevelXpRequirement(level: number): number {
+  return Math.round(LEVEL_XP_BASE * Math.pow(LEVEL_XP_GROWTH, level - 1));
+}
+
+export interface LevelProgress {
+  level: number;
+  currentXp: number; // 현재 레벨 구간에서 쌓은 경험치
+  requiredXp: number; // 다음 레벨까지 필요한 경험치
+}
+
+export function getLevelProgress(xp: number): LevelProgress {
+  let level = 1;
+  let remaining = xp;
+  let required = getLevelXpRequirement(level);
+  while (remaining >= required) {
+    remaining -= required;
+    level++;
+    required = getLevelXpRequirement(level);
+  }
+  return { level, currentXp: remaining, requiredXp: required };
+}
+
+export function getLevel(xp: number): number {
+  return getLevelProgress(xp).level;
+}
 
 export function getCapacity(spaceLevel: number): number {
   return BASE_CAPACITY + spaceLevel * CAPACITY_PER_LEVEL;
@@ -94,4 +128,35 @@ export function formatDuration(totalSeconds: number): string {
 
 export function formatNumber(n: number): string {
   return Math.floor(n).toLocaleString('ko-KR');
+}
+
+// ---- 업적 진행도 계산 ----
+// 백엔드(game-engine.ts)에 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export function getAchievementProgress(
+  achievement: Achievement,
+  gameState: GameState,
+  speciesList: Species[],
+): { progress: number; target: number } {
+  if (achievement.type === 'collectionAll') {
+    return { progress: gameState.discovered.length, target: speciesList.length };
+  }
+  if (achievement.type === 'collectionRarity') {
+    const ids = speciesList.filter((s) => s.rarity === achievement.rarity).map((s) => s.speciesId);
+    const have = ids.filter((id) => gameState.discovered.includes(id)).length;
+    return { progress: have, target: ids.length };
+  }
+  const target = achievement.target ?? 0;
+  switch (achievement.statKey) {
+    case 'discovered':
+      return { progress: gameState.discovered.length, target };
+    case 'terrariums':
+      return { progress: gameState.terrariums.length, target };
+    case 'births':
+    case 'sold':
+    case 'explored':
+    case 'earned':
+      return { progress: gameState.stats[achievement.statKey], target };
+    default:
+      return { progress: 0, target };
+  }
 }

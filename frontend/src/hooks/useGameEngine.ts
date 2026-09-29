@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { ActionResult, GameState, Quest, Species, Upgrade } from '../api/types';
+import type {
+  Achievement,
+  ActionResult,
+  GameState,
+  LeaderboardResult,
+  Quest,
+  Species,
+  Upgrade,
+} from '../api/types';
 
 const TICK_MS = 5000;
 
@@ -15,6 +23,10 @@ export function useGameEngine(userKey: string | null) {
   const [species, setSpecies] = useState<Species[]>([]);
   const [upgrades, setUpgrades] = useState<Upgrade[]>([]);
   const [quests, setQuests] = useState<Quest[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [levelLeaderboard, setLevelLeaderboard] = useState<LeaderboardResult | null>(null);
+  const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToastState] = useState<ToastState | null>(null);
@@ -27,22 +39,44 @@ export function useGameEngine(userKey: string | null) {
     setToastState({ message, error: isError, key: toastKeyRef.current });
   }, []);
 
+  const reloadLeaderboards = useCallback(async () => {
+    setLeaderboardLoading(true);
+    try {
+      const [lvl, inc] = await Promise.all([api.getLevelLeaderboard(), api.getIncomeLeaderboard()]);
+      setLevelLeaderboard(lvl);
+      setIncomeLeaderboard(inc);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '랭킹을 불러오지 못했어요.', true);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, [showToast]);
+
+  // 랭킹은 다른 유저 데이터라 게임 본체 로딩/에러와는 분리해서, 실패해도 게임 진행에 영향을 주지 않는다.
+  // Promise.resolve().then(...)으로 감싸서 setState 호출이 이펙트 본문에서 동기로 일어나지 않게 한다.
+  useEffect(() => {
+    if (!userKey) return;
+    Promise.resolve().then(() => reloadLeaderboards());
+  }, [userKey, reloadLeaderboards]);
+
   useEffect(() => {
     if (!userKey) return;
     let cancelled = false;
 
     (async () => {
       try {
-        const [gs, sp, up, qu] = await Promise.all([
+        const [gs, sp, up, qu, ach] = await Promise.all([
           api.getGameState(),
           api.getSpecies(),
           api.getUpgrades(),
           api.getQuests(),
+          api.getAchievements(),
         ]);
         if (cancelled) return;
         setSpecies(sp);
         setUpgrades(up);
         setQuests(qu);
+        setAchievements(ach);
 
         const lastSeenKey = `isopod-grove-last-seen-${userKey}`;
         const lastSeenRaw = localStorage.getItem(lastSeenKey);
@@ -99,7 +133,7 @@ export function useGameEngine(userKey: string | null) {
   }, [userKey, loading, showToast]);
 
   const runAction = useCallback(
-    async (fn: () => Promise<ActionResult>): Promise<ActionResult | null> => {
+    async <T extends ActionResult>(fn: () => Promise<T>): Promise<T | null> => {
       try {
         const result = await fn();
         setGameState(result.gameState);
@@ -118,6 +152,11 @@ export function useGameEngine(userKey: string | null) {
     species,
     upgrades,
     quests,
+    achievements,
+    levelLeaderboard,
+    incomeLeaderboard,
+    leaderboardLoading,
+    reloadLeaderboards,
     loading,
     error,
     toast,

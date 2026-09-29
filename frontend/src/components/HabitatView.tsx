@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { GameState, Quest, Species, Terrarium } from '../api/types';
 import { WanderingCreatures } from './WanderingCreatures';
 import {
+  EXPLORE_COST,
   MAX_TERRARIUMS,
   RARITIES,
   canBreedInEnvironment,
@@ -41,7 +42,7 @@ export function HabitatView({
   onCare: (action: 'feed' | 'mist' | 'climate') => void;
   onObserve: (speciesId: string) => void;
   onCollect: () => void;
-  onExplore: () => void;
+  onExplore: (useTicket?: boolean) => void;
   onClaim: (questId: string) => void;
 }) {
   const [now, setNow] = useState(0);
@@ -346,7 +347,11 @@ export function HabitatView({
                         <i style={{ width: `${Math.min(100, (progress / q.target) * 100)}%` }} />
                       </div>
                       <div className="quest-reward">
-                        <span>{claimed ? '보상 받음' : `보상 ${q.reward} G`}</span>
+                        <span>
+                          {claimed
+                            ? '보상 받음'
+                            : `보상 ${q.reward} G${q.ticketReward ? ` · 🎟️ ${q.ticketReward}장` : ''}`}
+                        </span>
                         {complete && !claimed && (
                           <button className="claim-button" onClick={() => onClaim(q.questId)}>
                             받기
@@ -364,8 +369,19 @@ export function HabitatView({
             <span className="eyebrow">A NEW LITTLE FRIEND</span>
             <h3>낙엽 아래엔 누가 있을까?</h3>
             <p>숲을 탐색하고 새로운 종을 만나보세요.</p>
-            <button className="button primary full" disabled={gameState.paused} onClick={onExplore}>
-              🔍 숲 탐색하기 <span className="price">180 G</span>
+            <button
+              className="button primary full"
+              disabled={gameState.paused}
+              onClick={() => onExplore(false)}
+            >
+              🔍 숲 탐색하기 <span className="price">{formatNumber(EXPLORE_COST)} G</span>
+            </button>
+            <button
+              className="button secondary full ticket-button"
+              disabled={gameState.paused || gameState.explorationTickets < 1}
+              onClick={() => onExplore(true)}
+            >
+              🎟️ 탐색권으로 탐색하기 <span className="price">보유 {gameState.explorationTickets}장</span>
             </button>
           </div>
         </aside>

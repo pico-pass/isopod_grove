@@ -19,6 +19,13 @@ import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { RARITIES } from '../species/species.seed-data';
 import { CareAction } from './dto/care.dto';
 import {
+  BATTLE_ACCOUNT_XP_BY_RARITY,
+  BATTLE_COOLDOWN_MS,
+  BATTLE_DIAMOND_CHANCE_BY_RARITY,
+  BATTLE_LOSE_XP,
+  BATTLE_REWARD_BY_RARITY,
+  BATTLE_SPECIES_LOSE_XP_RATIO,
+  BATTLE_SPECIES_XP_BY_RARITY,
   CARE_COOLDOWN_MS,
   DIAMONDS_PER_LEVEL,
   EXPLORE_COST,
@@ -41,6 +48,8 @@ import {
   getAchievementProgress,
   getAutoIncomeRate,
   getBaseBreedSeconds,
+  getBattleLevel,
+  getBattleLevelProgress,
   getBreedInterval,
   getCapacity,
   getLevel,
@@ -48,7 +57,10 @@ import {
   getTerrariumCost,
   isComfortable,
   pickRandomOfRarity,
+  rollCombatStats,
+  rollEnemyLevel,
   rollRarity,
+  simulateBattle,
 } from './game-engine';
 
 interface LegacyGameState {
@@ -387,6 +399,107 @@ export class GameStateService {
       gameState,
       message: `${species?.name ?? speciesId} 관찰 완료! +${OBSERVE_REWARD} G`,
       coins: OBSERVE_REWARD,
+    };
+  }
+
+  // 보유한 종 하나를 내보내 희귀도를 굴려 뽑은 야생 개체와 맞붙는다. 실제 개체 수는 줄지 않는다.
+  async battle(userId: string, speciesId: string, difficulty: number) {
+    if (!Number.isInteger(difficulty) || difficulty < 0 || difficulty >= RARITIES.length) {
+      throw new BadRequestException('올바르지 않은 난이도예요.');
+    }
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const now = Date.now();
+    if ((gameState.cooldowns.get('battle') || 0) > now) {
+      throw new BadRequestException('조금만 기다려 주세요.');
+    }
+    gameState.cooldowns.set('battle', now + BATTLE_COOLDOWN_MS);
+
+    const speciesList = await this.speciesService.findAll();
+    const mySpecies = speciesList.find((s) => s.speciesId === speciesId);
+    if (!mySpecies) {
+      throw new BadRequestException('존재하지 않는 종이에요.');
+    }
+    // 난이도 = 상대 희귀도를 그대로 고른다. 어떤 종이 나올지만 그 등급 안에서 무작위다.
+    const enemySpecies = pickRandomOfRarity(speciesList, difficulty, Math.random());
+
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const beforeLevel = getBattleLevel(beforeXp);
+    const mine = rollCombatStats(mySpecies.rarity, beforeLevel);
+    // 야생 개체 레벨은 내 종 레벨 기준 ±1. 내가 키울수록 상대도 같이 세진다.
+    const enemyLevel = rollEnemyLevel(beforeLevel);
+    const enemy = rollCombatStats(enemySpecies.rarity, enemyLevel);
+    const { winner, log } = simulateBattle(mine, enemy);
+
+    const won = winner === 'me';
+    const speciesXpGain = won
+      ? BATTLE_SPECIES_XP_BY_RARITY[difficulty]
+      : Math.round(BATTLE_SPECIES_XP_BY_RARITY[difficulty] * BATTLE_SPECIES_LOSE_XP_RATIO);
+    gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
+    const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
+    const leveledUp = afterLevel > beforeLevel;
+
+    let reward = { coins: 0, diamonds: 0 };
+    let message: string;
+    if (won) {
+      const coins = BATTLE_REWARD_BY_RARITY[difficulty] ?? 0;
+      const diamonds =
+        Math.random() < (BATTLE_DIAMOND_CHANCE_BY_RARITY[difficulty] ?? 0) ? difficulty + 1 : 0;
+      gameState.coins += coins;
+      gameState.diamonds += diamonds;
+      gameState.stats.earned += coins;
+      gameState.stats.battlesWon++;
+      this.grantXp(gameState, BATTLE_ACCOUNT_XP_BY_RARITY[difficulty] ?? 0);
+      reward = { coins, diamonds };
+      message = `승리! 야생 ${enemySpecies.name}을(를) 이겼어요. +${coins} G${diamonds ? ` · 💎 ${diamonds}개` : ''}`;
+    } else {
+      gameState.stats.battlesLost++;
+      this.grantXp(gameState, BATTLE_LOSE_XP);
+      message = `아쉽게 패배했어요. 야생 ${enemySpecies.name}이(가) 더 강했어요.`;
+    }
+    if (leveledUp) {
+      message += ` 🆙 ${mySpecies.name}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
+    }
+    this.pushLog(gameState, won ? 'trophy' : 'leaf', `${mySpecies.name} 배틀 - ${message}`);
+
+    await gameState.save();
+    const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
+    return {
+      gameState,
+      message,
+      result: won ? ('win' as const) : ('lose' as const),
+      difficulty,
+      mine: {
+        speciesId: mySpecies.speciesId,
+        name: mySpecies.name,
+        image: mySpecies.image,
+        filter: mySpecies.filter,
+        rarity: mySpecies.rarity,
+        stats: mine,
+        level: beforeLevel,
+      },
+      enemy: {
+        speciesId: enemySpecies.speciesId,
+        name: enemySpecies.name,
+        image: enemySpecies.image,
+        filter: enemySpecies.filter,
+        rarity: enemySpecies.rarity,
+        stats: enemy,
+        level: enemyLevel,
+      },
+      log,
+      reward,
+      speciesLevel: {
+        speciesId: mySpecies.speciesId,
+        leveledUp,
+        level: afterLevel,
+        currentXp: afterProgress.currentXp,
+        requiredXp: afterProgress.requiredXp,
+        xpGained: speciesXpGain,
+      },
     };
   }
 

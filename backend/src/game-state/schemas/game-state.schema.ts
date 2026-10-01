@@ -41,6 +41,12 @@ export class Stats {
 
   @Prop({ default: 0 })
   played: number;
+
+  @Prop({ default: 0 })
+  battlesWon: number;
+
+  @Prop({ default: 0 })
+  battlesLost: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 
@@ -119,6 +125,11 @@ export class GameState {
 
   @Prop({ default: 0, min: 0 })
   xp: number;
+
+  // 야생 배틀 전투 경험치. key: speciesId, value: 그 종이 누적으로 쌓은 전투 경험치.
+  // 레벨은 저장하지 않고 항상 이 값에서 계산한다(계정 레벨의 xp/getLevel과 같은 방식).
+  @Prop({ type: Map, of: Number, default: {} })
+  battleXp: Map<string, number>;
 
   // 보유 사육장 목록 (최대 MAX_TERRARIUMS개). 첫 번째가 기본 사육장이다.
   @Prop({ type: [TerrariumSchema], default: [] })

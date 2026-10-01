@@ -15,6 +15,7 @@ import { BuyTicketDto } from './dto/buy-ticket.dto';
 import { CreateTerrariumDto } from './dto/create-terrarium.dto';
 import { MoveSpeciesDto } from './dto/move-species.dto';
 import { SetNicknameDto } from './dto/set-nickname.dto';
+import { BattleDto } from './dto/battle.dto';
 
 @Controller('game-state')
 @UseGuards(JwtAuthGuard)
@@ -44,6 +45,11 @@ export class GameStateController {
   @Post('collect')
   collect(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.collect(user.userId);
+  }
+
+  @Post('battle')
+  battle(@CurrentUser() user: AuthenticatedUser, @Body() dto: BattleDto) {
+    return this.gameStateService.battle(user.userId, dto.speciesId, dto.difficulty);
   }
 
   @Post('explore')

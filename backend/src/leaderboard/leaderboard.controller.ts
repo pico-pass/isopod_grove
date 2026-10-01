@@ -18,4 +18,9 @@ export class LeaderboardController {
   income(@CurrentUser() user: AuthenticatedUser) {
     return this.leaderboardService.getIncomeLeaderboard(user.userId);
   }
+
+  @Get('pvp')
+  pvp(@CurrentUser() user: AuthenticatedUser) {
+    return this.leaderboardService.getPvpLeaderboard(user.userId);
+  }
 }

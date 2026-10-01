@@ -57,6 +57,20 @@ export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
 // 극한 훈련: 켜면 코인 비용은 그대로지만 다이아 1개를 추가로 쓰고, 경험치가 12배로 뛴다.
 export const TRAIN_EXTREME_DIAMOND_COST = 1;
 export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
+// ---- 유저 PvP(투기장) ----
+// 비동기 매칭: 상대가 접속 중이 아니어도 상대가 직접 지정해 둔 "방어 식구" 스냅샷과 즉시 대결한다.
+// 이겨도 상대의 자원·레이팅은 전혀 건드리지 않는다(레이팅은 공격자인 나만 변동).
+export const PVP_COOLDOWN_MS = 10_000;
+export const PVP_RATING_DEFAULT = 1000;
+export const PVP_RATING_WIN_DELTA = 18;
+export const PVP_RATING_LOSE_DELTA = 12;
+// 이 범위(±) 안에서 순서대로 상대를 찾고, 마지막 값은 사실상 전체 범위다.
+export const PVP_MATCH_RATING_BANDS = [150, 400, 1000, 100_000];
+export const PVP_WIN_COIN_REWARD = 120;
+export const PVP_WIN_DIAMOND_CHANCE = 0.08;
+export const PVP_WIN_SPECIES_XP = 30;
+export const PVP_WIN_ACCOUNT_XP = 20;
+export const PVP_LOSE_ACCOUNT_XP = 3;
 
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다

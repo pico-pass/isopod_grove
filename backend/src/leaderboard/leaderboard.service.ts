@@ -62,6 +62,18 @@ export class LeaderboardService {
     );
   }
 
+  async getPvpLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    const states = await this.gameStateModel
+      .find({}, { userId: 1, pvpRating: 1 })
+      .lean<{ userId: Types.ObjectId; pvpRating: number }[]>();
+
+    const sorted = [...states].sort((a, b) => b.pvpRating - a.pvpRating);
+    return this.buildResult(
+      sorted.map((s) => ({ userId: s.userId, value: s.pvpRating })),
+      requesterId,
+    );
+  }
+
   async getIncomeLeaderboard(requesterId: string): Promise<LeaderboardResult> {
     const speciesList = await this.speciesService.findAll();
     const rateById = new Map(speciesList.map((s) => [s.speciesId, s.rate]));

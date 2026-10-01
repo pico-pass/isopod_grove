@@ -47,6 +47,12 @@ export class Stats {
 
   @Prop({ default: 0 })
   battlesLost: number;
+
+  @Prop({ default: 0 })
+  pvpWins: number;
+
+  @Prop({ default: 0 })
+  pvpLosses: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 
@@ -130,6 +136,15 @@ export class GameState {
   // 레벨은 저장하지 않고 항상 이 값에서 계산한다(계정 레벨의 xp/getLevel과 같은 방식).
   @Prop({ type: Map, of: Number, default: {} })
   battleXp: Map<string, number>;
+
+  // 투기장(PvP) 방어 식구로 지정한 종. 다른 유저가 투기장에서 상대로 만날 수 있다.
+  // 지정 전엔 매칭 대상(상대)이 되지 않는다. 공격하는 건 이 값과 무관하게 언제든 가능하다.
+  @Prop({ type: String, default: null })
+  pvpDefenseSpeciesId: string | null;
+
+  // 투기장 레이팅. 기본 1000이며, 승패로 공격자인 나만 바뀐다(상대는 영향 없음).
+  @Prop({ default: 1000, min: 0 })
+  pvpRating: number;
 
   // 보유 사육장 목록 (최대 MAX_TERRARIUMS개). 첫 번째가 기본 사육장이다.
   @Prop({ type: [TerrariumSchema], default: [] })

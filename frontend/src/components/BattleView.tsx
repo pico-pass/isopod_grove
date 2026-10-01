@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { BattleResponse, BattleTurn, GameState, Species, TrainResponse } from '../api/types';
+import { useEffect, useState } from 'react';
+import type { BattleResponse, GameState, Species, TrainResponse } from '../api/types';
 import {
   BATTLE_DIAMOND_CHANCE_BY_RARITY,
   BATTLE_REWARD_BY_RARITY,
@@ -16,54 +16,11 @@ import {
   getTotalPopulationBySpecies,
   getTrainCost,
 } from '../utils/gameCalc';
+import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
+import { FighterCard } from './FighterCard';
 import { SpeciesImage } from './SpeciesImage';
 
-const TURN_DELAY_MS = 550;
 type Mode = 'wild' | 'train';
-
-// 지금까지 공개된 턴만 보고 특정 쪽의 "현재" HP를 계산한다.
-// 내 HP는 상대가 공격한 턴(attacker: 'enemy')의 결과에서, 상대 HP는 내가 공격한 턴에서 나온다.
-function hpAfter(log: BattleTurn[], visibleCount: number, side: 'me' | 'enemy', startHp: number): number {
-  const damagedBy: 'me' | 'enemy' = side === 'me' ? 'enemy' : 'me';
-  for (let i = Math.min(visibleCount, log.length) - 1; i >= 0; i--) {
-    if (log[i].attacker === damagedBy) return log[i].remainingHp;
-  }
-  return startHp;
-}
-
-function FighterCard({
-  fighter,
-  label,
-  hp,
-  acting,
-}: {
-  fighter: BattleResponse['mine'];
-  label: string;
-  hp: number;
-  acting: boolean;
-}) {
-  const maxHp = fighter.stats.hp;
-  return (
-    <div className={`fighter-card${acting ? ' acting' : ''}`}>
-      <span className="pill" style={{ color: RARITIES[fighter.rarity].color }}>
-        {RARITIES[fighter.rarity].name} · Lv.{fighter.level}
-      </span>
-      <SpeciesImage species={fighter} style={{ filter: fighter.filter }} />
-      <h3>{fighter.name}</h3>
-      <small>{label}</small>
-      <div className="hp-bar">
-        <i style={{ width: `${Math.max(0, (hp / maxHp) * 100)}%` }} />
-      </div>
-      <small>
-        ❤️ {Math.max(0, hp)} / {maxHp}
-      </small>
-      <div className="fighter-stats">
-        <span>⚔️ {fighter.stats.atk}</span>
-        <span>🛡️ {fighter.stats.def}</span>
-      </div>
-    </div>
-  );
-}
 
 export function BattleView({
   gameState,
@@ -85,28 +42,13 @@ export function BattleView({
   const [trainResult, setTrainResult] = useState<TrainResponse | null>(null);
   const [fighting, setFighting] = useState(false);
   const [training, setTraining] = useState(false);
-  const [visibleTurns, setVisibleTurns] = useState(0);
   const [now, setNow] = useState(0);
-  const logRef = useRef<HTMLDivElement>(null);
+  const { visibleTurns, setVisibleTurns, animating, logRef } = useBattleReplay(result?.log);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-
-  // 전투 중엔 아직 공개 안 된 턴이 남아 있다는 뜻 — 이 값 자체가 "재생 중"인지를 알려준다.
-  const animating = !!result && visibleTurns < result.log.length;
-
-  // 턴을 하나씩 공개하는 타이머. 공개된 턴 수가 바뀔 때마다 다음 타이머를 다시 건다.
-  useEffect(() => {
-    if (!animating) return;
-    const timer = setTimeout(() => setVisibleTurns((n) => n + 1), TURN_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [animating, visibleTurns]);
-
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' });
-  }, [visibleTurns]);
 
   const totals = getTotalPopulationBySpecies(gameState);
   const owned = species.filter((sp) => (totals[sp.speciesId] || 0) > 0);

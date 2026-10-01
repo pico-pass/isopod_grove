@@ -1422,6 +1422,41 @@ main {
   color: var(--gold);
   font-weight: 700;
 }
+.pvp-opponent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pvp-opponent-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pvp-opponent-header div {
+  display: flex;
+  flex-direction: column;
+}
+.pvp-opponent-header small {
+  color: var(--muted);
+}
+.pvp-opponent-species {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pvp-opponent-species img {
+  width: 48px;
+  height: 48px;
+}
+.pvp-opponent-species div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pvp-opponent-species small {
+  color: var(--muted);
+}
 
 /* Upgrades */
 .upgrade-grid {

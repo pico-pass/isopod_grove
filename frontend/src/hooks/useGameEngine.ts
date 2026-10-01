@@ -26,6 +26,7 @@ export function useGameEngine(userKey: string | null) {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [levelLeaderboard, setLevelLeaderboard] = useState<LeaderboardResult | null>(null);
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
+  const [pvpLeaderboard, setPvpLeaderboard] = useState<LeaderboardResult | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,9 +43,14 @@ export function useGameEngine(userKey: string | null) {
   const reloadLeaderboards = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
-      const [lvl, inc] = await Promise.all([api.getLevelLeaderboard(), api.getIncomeLeaderboard()]);
+      const [lvl, inc, pvp] = await Promise.all([
+        api.getLevelLeaderboard(),
+        api.getIncomeLeaderboard(),
+        api.getPvpLeaderboard(),
+      ]);
       setLevelLeaderboard(lvl);
       setIncomeLeaderboard(inc);
+      setPvpLeaderboard(pvp);
     } catch (e) {
       showToast(e instanceof Error ? e.message : '랭킹을 불러오지 못했어요.', true);
     } finally {
@@ -155,11 +161,13 @@ export function useGameEngine(userKey: string | null) {
     achievements,
     levelLeaderboard,
     incomeLeaderboard,
+    pvpLeaderboard,
     leaderboardLoading,
     reloadLeaderboards,
     loading,
     error,
     toast,
+    showToast,
     runAction,
   };
 }

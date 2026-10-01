@@ -47,6 +47,8 @@ export interface Stats {
   played: number;
   battlesWon: number;
   battlesLost: number;
+  pvpWins: number;
+  pvpLosses: number;
 }
 
 export interface LogEntry {
@@ -76,6 +78,9 @@ export interface GameState {
   xp: number;
   // 야생 배틀 전투 경험치. key: speciesId. 레벨은 getBattleLevelProgress로 계산한다.
   battleXp: Record<string, number>;
+  // 투기장(PvP) 방어 식구로 지정한 종. 지정 전엔 null.
+  pvpDefenseSpeciesId: string | null;
+  pvpRating: number;
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;
@@ -204,6 +209,45 @@ export interface TrainResponse {
   message: string;
   cost: number;
   diamondCost: number;
+  speciesLevel: SpeciesLevelResult;
+}
+
+export interface PvpOpponentSpecies {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+}
+
+export interface PvpOpponent {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  pvpRating: number;
+  species: PvpOpponentSpecies;
+  level: number;
+}
+
+export interface PvpOpponentResult {
+  opponent: PvpOpponent | null;
+  message?: string;
+}
+
+export interface PvpFighter extends BattleFighter {
+  ownerName?: string;
+}
+
+export interface PvpBattleResponse {
+  gameState: GameState;
+  message: string;
+  result: 'win' | 'lose';
+  rating: number;
+  ratingDelta: number;
+  mine: BattleFighter;
+  enemy: PvpFighter;
+  log: BattleTurn[];
+  reward: { coins: number; diamonds: number };
   speciesLevel: SpeciesLevelResult;
 }
 

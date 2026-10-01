@@ -42,6 +42,15 @@ import {
   NICKNAME_CHANGE_COST,
   OBSERVE_COOLDOWN_MS,
   OBSERVE_REWARD,
+  PVP_COOLDOWN_MS,
+  PVP_LOSE_ACCOUNT_XP,
+  PVP_MATCH_RATING_BANDS,
+  PVP_RATING_LOSE_DELTA,
+  PVP_RATING_WIN_DELTA,
+  PVP_WIN_ACCOUNT_XP,
+  PVP_WIN_COIN_REWARD,
+  PVP_WIN_DIAMOND_CHANCE,
+  PVP_WIN_SPECIES_XP,
   STEP_SECONDS,
   TRAIN_COOLDOWN_MS_BY_INTENSITY,
   TRAIN_EXTREME_DIAMOND_COST,
@@ -584,6 +593,240 @@ export class GameStateService {
         currentXp: afterProgress.currentXp,
         requiredXp: afterProgress.requiredXp,
         xpGained: xpGain,
+      },
+    };
+  }
+
+  // 투기장(PvP) 방어 식구를 지정한다. 지정해 둬야 다른 유저의 매칭 대상(상대)이 될 수 있다.
+  async setPvpDefense(userId: string, speciesId: string) {
+    const gameState = await this.getOrThrow(userId);
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const species = await this.speciesService.findOne(speciesId);
+    if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+    gameState.pvpDefenseSpeciesId = speciesId;
+    this.pushLog(
+      gameState,
+      'flag',
+      `${species.name}을(를) 투기장 방어 식구로 지정했어요.`,
+    );
+
+    await gameState.save();
+    return { gameState, message: `${species.name}이(가) 방어 식구가 됐어요!` };
+  }
+
+  // 내 레이팅과 비슷한 범위에서, 방어 식구를 지정해 둔 다른 유저를 무작위로 찾는다.
+  private async pickPvpOpponent(myUserId: string, myRating: number) {
+    for (const band of PVP_MATCH_RATING_BANDS) {
+      const candidates = await this.gameStateModel
+        .find(
+          {
+            userId: { $ne: new Types.ObjectId(myUserId) },
+            pvpDefenseSpeciesId: { $ne: null },
+            pvpRating: { $gte: Math.max(0, myRating - band), $lte: myRating + band },
+          },
+          { userId: 1, pvpRating: 1, pvpDefenseSpeciesId: 1, terrariums: 1, battleXp: 1 },
+        )
+        .limit(50)
+        .lean<
+          {
+            userId: Types.ObjectId;
+            pvpRating: number;
+            pvpDefenseSpeciesId: string;
+            terrariums: { population: Record<string, number> }[];
+            battleXp: Record<string, number>;
+          }[]
+        >();
+
+      const shuffled = candidates.sort(() => Math.random() - 0.5);
+      for (const candidate of shuffled) {
+        const total = (candidate.terrariums || []).reduce(
+          (sum, t) => sum + (t.population?.[candidate.pvpDefenseSpeciesId] || 0),
+          0,
+        );
+        if (total > 0) return candidate;
+      }
+    }
+    return null;
+  }
+
+  // 도전할 상대를 무작위로 찾는다(결과를 확정하지 않는 읽기 전용 동작 — 다시 눌러 재매칭할 수 있다).
+  async findPvpOpponent(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const candidate = await this.pickPvpOpponent(userId, gameState.pvpRating);
+    if (!candidate) {
+      return {
+        opponent: null,
+        message:
+          '아직 도전할 수 있는 상대가 없어요. 다른 숲지기가 방어 식구를 지정하면 나타나요.',
+      };
+    }
+
+    const species = await this.speciesService.findOne(
+      candidate.pvpDefenseSpeciesId,
+    );
+    if (!species) {
+      return {
+        opponent: null,
+        message: '상대를 찾지 못했어요. 다시 시도해 주세요.',
+      };
+    }
+    const user = await this.usersService.findById(candidate.userId.toString());
+    const level = getBattleLevel(
+      candidate.battleXp?.[candidate.pvpDefenseSpeciesId] || 0,
+    );
+
+    return {
+      opponent: {
+        userId: candidate.userId.toString(),
+        displayName: user ? effectiveDisplayName(user) : '숲지기',
+        avatarUrl: user?.avatarUrl,
+        pvpRating: candidate.pvpRating,
+        species: {
+          speciesId: species.speciesId,
+          name: species.name,
+          image: species.image,
+          filter: species.filter,
+          rarity: species.rarity,
+        },
+        level,
+      },
+    };
+  }
+
+  // 상대가 지정해 둔 방어 식구의 "현재" 데이터를 서버에서 직접 다시 읽어 전투한다.
+  // 클라이언트가 어떤 상대·스탯을 보여줬는지는 신뢰하지 않고, 공격자(나)의 문서만 저장한다.
+  async pvpBattle(userId: string, speciesId: string, opponentUserId: string) {
+    if (opponentUserId === userId) {
+      throw new BadRequestException('자기 자신과는 대결할 수 없어요.');
+    }
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const now = Date.now();
+    if ((gameState.cooldowns.get('pvp') || 0) > now) {
+      throw new BadRequestException('조금만 기다려 주세요.');
+    }
+
+    const opponentState = await this.gameStateModel
+      .findOne({ userId: new Types.ObjectId(opponentUserId) })
+      .lean<{
+        pvpDefenseSpeciesId: string | null;
+        battleXp: Record<string, number>;
+        terrariums: { population: Record<string, number> }[];
+      }>();
+    const opponentSpeciesId = opponentState?.pvpDefenseSpeciesId;
+    if (!opponentState || !opponentSpeciesId) {
+      throw new BadRequestException('상대를 찾을 수 없어요. 다시 매칭해 주세요.');
+    }
+    const opponentTotal = (opponentState.terrariums || []).reduce(
+      (sum, t) => sum + (t.population?.[opponentSpeciesId] || 0),
+      0,
+    );
+    if (opponentTotal <= 0) {
+      throw new BadRequestException(
+        '상대가 더 이상 그 식구를 키우지 않아요. 다시 매칭해 주세요.',
+      );
+    }
+
+    const speciesList = await this.speciesService.findAll();
+    const mySpecies = speciesList.find((s) => s.speciesId === speciesId);
+    const opponentSpecies = speciesList.find(
+      (s) => s.speciesId === opponentSpeciesId,
+    );
+    if (!mySpecies || !opponentSpecies) {
+      throw new BadRequestException('존재하지 않는 종이에요.');
+    }
+
+    const myLevel = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
+    const opponentLevel = getBattleLevel(
+      opponentState.battleXp?.[opponentSpeciesId] || 0,
+    );
+    const mine = rollCombatStats(mySpecies.rarity, myLevel);
+    const enemy = rollCombatStats(opponentSpecies.rarity, opponentLevel);
+    const { winner, log } = simulateBattle(mine, enemy);
+    const won = winner === 'me';
+
+    gameState.cooldowns.set('pvp', now + PVP_COOLDOWN_MS);
+
+    const beforeRating = gameState.pvpRating;
+    const ratingDelta = won ? PVP_RATING_WIN_DELTA : -PVP_RATING_LOSE_DELTA;
+    gameState.pvpRating = Math.max(0, beforeRating + ratingDelta);
+
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const speciesXpGain = won
+      ? PVP_WIN_SPECIES_XP
+      : Math.round(PVP_WIN_SPECIES_XP * BATTLE_SPECIES_LOSE_XP_RATIO);
+    gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
+    const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
+    const leveledUp = afterLevel > myLevel;
+
+    const opponentUser = await this.usersService.findById(opponentUserId);
+    const opponentName = opponentUser
+      ? effectiveDisplayName(opponentUser)
+      : '다른 숲지기';
+
+    let reward = { coins: 0, diamonds: 0 };
+    let message: string;
+    if (won) {
+      const diamonds = Math.random() < PVP_WIN_DIAMOND_CHANCE ? 1 : 0;
+      gameState.coins += PVP_WIN_COIN_REWARD;
+      gameState.diamonds += diamonds;
+      gameState.stats.earned += PVP_WIN_COIN_REWARD;
+      gameState.stats.pvpWins++;
+      this.grantXp(gameState, PVP_WIN_ACCOUNT_XP);
+      reward = { coins: PVP_WIN_COIN_REWARD, diamonds };
+      message = `승리! ${opponentName}님의 ${opponentSpecies.name}을(를) 이겼어요. +${PVP_WIN_COIN_REWARD} G${diamonds ? ' · 💎 1개' : ''} · 레이팅 +${PVP_RATING_WIN_DELTA}`;
+    } else {
+      gameState.stats.pvpLosses++;
+      this.grantXp(gameState, PVP_LOSE_ACCOUNT_XP);
+      message = `아쉽게 패배했어요. ${opponentName}님의 ${opponentSpecies.name}이(가) 더 강했어요. 레이팅 -${PVP_RATING_LOSE_DELTA}`;
+    }
+    if (leveledUp) {
+      message += ` 🆙 ${mySpecies.name}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
+    }
+    this.pushLog(gameState, won ? 'trophy' : 'leaf', `투기장 - ${message}`);
+
+    await gameState.save();
+    const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
+    return {
+      gameState,
+      message,
+      result: won ? ('win' as const) : ('lose' as const),
+      rating: gameState.pvpRating,
+      ratingDelta: gameState.pvpRating - beforeRating,
+      mine: {
+        speciesId: mySpecies.speciesId,
+        name: mySpecies.name,
+        image: mySpecies.image,
+        filter: mySpecies.filter,
+        rarity: mySpecies.rarity,
+        stats: mine,
+        level: myLevel,
+      },
+      enemy: {
+        speciesId: opponentSpecies.speciesId,
+        name: opponentSpecies.name,
+        image: opponentSpecies.image,
+        filter: opponentSpecies.filter,
+        rarity: opponentSpecies.rarity,
+        stats: enemy,
+        level: opponentLevel,
+        ownerName: opponentName,
+      },
+      log,
+      reward,
+      speciesLevel: {
+        speciesId: mySpecies.speciesId,
+        leveledUp,
+        level: afterLevel,
+        currentXp: afterProgress.currentXp,
+        requiredXp: afterProgress.requiredXp,
+        xpGained: speciesXpGain,
       },
     };
   }

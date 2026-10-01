@@ -12,6 +12,7 @@ import { UpgradesView } from './components/UpgradesView';
 import { AchievementsView } from './components/AchievementsView';
 import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
+import { PvpView } from './components/PvpView';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
@@ -29,11 +30,13 @@ function App() {
     achievements,
     levelLeaderboard,
     incomeLeaderboard,
+    pvpLeaderboard,
     leaderboardLoading,
     reloadLeaderboards,
     loading,
     error,
     toast,
+    showToast,
     runAction,
   } = useGameEngine(user?._id ?? null);
   const [view, setView] = useState<ViewKey>('habitat');
@@ -166,6 +169,7 @@ function App() {
             <RankingView
               levelLeaderboard={levelLeaderboard}
               incomeLeaderboard={incomeLeaderboard}
+              pvpLeaderboard={pvpLeaderboard}
               loading={leaderboardLoading}
               onRefresh={reloadLeaderboards}
             />
@@ -177,6 +181,24 @@ function App() {
               onBattle={(speciesId, difficulty) => runAction(() => api.battle(speciesId, difficulty))}
               onTrain={(speciesId, intensity, extreme) =>
                 runAction(() => api.train(speciesId, intensity, extreme))
+              }
+            />
+          )}
+          {view === 'pvp' && (
+            <PvpView
+              gameState={gameState}
+              species={species}
+              onSetDefense={(speciesId) => runAction(() => api.setPvpDefense(speciesId))}
+              onFindOpponent={async () => {
+                try {
+                  return await api.getPvpOpponent();
+                } catch (e) {
+                  showToast(e instanceof Error ? e.message : '상대를 찾지 못했어요.', true);
+                  return null;
+                }
+              }}
+              onPvpBattle={(speciesId, opponentUserId) =>
+                runAction(() => api.pvpBattle(speciesId, opponentUserId))
               }
             />
           )}

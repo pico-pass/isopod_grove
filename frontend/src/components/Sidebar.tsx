@@ -8,6 +8,7 @@ export type ViewKey =
   | 'achievements'
   | 'ranking'
   | 'battle'
+  | 'pvp'
   | 'journal'
   | 'admin';
 
@@ -19,6 +20,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'achievements', label: '업적', icon: '🏆' },
   { key: 'ranking', label: '랭킹', icon: '📊' },
   { key: 'battle', label: '야생 배틀', icon: '⚔️' },
+  { key: 'pvp', label: '투기장', icon: '🆚' },
   { key: 'journal', label: '사육 일지', icon: '📔' },
 ];
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { LeaderboardEntry, LeaderboardResult } from '../api/types';
 import { formatNumber } from '../utils/gameCalc';
 
-type RankingTab = 'level' | 'income';
+type RankingTab = 'level' | 'income' | 'pvp';
 
 const RANK_MEDAL: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -53,11 +53,13 @@ function RankingList({ result, loading, valueOf }: {
 export function RankingView({
   levelLeaderboard,
   incomeLeaderboard,
+  pvpLeaderboard,
   loading,
   onRefresh,
 }: {
   levelLeaderboard: LeaderboardResult | null;
   incomeLeaderboard: LeaderboardResult | null;
+  pvpLeaderboard: LeaderboardResult | null;
   loading: boolean;
   onRefresh: () => void;
 }) {
@@ -83,17 +85,24 @@ export function RankingView({
         <button className={`filter${tab === 'income' ? ' active' : ''}`} onClick={() => setTab('income')}>
           분당 수익 랭킹
         </button>
+        <button className={`filter${tab === 'pvp' ? ' active' : ''}`} onClick={() => setTab('pvp')}>
+          투기장 레이팅
+        </button>
       </div>
 
       <section className="panel">
-        {tab === 'level' ? (
+        {tab === 'level' && (
           <RankingList result={levelLeaderboard} loading={loading} valueOf={(v) => `Lv. ${v}`} />
-        ) : (
+        )}
+        {tab === 'income' && (
           <RankingList
             result={incomeLeaderboard}
             loading={loading}
             valueOf={(v) => `${formatNumber(v)} G/분`}
           />
+        )}
+        {tab === 'pvp' && (
+          <RankingList result={pvpLeaderboard} loading={loading} valueOf={(v) => `${formatNumber(v)}점`} />
         )}
       </section>
     </section>

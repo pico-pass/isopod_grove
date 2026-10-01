@@ -32,6 +32,11 @@ export const TRAIN_EXTREME_DIAMOND_COST = 1;
 export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
 // 강도별 훈련 쿨다운(초). 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const TRAIN_COOLDOWN_SECONDS_BY_INTENSITY = [30, 120, 480];
+// 투기장(PvP). 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const PVP_RATING_WIN_DELTA = 18;
+export const PVP_RATING_LOSE_DELTA = 12;
+export const PVP_WIN_COIN_REWARD = 120;
+export const PVP_WIN_DIAMOND_CHANCE = 0.08;
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },

@@ -7,6 +7,8 @@ import type {
   ChatMessage,
   GameState,
   LeaderboardResult,
+  PvpBattleResponse,
+  PvpOpponentResult,
   Quest,
   Species,
   TrainResponse,
@@ -58,6 +60,7 @@ export const api = {
   getAchievements: () => request<Achievement[]>('/achievements'),
   getLevelLeaderboard: () => request<LeaderboardResult>('/leaderboard/level'),
   getIncomeLeaderboard: () => request<LeaderboardResult>('/leaderboard/income'),
+  getPvpLeaderboard: () => request<LeaderboardResult>('/leaderboard/pvp'),
 
   getGameState: () => request<GameState>('/game-state'),
 
@@ -70,6 +73,11 @@ export const api = {
     post<BattleResponse>('/game-state/battle', { speciesId, difficulty }),
   train: (speciesId: string, intensity: number, extreme?: boolean) =>
     post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
+  setPvpDefense: (speciesId: string) =>
+    post<ActionResult>('/game-state/pvp/defense', { speciesId }),
+  getPvpOpponent: () => request<PvpOpponentResult>('/game-state/pvp/opponent'),
+  pvpBattle: (speciesId: string, opponentUserId: string) =>
+    post<PvpBattleResponse>('/game-state/pvp/battle', { speciesId, opponentUserId }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),

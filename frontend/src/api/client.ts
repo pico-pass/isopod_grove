@@ -93,6 +93,8 @@ export const api = {
     post<ActionResult>('/game-state/claim-achievement', { achievementId }),
   setNickname: (nickname: string) =>
     post<ActionResult & { user: AuthUser }>('/game-state/set-nickname', { nickname }),
+  setSpeciesNickname: (speciesId: string, nickname: string) =>
+    post<ActionResult>('/game-state/species-nickname', { speciesId, nickname }),
 
   getAdminStats: () => request<AdminStats>('/admin/stats'),
 

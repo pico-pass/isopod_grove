@@ -19,6 +19,7 @@ import { BattleDto } from './dto/battle.dto';
 import { TrainDto } from './dto/train.dto';
 import { PvpSetDefenseDto } from './dto/pvp-set-defense.dto';
 import { PvpBattleDto } from './dto/pvp-battle.dto';
+import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 
 @Controller('game-state')
 @UseGuards(JwtAuthGuard)
@@ -166,5 +167,17 @@ export class GameStateController {
     @Body() dto: SetNicknameDto,
   ) {
     return this.gameStateService.setNickname(user.userId, dto.nickname);
+  }
+
+  @Post('species-nickname')
+  setSpeciesNickname(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SetSpeciesNicknameDto,
+  ) {
+    return this.gameStateService.setSpeciesNickname(
+      user.userId,
+      dto.speciesId,
+      dto.nickname,
+    );
   }
 }

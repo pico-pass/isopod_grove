@@ -81,6 +81,8 @@ export interface GameState {
   // 투기장(PvP) 방어 식구로 지정한 종. 지정 전엔 null.
   pvpDefenseSpeciesId: string | null;
   pvpRating: number;
+  // 종(콩벌레)에 붙인 내 전용 별명. key: speciesId, value: 별명. 없으면 기본 이름을 쓴다.
+  speciesNicknames: Record<string, string>;
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;

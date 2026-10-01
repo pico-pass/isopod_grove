@@ -17,7 +17,7 @@ import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
-import { getAchievementProgress, getPopulationCount } from './utils/gameCalc';
+import { applySpeciesNicknames, getAchievementProgress, getPopulationCount } from './utils/gameCalc';
 import './App.css';
 
 function App() {
@@ -72,6 +72,8 @@ function App() {
     );
   }
 
+  // 내가 지정한 종 별명을 이름에 반영한 목록. 나에게만 보이는 표시용이라 원본 species는 그대로 둔다.
+  const displaySpecies = applySpeciesNicknames(species, gameState);
   const terrarium =
     gameState.terrariums.find((t) => t.terrariumId === selectedTerrariumId) ??
     gameState.terrariums[0];
@@ -117,7 +119,7 @@ function App() {
           {view === 'habitat' && (
             <HabitatView
               gameState={gameState}
-              species={species}
+              species={displaySpecies}
               quests={quests}
               terrarium={terrarium}
               onSelectTerrarium={setSelectedTerrariumId}
@@ -135,12 +137,20 @@ function App() {
               onClaim={(questId) => runAction(() => api.claim(questId))}
             />
           )}
-          {view === 'collection' && <CollectionView gameState={gameState} species={species} />}
+          {view === 'collection' && (
+            <CollectionView
+              gameState={gameState}
+              species={displaySpecies}
+              onSetNickname={(speciesId, nickname) =>
+                runAction(() => api.setSpeciesNickname(speciesId, nickname))
+              }
+            />
+          )}
           {view === 'market' && (
             <MarketView
               gameState={gameState}
               terrarium={terrarium}
-              species={species}
+              species={displaySpecies}
               onSell={(speciesId, quantity) =>
                 runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId))
               }
@@ -177,7 +187,7 @@ function App() {
           {view === 'battle' && (
             <BattleView
               gameState={gameState}
-              species={species}
+              species={displaySpecies}
               onBattle={(speciesId, difficulty) => runAction(() => api.battle(speciesId, difficulty))}
               onTrain={(speciesId, intensity, extreme) =>
                 runAction(() => api.train(speciesId, intensity, extreme))
@@ -187,7 +197,7 @@ function App() {
           {view === 'pvp' && (
             <PvpView
               gameState={gameState}
-              species={species}
+              species={displaySpecies}
               onSetDefense={(speciesId) => runAction(() => api.setPvpDefense(speciesId))}
               onFindOpponent={async () => {
                 try {

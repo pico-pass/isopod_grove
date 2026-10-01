@@ -137,6 +137,11 @@ export class GameState {
   @Prop({ type: Map, of: Number, default: {} })
   battleXp: Map<string, number>;
 
+  // 종(콩벌레)에 붙인 내 전용 별명. key: speciesId, value: 별명. 나에게만 보이고
+  // 다른 유저의 화면이나 랭킹·PvP 상대 표시에는 전혀 영향이 없다.
+  @Prop({ type: Map, of: String, default: {} })
+  speciesNicknames: Map<string, string>;
+
   // 투기장(PvP) 방어 식구로 지정한 종. 다른 유저가 투기장에서 상대로 만날 수 있다.
   // 지정 전엔 매칭 대상(상대)이 되지 않는다. 공격하는 건 이 값과 무관하게 언제든 가능하다.
   @Prop({ type: String, default: null })

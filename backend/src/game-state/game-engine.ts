@@ -71,6 +71,8 @@ export const PVP_WIN_DIAMOND_CHANCE = 0.08;
 export const PVP_WIN_SPECIES_XP = 30;
 export const PVP_WIN_ACCOUNT_XP = 20;
 export const PVP_LOSE_ACCOUNT_XP = 3;
+// 종(콩벌레) 별명: 나에게만 보이는 표시용 이름. 무료이며 언제든 바꾸거나 되돌릴 수 있다.
+export const SPECIES_NICKNAME_MAX_LENGTH = 10;
 
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다

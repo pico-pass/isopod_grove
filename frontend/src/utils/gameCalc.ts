@@ -37,6 +37,16 @@ export const PVP_RATING_WIN_DELTA = 18;
 export const PVP_RATING_LOSE_DELTA = 12;
 export const PVP_WIN_COIN_REWARD = 120;
 export const PVP_WIN_DIAMOND_CHANCE = 0.08;
+// 종(콩벌레) 별명. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const SPECIES_NICKNAME_MAX_LENGTH = 10;
+
+// 내가 지정한 별명을 종 이름에 덮어씌운 배열을 돌려준다(나에게만 보이는 표시용).
+// 원본 species 배열은 건드리지 않는다.
+export function applySpeciesNicknames(species: Species[], gameState: GameState): Species[] {
+  const nicknames = gameState.speciesNicknames;
+  if (!nicknames || Object.keys(nicknames).length === 0) return species;
+  return species.map((sp) => (nicknames[sp.speciesId] ? { ...sp, name: nicknames[sp.speciesId] } : sp));
+}
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },

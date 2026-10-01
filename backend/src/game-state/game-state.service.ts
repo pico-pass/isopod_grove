@@ -51,6 +51,7 @@ import {
   PVP_WIN_COIN_REWARD,
   PVP_WIN_DIAMOND_CHANCE,
   PVP_WIN_SPECIES_XP,
+  SPECIES_NICKNAME_MAX_LENGTH,
   STEP_SECONDS,
   TRAIN_COOLDOWN_MS_BY_INTENSITY,
   TRAIN_EXTREME_DIAMOND_COST,
@@ -439,6 +440,7 @@ export class GameStateService {
     }
     // 난이도 = 상대 희귀도를 그대로 고른다. 어떤 종이 나올지만 그 등급 안에서 무작위다.
     const enemySpecies = pickRandomOfRarity(speciesList, difficulty, Math.random());
+    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
 
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
     const beforeLevel = getBattleLevel(beforeXp);
@@ -475,9 +477,9 @@ export class GameStateService {
       message = `아쉽게 패배했어요. 야생 ${enemySpecies.name}이(가) 더 강했어요.`;
     }
     if (leveledUp) {
-      message += ` 🆙 ${mySpecies.name}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
+      message += ` 🆙 ${myDisplayName}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
     }
-    this.pushLog(gameState, won ? 'trophy' : 'leaf', `${mySpecies.name} 배틀 - ${message}`);
+    this.pushLog(gameState, won ? 'trophy' : 'leaf', `${myDisplayName} 배틀 - ${message}`);
 
     await gameState.save();
     const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
@@ -488,7 +490,7 @@ export class GameStateService {
       difficulty,
       mine: {
         speciesId: mySpecies.speciesId,
-        name: mySpecies.name,
+        name: myDisplayName,
         image: mySpecies.image,
         filter: mySpecies.filter,
         rarity: mySpecies.rarity,
@@ -544,6 +546,7 @@ export class GameStateService {
 
     const species = await this.speciesService.findOne(speciesId);
     if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+    const myDisplayName = this.displayNameFor(gameState, speciesId, species.name);
 
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
     const beforeLevel = getBattleLevel(beforeXp);
@@ -573,7 +576,7 @@ export class GameStateService {
     const afterLevel = getBattleLevel(beforeXp + xpGain);
     const leveledUp = afterLevel > beforeLevel;
 
-    let message = `${species.name}을(를) ${extreme ? '극한 ' : ''}훈련시켰어요. -${cost.toLocaleString('ko-KR')} G${diamondCost ? ` · 💎 ${diamondCost}` : ''} · 경험치 +${xpGain}`;
+    let message = `${myDisplayName}을(를) ${extreme ? '극한 ' : ''}훈련시켰어요. -${cost.toLocaleString('ko-KR')} G${diamondCost ? ` · 💎 ${diamondCost}` : ''} · 경험치 +${xpGain}`;
     if (leveledUp) {
       message += ` 🆙 전투 Lv.${afterLevel}로 성장했어요!`;
     }
@@ -741,6 +744,7 @@ export class GameStateService {
     if (!mySpecies || !opponentSpecies) {
       throw new BadRequestException('존재하지 않는 종이에요.');
     }
+    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
 
     const myLevel = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
     const opponentLevel = getBattleLevel(
@@ -787,7 +791,7 @@ export class GameStateService {
       message = `아쉽게 패배했어요. ${opponentName}님의 ${opponentSpecies.name}이(가) 더 강했어요. 레이팅 -${PVP_RATING_LOSE_DELTA}`;
     }
     if (leveledUp) {
-      message += ` 🆙 ${mySpecies.name}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
+      message += ` 🆙 ${myDisplayName}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
     }
     this.pushLog(gameState, won ? 'trophy' : 'leaf', `투기장 - ${message}`);
 
@@ -801,7 +805,7 @@ export class GameStateService {
       ratingDelta: gameState.pvpRating - beforeRating,
       mine: {
         speciesId: mySpecies.speciesId,
-        name: mySpecies.name,
+        name: myDisplayName,
         image: mySpecies.image,
         filter: mySpecies.filter,
         rarity: mySpecies.rarity,
@@ -1136,6 +1140,46 @@ export class GameStateService {
       user: { ...userDoc.toObject(), displayName: effectiveDisplayName(userDoc) },
       message: `닉네임이 "${trimmed}"(으)로 바뀌었어요!`,
     };
+  }
+
+  // 종(콩벌레)에 내 전용 별명을 붙인다. 무료이며, 빈 문자열을 보내면 기본 이름으로 되돌린다.
+  // 발견(discovered)한 종이면 지금 보유 중이 아니어도 지정할 수 있다.
+  async setSpeciesNickname(userId: string, speciesId: string, nickname: string) {
+    const gameState = await this.getOrThrow(userId);
+    if (!gameState.discovered.includes(speciesId)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const species = await this.speciesService.findOne(speciesId);
+    if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+    const trimmed = nickname.trim();
+    if (!trimmed) {
+      gameState.speciesNicknames.delete(speciesId);
+      const message = `${species.name}의 별명을 기본 이름으로 되돌렸어요.`;
+      this.pushLog(gameState, 'leaf', message);
+      await gameState.save();
+      return { gameState, message };
+    }
+    if (trimmed.length > SPECIES_NICKNAME_MAX_LENGTH) {
+      throw new BadRequestException(
+        `별명은 ${SPECIES_NICKNAME_MAX_LENGTH}자 이하로 입력해 주세요.`,
+      );
+    }
+
+    gameState.speciesNicknames.set(speciesId, trimmed);
+    const message = `${species.name}에게 "${trimmed}"라는 별명을 붙여줬어요!`;
+    this.pushLog(gameState, 'leaf', message);
+    await gameState.save();
+    return { gameState, message };
+  }
+
+  // 종 별명이 있으면 별명을, 없으면 기본 이름을 돌려준다. 전투·훈련 결과에 내 종 이름을 표시할 때 쓴다.
+  private displayNameFor(
+    gameState: GameStateDocument,
+    speciesId: string,
+    fallback: string,
+  ): string {
+    return gameState.speciesNicknames.get(speciesId) || fallback;
   }
 
   private getDailyProgress(

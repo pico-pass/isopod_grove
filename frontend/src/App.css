@@ -157,6 +157,132 @@
   cursor: not-allowed;
 }
 
+/* Profile modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 24px;
+  width: 360px;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 1.2rem;
+  color: var(--muted);
+  line-height: 1;
+  padding: 2px 6px;
+}
+.modal-close:hover {
+  color: var(--text);
+}
+.profile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: var(--panel2);
+  color: var(--lime);
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-name-row h2 {
+  font-size: 1.1rem;
+}
+.profile-message-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  text-align: center;
+  margin-bottom: 16px;
+  padding: 4px;
+}
+.profile-message {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.profile-message.placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+.profile-message-button span {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+.profile-message-form {
+  margin-bottom: 16px;
+  justify-content: center;
+}
+.profile-message-form input {
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+.profile-stat {
+  background: var(--panel2);
+  border-radius: 12px;
+  padding: 10px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.profile-stat strong {
+  font-size: 0.95rem;
+}
+.profile-stat span {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.profile-joined {
+  text-align: center;
+  margin-top: 14px;
+}
+
 /* Login screen */
 .login-screen {
   min-height: 100vh;

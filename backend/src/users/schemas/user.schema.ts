@@ -22,6 +22,10 @@ export class User {
   @Prop({ trim: true, unique: true, sparse: true })
   nickname?: string;
 
+  // 프로필에 보여주는 짧은 소개/상태 메시지. 무료이며 언제든 바꾸거나 지울 수 있다.
+  @Prop({ trim: true, maxlength: 60 })
+  profileMessage?: string;
+
   // 관리자 여부. 서버 관리 페이지 등 관리자 전용 기능 접근을 결정한다.
   @Prop({ default: false })
   isAdmin: boolean;

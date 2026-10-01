@@ -1,4 +1,4 @@
-import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import type { UserDocument } from '../users/schemas/user.schema';
 import type { AuthenticatedUser } from './strategies/jwt.strategy';
+import { SetProfileMessageDto } from './dto/set-profile-message.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -37,6 +38,19 @@ export class AuthController {
     const user = await this.usersService.findById(req.user.userId);
     if (!user) return user;
     // nickname을 정했으면 구글 프로필 이름 대신 그걸 displayName으로 보여준다.
+    return { ...user.toObject(), displayName: effectiveDisplayName(user) };
+  }
+
+  @Post('profile-message')
+  @UseGuards(JwtAuthGuard)
+  async setProfileMessage(
+    @Req() req: { user: AuthenticatedUser },
+    @Body() dto: SetProfileMessageDto,
+  ) {
+    const user = await this.usersService.setProfileMessage(
+      req.user.userId,
+      dto.message,
+    );
     return { ...user.toObject(), displayName: effectiveDisplayName(user) };
   }
 }

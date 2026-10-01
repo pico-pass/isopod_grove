@@ -29,6 +29,8 @@ export interface AuthUser {
   displayName: string;
   avatarUrl?: string;
   isAdmin?: boolean;
+  profileMessage?: string;
+  createdAt?: string;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -57,6 +59,8 @@ const post = <T>(path: string, body?: unknown) =>
 export const api = {
   googleLoginUrl: () => `${BASE_URL}/auth/google`,
   me: () => request<AuthUser>('/auth/me'),
+  setProfileMessage: (message: string) =>
+    post<AuthUser>('/auth/profile-message', { message }),
 
   getSpecies: () => request<Species[]>('/species'),
   getUpgrades: () => request<Upgrade[]>('/upgrades'),

@@ -14,6 +14,7 @@ import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
 import { FriendsView } from './components/FriendsView';
+import { ProfileModal } from './components/ProfileModal';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
@@ -43,6 +44,7 @@ function App() {
   const [view, setView] = useState<ViewKey>('habitat');
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   if (authLoading) {
     return (
@@ -96,11 +98,7 @@ function App() {
         diamonds={gameState.diamonds}
         user={user}
         onLogout={logout}
-        onSetNickname={(nickname) =>
-          runAction(() => api.setNickname(nickname)).then((result) => {
-            if (result?.user) setUser(result.user);
-          })
-        }
+        onOpenProfile={() => setProfileOpen(true)}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />
       <div className="app-shell">
@@ -219,6 +217,27 @@ function App() {
         </main>
       </div>
       <ChatWidget currentUserId={user._id} />
+      {profileOpen && (
+        <ProfileModal
+          user={user}
+          gameState={gameState}
+          species={species}
+          achievements={achievements}
+          diamonds={gameState.diamonds}
+          onClose={() => setProfileOpen(false)}
+          onSetNickname={(nickname) =>
+            runAction(() => api.setNickname(nickname)).then((result) => {
+              if (result?.user) setUser(result.user);
+            })
+          }
+          onSetProfileMessage={(message) =>
+            api
+              .setProfileMessage(message)
+              .then((updated) => setUser(updated))
+              .catch((e) => showToast(e instanceof Error ? e.message : '메시지 변경에 실패했어요.', true))
+          }
+        />
+      )}
       <Toast toast={toast} />
     </>
   );

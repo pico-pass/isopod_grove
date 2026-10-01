@@ -82,6 +82,19 @@ export class UsersService {
     return !!existing;
   }
 
+  async setProfileMessage(userId: string, message: string): Promise<UserDocument> {
+    const trimmed = message.trim();
+    if (trimmed.length > 60) {
+      throw new BadRequestException('프로필 메시지는 60자 이하로 입력해 주세요.');
+    }
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new BadRequestException('사용자를 찾을 수 없어요.');
+    }
+    user.profileMessage = trimmed; // 빈 문자열이면 메시지가 지워진 걸로 본다
+    return user.save();
+  }
+
   async setNickname(userId: string, nickname: string): Promise<UserDocument> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) {

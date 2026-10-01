@@ -6,13 +6,21 @@ export type AchievementDocument = HydratedDocument<Achievement>;
 export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
 
 // 진행도를 재는 기준. discovered/terrariums는 population 시딩이 아니라 계정 자체에서 읽는다.
+// friendsCount는 친구 관계 수, nicknames는 지어준 콩벌레 별명 수를 그때그때 조회해서 쓴다.
 export type AchievementStatKey =
   | 'births'
   | 'sold'
   | 'explored'
   | 'earned'
   | 'discovered'
-  | 'terrariums';
+  | 'terrariums'
+  | 'battlesWon'
+  | 'pvpWins'
+  | 'peakPvpRating'
+  | 'trainCount'
+  | 'highestBattleLevel'
+  | 'friendsCount'
+  | 'nicknames';
 
 @Schema({ collection: 'achievements' })
 export class Achievement {

@@ -81,6 +81,77 @@ const STAT_TIERS: StatTier[] = [
       { target: 40, reward: 4000, diamondReward: 20 },
     ],
   },
+  {
+    statKey: 'battlesWon',
+    icon: 'sword',
+    label: '숲의 전사',
+    descriptionOf: (t) => `야생 배틀 승리 누적 ${t}회`,
+    tiers: [
+      { target: 10, reward: 300, diamondReward: 5 },
+      { target: 50, reward: 1500, diamondReward: 12 },
+      { target: 150, reward: 6000, diamondReward: 25 },
+    ],
+  },
+  {
+    statKey: 'pvpWins',
+    icon: 'vs',
+    label: '투기장의 강자',
+    descriptionOf: (t) => `투기장 승리 누적 ${t}회`,
+    tiers: [
+      { target: 5, reward: 400, diamondReward: 8 },
+      { target: 30, reward: 2000, diamondReward: 18 },
+      { target: 100, reward: 8000, diamondReward: 35 },
+    ],
+  },
+  {
+    statKey: 'peakPvpRating',
+    icon: 'medal',
+    label: '레이팅 등반가',
+    descriptionOf: (t) => `투기장 레이팅 ${t}점 달성`,
+    tiers: [
+      { target: 1100, reward: 800, diamondReward: 10 },
+      { target: 1300, reward: 3000, diamondReward: 20 },
+      { target: 1500, reward: 10000, diamondReward: 40 },
+    ],
+  },
+  {
+    statKey: 'trainCount',
+    icon: 'dumbbell',
+    label: '훈련의 정석',
+    descriptionOf: (t) => `전투 훈련 누적 ${t}회`,
+    tiers: [
+      { target: 10, reward: 300, diamondReward: 5 },
+      { target: 50, reward: 1200, diamondReward: 12 },
+      { target: 150, reward: 4000, diamondReward: 25 },
+    ],
+  },
+  {
+    statKey: 'highestBattleLevel',
+    icon: 'star',
+    label: '단련된 전투력',
+    descriptionOf: (t) => `종 하나를 전투 Lv.${t}까지 키우기`,
+    tiers: [
+      { target: 10, reward: 600, diamondReward: 12 },
+      { target: 25, reward: 2500, diamondReward: 30 },
+    ],
+  },
+  {
+    statKey: 'friendsCount',
+    icon: 'friends',
+    label: '숲의 인연',
+    descriptionOf: (t) => `친구 ${t}명 만들기`,
+    tiers: [
+      { target: 1, reward: 500, ticketReward: 3, diamondReward: 10 },
+      { target: 5, reward: 2000, ticketReward: 5, diamondReward: 20 },
+    ],
+  },
+  {
+    statKey: 'nicknames',
+    icon: 'pencil',
+    label: '애칭 짓기',
+    descriptionOf: (t) => `콩벌레에게 별명 ${t}개 지어주기`,
+    tiers: [{ target: 3, reward: 500, diamondReward: 8 }],
+  },
 ];
 
 const statAchievements = STAT_TIERS.flatMap(({ statKey, icon, label, descriptionOf, tiers }) =>

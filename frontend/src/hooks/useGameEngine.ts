@@ -28,6 +28,8 @@ export function useGameEngine(userKey: string | null) {
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
   const [pvpLeaderboard, setPvpLeaderboard] = useState<LeaderboardResult | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  // 친구 수(업적 진행도 계산용). 랭킹과 같은 주기로 같이 불러온다.
+  const [friendsCount, setFriendsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToastState] = useState<ToastState | null>(null);
@@ -43,14 +45,16 @@ export function useGameEngine(userKey: string | null) {
   const reloadLeaderboards = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
-      const [lvl, inc, pvp] = await Promise.all([
+      const [lvl, inc, pvp, friendsResult] = await Promise.all([
         api.getLevelLeaderboard(),
         api.getIncomeLeaderboard(),
         api.getPvpLeaderboard(),
+        api.getFriends(),
       ]);
       setLevelLeaderboard(lvl);
       setIncomeLeaderboard(inc);
       setPvpLeaderboard(pvp);
+      setFriendsCount(friendsResult.friends.length);
     } catch (e) {
       showToast(e instanceof Error ? e.message : '랭킹을 불러오지 못했어요.', true);
     } finally {
@@ -162,6 +166,7 @@ export function useGameEngine(userKey: string | null) {
     levelLeaderboard,
     incomeLeaderboard,
     pvpLeaderboard,
+    friendsCount,
     leaderboardLoading,
     reloadLeaderboards,
     loading,

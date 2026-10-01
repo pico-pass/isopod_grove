@@ -314,7 +314,20 @@ export function simulateBattle(
 // 프론트(gameCalc.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
 export interface AchievementProgressInput {
   type: 'stat' | 'collectionRarity' | 'collectionAll';
-  statKey?: 'births' | 'sold' | 'explored' | 'earned' | 'discovered' | 'terrariums';
+  statKey?:
+    | 'births'
+    | 'sold'
+    | 'explored'
+    | 'earned'
+    | 'discovered'
+    | 'terrariums'
+    | 'battlesWon'
+    | 'pvpWins'
+    | 'peakPvpRating'
+    | 'trainCount'
+    | 'highestBattleLevel'
+    | 'friendsCount'
+    | 'nicknames';
   target?: number;
   rarity?: number;
 }
@@ -322,7 +335,19 @@ export interface AchievementProgressInput {
 export interface AchievementSubject {
   discovered: string[];
   terrariumCount: number;
-  stats: { births: number; sold: number; explored: number; earned: number };
+  friendsCount: number;
+  nicknamesCount: number;
+  stats: {
+    births: number;
+    sold: number;
+    explored: number;
+    earned: number;
+    battlesWon: number;
+    pvpWins: number;
+    peakPvpRating: number;
+    trainCount: number;
+    highestBattleLevel: number;
+  };
 }
 
 export function getAchievementProgress(
@@ -346,10 +371,19 @@ export function getAchievementProgress(
       return { progress: subject.discovered.length, target };
     case 'terrariums':
       return { progress: subject.terrariumCount, target };
+    case 'friendsCount':
+      return { progress: subject.friendsCount, target };
+    case 'nicknames':
+      return { progress: subject.nicknamesCount, target };
     case 'births':
     case 'sold':
     case 'explored':
     case 'earned':
+    case 'battlesWon':
+    case 'pvpWins':
+    case 'peakPvpRating':
+    case 'trainCount':
+    case 'highestBattleLevel':
       return { progress: subject.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

@@ -205,6 +205,7 @@ export function getAchievementProgress(
   achievement: Achievement,
   gameState: GameState,
   speciesList: Species[],
+  friendsCount = 0,
 ): { progress: number; target: number } {
   if (achievement.type === 'collectionAll') {
     return { progress: gameState.discovered.length, target: speciesList.length };
@@ -220,10 +221,19 @@ export function getAchievementProgress(
       return { progress: gameState.discovered.length, target };
     case 'terrariums':
       return { progress: gameState.terrariums.length, target };
+    case 'friendsCount':
+      return { progress: friendsCount, target };
+    case 'nicknames':
+      return { progress: Object.keys(gameState.speciesNicknames).length, target };
     case 'births':
     case 'sold':
     case 'explored':
     case 'earned':
+    case 'battlesWon':
+    case 'pvpWins':
+    case 'peakPvpRating':
+    case 'trainCount':
+    case 'highestBattleLevel':
       return { progress: gameState.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

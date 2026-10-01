@@ -49,6 +49,9 @@ export interface Stats {
   battlesLost: number;
   pvpWins: number;
   pvpLosses: number;
+  trainCount: number;
+  peakPvpRating: number;
+  highestBattleLevel: number;
 }
 
 export interface LogEntry {
@@ -96,7 +99,20 @@ export interface GameState {
 }
 
 export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
-export type AchievementStatKey = 'births' | 'sold' | 'explored' | 'earned' | 'discovered' | 'terrariums';
+export type AchievementStatKey =
+  | 'births'
+  | 'sold'
+  | 'explored'
+  | 'earned'
+  | 'discovered'
+  | 'terrariums'
+  | 'battlesWon'
+  | 'pvpWins'
+  | 'peakPvpRating'
+  | 'trainCount'
+  | 'highestBattleLevel'
+  | 'friendsCount'
+  | 'nicknames';
 
 export interface Achievement {
   achievementId: string;

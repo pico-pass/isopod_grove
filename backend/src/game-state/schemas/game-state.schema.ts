@@ -53,6 +53,19 @@ export class Stats {
 
   @Prop({ default: 0 })
   pvpLosses: number;
+
+  // 전투 훈련(train) 성공 누적 횟수. 업적 조건으로 쓴다.
+  @Prop({ default: 0 })
+  trainCount: number;
+
+  // 지금까지 도달한 투기장 레이팅 중 가장 높은 값. 레이팅은 오르내리지만
+  // 이 값은 한번 오르면 내려가지 않아 업적 조건(한 번이라도 달성)으로 쓰기 좋다.
+  @Prop({ default: 0 })
+  peakPvpRating: number;
+
+  // 보유 종 중 가장 높이 올린 전투 레벨. 야생 배틀/훈련/투기장 어디서 올려도 갱신된다.
+  @Prop({ default: 0 })
+  highestBattleLevel: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 

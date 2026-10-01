@@ -10,17 +10,26 @@ const ICONS: Record<string, string> = {
   leaf: '🌿',
   book: '📖',
   trophy: '🏆',
+  sword: '⚔️',
+  vs: '🆚',
+  medal: '🥇',
+  dumbbell: '🏋️',
+  star: '⭐',
+  friends: '🤝',
+  pencil: '✏️',
 };
 
 export function AchievementsView({
   gameState,
   species,
   achievements,
+  friendsCount,
   onClaim,
 }: {
   gameState: GameState;
   species: Species[];
   achievements: Achievement[];
+  friendsCount: number;
   onClaim: (achievementId: string) => void;
 }) {
   const claimedCount = gameState.achievementsClaimed.length;
@@ -40,7 +49,7 @@ export function AchievementsView({
       <div className="achievement-grid">
         {achievements.map((a) => {
           const claimed = gameState.achievementsClaimed.includes(a.achievementId);
-          const { progress, target } = getAchievementProgress(a, gameState, species);
+          const { progress, target } = getAchievementProgress(a, gameState, species, friendsCount);
           const complete = progress >= target && target > 0;
           const ratio = target > 0 ? Math.min(1, progress / target) : 0;
           return (

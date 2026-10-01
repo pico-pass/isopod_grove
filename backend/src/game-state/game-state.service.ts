@@ -11,6 +11,7 @@ import {
   GameStateDocument,
   Terrarium,
 } from './schemas/game-state.schema';
+import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -102,7 +103,20 @@ export class GameStateService {
     private readonly questsService: QuestsService,
     private readonly achievementsService: AchievementsService,
     private readonly usersService: UsersService,
+    // 친구 수 업적 조건 조회 전용. 끝자리에 둬서 기존 테스트 생성자 호출(6개 인자)이 깨지지 않게 한다.
+    @InjectModel(Friendship.name)
+    private friendshipModel: Model<FriendshipDocument>,
   ) {}
+
+  // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
+  // 내가 있어도 센다.
+  private async countFriends(userId: string): Promise<number> {
+    const me = new Types.ObjectId(userId);
+    return this.friendshipModel.countDocuments({
+      status: 'accepted',
+      $or: [{ requesterId: me }, { recipientId: me }],
+    });
+  }
 
   // 경험치는 항상 이 메서드를 통해서만 더한다. 레벨이 오르면 다이아를 지급한다.
   private grantXp(gameState: GameStateDocument, amount: number) {
@@ -457,6 +471,7 @@ export class GameStateService {
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > beforeLevel;
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, afterLevel);
 
     let reward = { coins: 0, diamonds: 0 };
     let message: string;
@@ -575,6 +590,8 @@ export class GameStateService {
     gameState.battleXp.set(speciesId, beforeXp + xpGain);
     const afterLevel = getBattleLevel(beforeXp + xpGain);
     const leveledUp = afterLevel > beforeLevel;
+    gameState.stats.trainCount++;
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, afterLevel);
 
     let message = `${myDisplayName}을(를) ${extreme ? '극한 ' : ''}훈련시켰어요. -${cost.toLocaleString('ko-KR')} G${diamondCost ? ` · 💎 ${diamondCost}` : ''} · 경험치 +${xpGain}`;
     if (leveledUp) {
@@ -760,6 +777,7 @@ export class GameStateService {
     const beforeRating = gameState.pvpRating;
     const ratingDelta = won ? PVP_RATING_WIN_DELTA : -PVP_RATING_LOSE_DELTA;
     gameState.pvpRating = Math.max(0, beforeRating + ratingDelta);
+    gameState.stats.peakPvpRating = Math.max(gameState.stats.peakPvpRating, gameState.pvpRating);
 
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
     const speciesXpGain = won
@@ -768,6 +786,7 @@ export class GameStateService {
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > myLevel;
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, afterLevel);
 
     const opponentUser = await this.usersService.findById(opponentUserId);
     const opponentName = opponentUser
@@ -1071,11 +1090,14 @@ export class GameStateService {
     }
 
     const speciesList = await this.speciesService.findAll();
+    const friendsCount = await this.countFriends(userId);
     const { progress, target } = getAchievementProgress(
       achievement,
       {
         discovered: gameState.discovered,
         terrariumCount: gameState.terrariums.length,
+        friendsCount,
+        nicknamesCount: gameState.speciesNicknames.size,
         stats: gameState.stats,
       },
       speciesList,

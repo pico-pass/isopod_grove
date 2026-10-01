@@ -27,7 +27,7 @@ export const OBSERVE_REWARD = 2;
 export const DIAMONDS_PER_LEVEL = 3; // 레벨이 1 오를 때마다 지급
 // 새 종을 처음 발견했을 때 지급하는 다이아(희귀도 0~4: 일반~신화)
 export const NEW_SPECIES_DIAMONDS_BY_RARITY = [1, 2, 4, 8, 15];
-export const NICKNAME_CHANGE_COST = 2000;
+export const NICKNAME_CHANGE_COST = 200;
 // 야생 배틀: 난이도(=상대 희귀도)를 직접 골라 뽑은 야생 개체와 맞붙는다.
 export const BATTLE_COOLDOWN_MS = 8_000;
 export const BATTLE_MAX_TURNS = 20;

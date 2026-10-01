@@ -4,18 +4,20 @@ import { Model, Types } from 'mongoose';
 import {
   ChatMessage,
   ChatMessageDocument,
+  DEFAULT_CHAT_CHANNEL,
 } from './schemas/chat-message.schema';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 
-const MAX_MESSAGES = 300; // 이 개수를 넘으면 오래된 메시지부터 지운다
+const MAX_MESSAGES = 300; // 채널별로 이 개수를 넘으면 오래된 메시지부터 지운다
 const INITIAL_FETCH_LIMIT = 50;
-const SEND_COOLDOWN_MS = 1500;
+const SEND_COOLDOWN_MS = 1500; // 채널과 무관하게 유저 1명 기준(채널을 바꿔도 도배 방지는 유지)
 
 export interface ChatMessageView {
   id: string;
   userId: string;
   displayName: string;
   avatarUrl?: string;
+  channel: string;
   text: string;
   createdAt: number;
 }
@@ -31,8 +33,14 @@ export class ChatService {
     private readonly usersService: UsersService,
   ) {}
 
-  async getMessages(after?: string): Promise<ChatMessageView[]> {
-    const query = after ? { _id: { $gt: new Types.ObjectId(after) } } : {};
+  async getMessages(
+    channel: string = DEFAULT_CHAT_CHANNEL,
+    after?: string,
+  ): Promise<ChatMessageView[]> {
+    const query = {
+      channel,
+      ...(after ? { _id: { $gt: new Types.ObjectId(after) } } : {}),
+    };
     const docs = await this.chatMessageModel
       .find(query)
       .sort({ _id: after ? 1 : -1 })
@@ -42,7 +50,11 @@ export class ChatService {
     return this.toViews(ordered);
   }
 
-  async sendMessage(userId: string, text: string): Promise<ChatMessageView> {
+  async sendMessage(
+    userId: string,
+    channel: string,
+    text: string,
+  ): Promise<ChatMessageView> {
     const trimmed = text.trim();
     if (!trimmed) {
       throw new BadRequestException('메시지를 입력해 주세요.');
@@ -57,22 +69,23 @@ export class ChatService {
 
     const doc = await this.chatMessageModel.create({
       userId: new Types.ObjectId(userId),
+      channel,
       text: trimmed,
       createdAt: now,
     });
 
-    await this.trimOldMessages();
+    await this.trimOldMessages(channel);
 
     const [view] = await this.toViews([doc]);
     return view;
   }
 
-  private async trimOldMessages() {
-    const count = await this.chatMessageModel.countDocuments().exec();
+  private async trimOldMessages(channel: string) {
+    const count = await this.chatMessageModel.countDocuments({ channel }).exec();
     const excess = count - MAX_MESSAGES;
     if (excess <= 0) return;
     const oldest = await this.chatMessageModel
-      .find({}, { _id: 1 })
+      .find({ channel }, { _id: 1 })
       .sort({ _id: 1 })
       .limit(excess)
       .exec();
@@ -96,6 +109,7 @@ export class ChatService {
         userId: id,
         displayName: user ? effectiveDisplayName(user) : '알 수 없음',
         avatarUrl: user?.avatarUrl,
+        channel: doc.channel,
         text: doc.text,
         createdAt: doc.createdAt,
       };

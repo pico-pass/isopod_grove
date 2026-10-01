@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
-import type { ChatMessage, OnlinePlayer } from '../api/types';
+import type { ChatChannel, ChatMessage, OnlinePlayer } from '../api/types';
 
 const POLL_MS = 4000;
 const MAX_LENGTH = 300;
+
+const CHANNELS: { key: ChatChannel; label: string; icon: string }[] = [
+  { key: 'free', label: '자유방', icon: '💬' },
+  { key: 'question', label: '질문방', icon: '❓' },
+  { key: 'inquiry', label: '문의방', icon: '📮' },
+];
 
 function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -11,7 +17,12 @@ function formatTime(at: number): string {
 
 export function ChatWidget({ currentUserId }: { currentUserId: string }) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [channel, setChannel] = useState<ChatChannel>('free');
+  const [messagesByChannel, setMessagesByChannel] = useState<Record<ChatChannel, ChatMessage[]>>({
+    free: [],
+    question: [],
+    inquiry: [],
+  });
   const [draft, setDraft] = useState('');
   const [unread, setUnread] = useState(0);
   const [sending, setSending] = useState(false);
@@ -20,28 +31,41 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
   const [onlineOpen, setOnlineOpen] = useState(false);
 
   const openRef = useRef(open);
-  const lastIdRef = useRef<string | undefined>(undefined);
+  const channelRef = useRef(channel);
+  const lastIdByChannel = useRef<Record<ChatChannel, string | undefined>>({
+    free: undefined,
+    question: undefined,
+    inquiry: undefined,
+  });
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     openRef.current = open;
   }, [open]);
 
-  // 최초 진입 시 최근 메시지를 불러오고, 이후 짧은 주기로 새 메시지만 이어받는다.
+  useEffect(() => {
+    channelRef.current = channel;
+  }, [channel]);
+
+  // 채널마다 최초 진입 시 최근 메시지를 불러오고, 이후 짧은 주기로 새 메시지만 이어받는다.
+  // 세 채널을 한 번에 폴링해서 탭을 바꿀 때 다시 불러올 필요가 없게 한다.
   useEffect(() => {
     let cancelled = false;
 
-    const poll = async () => {
+    const pollChannel = async (ch: ChatChannel) => {
       try {
-        const fresh = await api.getChatMessages(lastIdRef.current);
-        if (!cancelled && fresh.length > 0) {
-          lastIdRef.current = fresh[fresh.length - 1].id;
-          setMessages((prev) => [...prev, ...fresh].slice(-200));
-          if (!openRef.current) setUnread((n) => n + fresh.length);
-        }
+        const fresh = await api.getChatMessages(ch, lastIdByChannel.current[ch]);
+        if (cancelled || fresh.length === 0) return;
+        lastIdByChannel.current[ch] = fresh[fresh.length - 1].id;
+        setMessagesByChannel((prev) => ({ ...prev, [ch]: [...prev[ch], ...fresh].slice(-200) }));
+        if (!openRef.current || channelRef.current !== ch) setUnread((n) => n + fresh.length);
       } catch {
         // 다음 주기에 재시도
       }
+    };
+
+    const poll = async () => {
+      await Promise.all(CHANNELS.map((c) => pollChannel(c.key)));
       try {
         const presence = await api.getOnlinePlayers();
         if (!cancelled) setOnlinePlayers(presence.players);
@@ -58,12 +82,12 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
     };
   }, []);
 
-  // 새 메시지가 오거나 패널을 열면 맨 아래로 스크롤한다(DOM만 만지고 setState는 하지 않는다).
+  // 새 메시지가 오거나 패널을 열거나 채널을 바꾸면 맨 아래로 스크롤한다(DOM만 만지고 setState는 하지 않는다).
   useEffect(() => {
     if (open) {
       listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
     }
-  }, [open, messages]);
+  }, [open, channel, messagesByChannel]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -72,9 +96,9 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
     setSending(true);
     setError(null);
     try {
-      const sent = await api.sendChatMessage(text);
-      lastIdRef.current = sent.id;
-      setMessages((prev) => [...prev, sent].slice(-200));
+      const sent = await api.sendChatMessage(channel, text);
+      lastIdByChannel.current[channel] = sent.id;
+      setMessagesByChannel((prev) => ({ ...prev, [channel]: [...prev[channel], sent].slice(-200) }));
       setDraft('');
     } catch (e) {
       setError(e instanceof Error ? e.message : '전송에 실패했어요.');
@@ -82,6 +106,9 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
       setSending(false);
     }
   };
+
+  const messages = messagesByChannel[channel];
+  const channelLabel = CHANNELS.find((c) => c.key === channel)?.label ?? '';
 
   return (
     <div className="chat-widget">
@@ -92,6 +119,17 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
             <button className="chat-close" onClick={() => setOpen(false)} aria-label="채팅 닫기">
               ×
             </button>
+          </div>
+          <div className="filter-row chat-channel-row">
+            {CHANNELS.map((c) => (
+              <button
+                key={c.key}
+                className={`filter${channel === c.key ? ' active' : ''}`}
+                onClick={() => setChannel(c.key)}
+              >
+                {c.icon} {c.label}
+              </button>
+            ))}
           </div>
           <button className="online-toggle" onClick={() => setOnlineOpen((v) => !v)}>
             👥 접속 중 {onlinePlayers.length}명 {onlineOpen ? '▲' : '▼'}
@@ -139,7 +177,7 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               maxLength={MAX_LENGTH}
-              placeholder="메시지를 입력하세요"
+              placeholder={`${channelLabel}에 메시지 보내기`}
             />
             <button type="submit" className="button primary" disabled={sending || !draft.trim()}>
               전송

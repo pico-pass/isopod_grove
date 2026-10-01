@@ -137,11 +137,14 @@ export interface OnlinePlayersResult {
   players: OnlinePlayer[];
 }
 
+export type ChatChannel = 'free' | 'question' | 'inquiry';
+
 export interface ChatMessage {
   id: string;
   userId: string;
   displayName: string;
   avatarUrl?: string;
+  channel: ChatChannel;
   text: string;
   createdAt: number;
 }

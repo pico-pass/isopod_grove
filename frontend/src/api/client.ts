@@ -4,6 +4,7 @@ import type {
   AdminStats,
   BattleResponse,
   CareAction,
+  ChatChannel,
   ChatMessage,
   GameState,
   LeaderboardResult,
@@ -99,9 +100,10 @@ export const api = {
 
   getAdminStats: () => request<AdminStats>('/admin/stats'),
 
-  getChatMessages: (afterId?: string) =>
-    request<ChatMessage[]>(`/chat/messages${afterId ? `?after=${afterId}` : ''}`),
-  sendChatMessage: (text: string) => post<ChatMessage>('/chat/messages', { text }),
+  getChatMessages: (channel: ChatChannel, afterId?: string) =>
+    request<ChatMessage[]>(`/chat/messages?channel=${channel}${afterId ? `&after=${afterId}` : ''}`),
+  sendChatMessage: (channel: ChatChannel, text: string) =>
+    post<ChatMessage>('/chat/messages', { channel, text }),
 
   getOnlinePlayers: () => request<OnlinePlayersResult>('/presence/online'),
 };

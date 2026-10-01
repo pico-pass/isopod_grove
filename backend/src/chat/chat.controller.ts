@@ -13,7 +13,7 @@ export class ChatController {
 
   @Get('messages')
   getMessages(@Query() dto: GetMessagesDto) {
-    return this.chatService.getMessages(dto.after);
+    return this.chatService.getMessages(dto.channel, dto.after);
   }
 
   @Post('messages')
@@ -21,6 +21,6 @@ export class ChatController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chatService.sendMessage(user.userId, dto.text);
+    return this.chatService.sendMessage(user.userId, dto.channel, dto.text);
   }
 }

@@ -1761,6 +1761,15 @@ main {
 .chat-close:hover {
   color: var(--text);
 }
+.chat-panel .chat-channel-row {
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.chat-panel .chat-channel-row .filter {
+  padding: 5px 10px;
+  font-size: 0.74rem;
+}
 .online-toggle {
   display: flex;
   align-items: center;

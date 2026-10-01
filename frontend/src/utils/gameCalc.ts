@@ -16,7 +16,7 @@ export const EXPLORE_COST = 777;
 export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
 // 다이아: 업적/새 종 발견/레벨업으로 얻는다.
-export const NICKNAME_CHANGE_COST = 2000;
+export const NICKNAME_CHANGE_COST = 200;
 // 야생 배틀 난이도(=상대 희귀도)별 보상/확률. 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const BATTLE_REWARD_BY_RARITY = [10, 25, 70, 180, 450];
 export const BATTLE_DIAMOND_CHANCE_BY_RARITY = [0.04, 0.06, 0.08, 0.1, 0.14];

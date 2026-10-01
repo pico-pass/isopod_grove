@@ -9,6 +9,7 @@ import type {
   LeaderboardResult,
   Quest,
   Species,
+  TrainResponse,
   Upgrade,
 } from './types';
 import { authStorage } from '../auth/authStorage';
@@ -67,6 +68,8 @@ export const api = {
   collect: () => post<ActionResult>('/game-state/collect'),
   battle: (speciesId: string, difficulty: number) =>
     post<BattleResponse>('/game-state/battle', { speciesId, difficulty }),
+  train: (speciesId: string, intensity: number) =>
+    post<TrainResponse>('/game-state/train', { speciesId, intensity }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),

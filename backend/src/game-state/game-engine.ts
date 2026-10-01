@@ -46,6 +46,13 @@ export const BATTLE_LOSE_XP = 2; // 져도 주는 약간의 위로 계정 경험
 export const BATTLE_LEVEL_XP_BASE = 20;
 export const BATTLE_LEVEL_XP_GROWTH = 1.25;
 export const BATTLE_LEVEL_STAT_BONUS = 0.08;
+// 전투 훈련: 상대 없이 코인을 내고 바로 전투 경험치를 산다. 승패가 없는 대신 확정적이다.
+export const TRAIN_COOLDOWN_MS = 5_000;
+export const TRAIN_BASE_COST_BY_RARITY = [15, 40, 120, 400, 1200];
+export const TRAIN_COST_LEVEL_GROWTH = 1.12; // 전투 레벨이 오를수록 훈련 비용도 조금씩 비싸진다
+// 훈련 강도 3단계(가벼운/보통/강도 높은). 강도가 높을수록 경험치는 많지만 코인 대비 효율은 떨어진다.
+export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
+export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
 
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
@@ -89,6 +96,14 @@ export function getBattleLevelProgress(xp: number): LevelProgress {
 
 export function getBattleLevel(xp: number): number {
   return getBattleLevelProgress(xp).level;
+}
+
+// 종의 희귀도·현재 전투 레벨·훈련 강도로 1회 훈련 비용(코인)을 계산한다.
+// 프론트(gameCalc.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export function getTrainCost(rarity: number, level: number, intensity: number): number {
+  const base = TRAIN_BASE_COST_BY_RARITY[rarity] ?? TRAIN_BASE_COST_BY_RARITY[0];
+  const mult = TRAIN_COST_MULT_BY_INTENSITY[intensity] ?? 1;
+  return Math.round(base * Math.pow(TRAIN_COST_LEVEL_GROWTH, level - 1) * mult);
 }
 
 export const clamp = (value: number, min: number, max: number) =>

@@ -199,6 +199,13 @@ export interface BattleResponse {
   speciesLevel: SpeciesLevelResult;
 }
 
+export interface TrainResponse {
+  gameState: GameState;
+  message: string;
+  cost: number;
+  speciesLevel: SpeciesLevelResult;
+}
+
 export type CareAction = 'feed' | 'mist' | 'climate';
 
 export interface ActionResult {

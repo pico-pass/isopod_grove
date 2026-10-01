@@ -22,6 +22,12 @@ export const BATTLE_REWARD_BY_RARITY = [10, 25, 70, 180, 450];
 export const BATTLE_DIAMOND_CHANCE_BY_RARITY = [0.04, 0.06, 0.08, 0.1, 0.14];
 export const BATTLE_LEVEL_XP_BASE = 20;
 export const BATTLE_LEVEL_XP_GROWTH = 1.25;
+// 전투 훈련 비용/경험치. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const TRAIN_BASE_COST_BY_RARITY = [15, 40, 120, 400, 1200];
+export const TRAIN_COST_LEVEL_GROWTH = 1.12;
+export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
+export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
+export const TRAIN_INTENSITY_LABELS = ['가벼운 훈련', '보통 훈련', '강도 높은 훈련'];
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },
@@ -70,6 +76,13 @@ export function getBattleLevelProgress(xp: number): LevelProgress {
 
 export function getBattleLevel(xp: number): number {
   return getBattleLevelProgress(xp).level;
+}
+
+// 훈련 1회 비용(코인) 미리보기. 백엔드(game-engine.ts)에도 같은 함수가 있다.
+export function getTrainCost(rarity: number, level: number, intensity: number): number {
+  const base = TRAIN_BASE_COST_BY_RARITY[rarity] ?? TRAIN_BASE_COST_BY_RARITY[0];
+  const mult = TRAIN_COST_MULT_BY_INTENSITY[intensity] ?? 1;
+  return Math.round(base * Math.pow(TRAIN_COST_LEVEL_GROWTH, level - 1) * mult);
 }
 
 export function getCapacity(spaceLevel: number): number {

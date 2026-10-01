@@ -43,6 +43,8 @@ import {
   OBSERVE_COOLDOWN_MS,
   OBSERVE_REWARD,
   STEP_SECONDS,
+  TRAIN_COOLDOWN_MS,
+  TRAIN_XP_BY_INTENSITY,
   canBreedInEnvironment,
   clamp,
   getAchievementProgress,
@@ -55,6 +57,7 @@ import {
   getLevel,
   getPopulationCount,
   getTerrariumCost,
+  getTrainCost,
   isComfortable,
   pickRandomOfRarity,
   rollCombatStats,
@@ -499,6 +502,67 @@ export class GameStateService {
         currentXp: afterProgress.currentXp,
         requiredXp: afterProgress.requiredXp,
         xpGained: speciesXpGain,
+      },
+    };
+  }
+
+  // 상대 없이 코인을 내고 보유한 종 하나의 전투 경험치를 바로 올린다. 승패가 없는 대신 비용이 확정적이다.
+  async train(userId: string, speciesId: string, intensity: number) {
+    if (
+      !Number.isInteger(intensity) ||
+      intensity < 0 ||
+      intensity >= TRAIN_XP_BY_INTENSITY.length
+    ) {
+      throw new BadRequestException('올바르지 않은 훈련 강도예요.');
+    }
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const now = Date.now();
+    if ((gameState.cooldowns.get('train') || 0) > now) {
+      throw new BadRequestException('조금만 기다려 주세요.');
+    }
+
+    const species = await this.speciesService.findOne(speciesId);
+    if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const beforeLevel = getBattleLevel(beforeXp);
+    const cost = getTrainCost(species.rarity, beforeLevel, intensity);
+    if (gameState.coins < cost) {
+      throw new BadRequestException(
+        `훈련에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`,
+      );
+    }
+    gameState.cooldowns.set('train', now + TRAIN_COOLDOWN_MS);
+    gameState.coins -= cost;
+
+    const xpGain = TRAIN_XP_BY_INTENSITY[intensity];
+    gameState.battleXp.set(speciesId, beforeXp + xpGain);
+    const afterLevel = getBattleLevel(beforeXp + xpGain);
+    const leveledUp = afterLevel > beforeLevel;
+
+    let message = `${species.name}을(를) 훈련시켰어요. -${cost.toLocaleString('ko-KR')} G · 경험치 +${xpGain}`;
+    if (leveledUp) {
+      message += ` 🆙 전투 Lv.${afterLevel}로 성장했어요!`;
+    }
+    this.pushLog(gameState, 'leaf', message);
+
+    await gameState.save();
+    const afterProgress = getBattleLevelProgress(beforeXp + xpGain);
+    return {
+      gameState,
+      message,
+      cost,
+      speciesLevel: {
+        speciesId: species.speciesId,
+        leveledUp,
+        level: afterLevel,
+        currentXp: afterProgress.currentXp,
+        requiredXp: afterProgress.requiredXp,
+        xpGained: xpGain,
       },
     };
   }

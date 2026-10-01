@@ -13,6 +13,7 @@ import { GameStateModule } from './game-state/game-state.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { ChatModule } from './chat/chat.module';
+import { PresenceModule } from './presence/presence.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { ChatModule } from './chat/chat.module';
     AuthModule,
     AdminModule,
     ChatModule,
+    PresenceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

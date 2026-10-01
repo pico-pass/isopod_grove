@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
-import type { ChatMessage } from '../api/types';
+import type { ChatMessage, OnlinePlayer } from '../api/types';
 
 const POLL_MS = 4000;
 const MAX_LENGTH = 300;
@@ -16,6 +16,8 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
   const [unread, setUnread] = useState(0);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([]);
+  const [onlineOpen, setOnlineOpen] = useState(false);
 
   const openRef = useRef(open);
   const lastIdRef = useRef<string | undefined>(undefined);
@@ -32,10 +34,17 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
     const poll = async () => {
       try {
         const fresh = await api.getChatMessages(lastIdRef.current);
-        if (cancelled || fresh.length === 0) return;
-        lastIdRef.current = fresh[fresh.length - 1].id;
-        setMessages((prev) => [...prev, ...fresh].slice(-200));
-        if (!openRef.current) setUnread((n) => n + fresh.length);
+        if (!cancelled && fresh.length > 0) {
+          lastIdRef.current = fresh[fresh.length - 1].id;
+          setMessages((prev) => [...prev, ...fresh].slice(-200));
+          if (!openRef.current) setUnread((n) => n + fresh.length);
+        }
+      } catch {
+        // 다음 주기에 재시도
+      }
+      try {
+        const presence = await api.getOnlinePlayers();
+        if (!cancelled) setOnlinePlayers(presence.players);
       } catch {
         // 다음 주기에 재시도
       }
@@ -84,6 +93,27 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
               ×
             </button>
           </div>
+          <button className="online-toggle" onClick={() => setOnlineOpen((v) => !v)}>
+            👥 접속 중 {onlinePlayers.length}명 {onlineOpen ? '▲' : '▼'}
+          </button>
+          {onlineOpen && (
+            <div className="online-list">
+              {onlinePlayers.length === 0 ? (
+                <p className="empty">접속 중인 숲지기가 없어요.</p>
+              ) : (
+                onlinePlayers.map((p) => (
+                  <div className={`online-row${p.userId === currentUserId ? ' me' : ''}`} key={p.userId}>
+                    {p.avatarUrl ? (
+                      <img src={p.avatarUrl} alt="" className="chat-avatar" />
+                    ) : (
+                      <span className="chat-avatar chat-avatar-fallback">{p.displayName.slice(0, 1)}</span>
+                    )}
+                    <span>{p.displayName}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
           <div className="chat-messages" ref={listRef}>
             {messages.length === 0 && <p className="empty">아직 대화가 없어요. 첫 인사를 건네보세요!</p>}
             {messages.map((m) => (

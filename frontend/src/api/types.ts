@@ -126,6 +126,17 @@ export interface LeaderboardResult {
   me: (LeaderboardEntry & { inTop: boolean }) | null;
 }
 
+export interface OnlinePlayer {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
+export interface OnlinePlayersResult {
+  count: number;
+  players: OnlinePlayer[];
+}
+
 export interface ChatMessage {
   id: string;
   userId: string;

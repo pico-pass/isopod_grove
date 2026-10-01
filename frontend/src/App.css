@@ -1761,6 +1761,38 @@ main {
 .chat-close:hover {
   color: var(--text);
 }
+.online-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.online-toggle:hover {
+  color: var(--text);
+}
+.online-list {
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.online-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+.online-row.me {
+  color: var(--lime);
+  font-weight: 700;
+}
 .chat-messages {
   flex: 1;
   overflow-y: auto;

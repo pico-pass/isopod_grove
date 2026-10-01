@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   GameState,
   LeaderboardResult,
+  OnlinePlayersResult,
   PvpBattleResponse,
   PvpOpponentResult,
   Quest,
@@ -101,4 +102,6 @@ export const api = {
   getChatMessages: (afterId?: string) =>
     request<ChatMessage[]>(`/chat/messages${afterId ? `?after=${afterId}` : ''}`),
   sendChatMessage: (text: string) => post<ChatMessage>('/chat/messages', { text }),
+
+  getOnlinePlayers: () => request<OnlinePlayersResult>('/presence/online'),
 };

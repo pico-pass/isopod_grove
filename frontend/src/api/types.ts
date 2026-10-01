@@ -126,6 +126,25 @@ export interface LeaderboardResult {
   me: (LeaderboardEntry & { inTop: boolean }) | null;
 }
 
+export interface PublicProfile {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  profileMessage?: string;
+  createdAt?: string;
+  xp: number;
+  pvpRating: number;
+  discoveredCount: number;
+  totalPopulation: number;
+  achievementsClaimedCount: number;
+  stats: {
+    battlesWon: number;
+    battlesLost: number;
+    pvpWins: number;
+    pvpLosses: number;
+  };
+}
+
 export interface Friend {
   userId: string;
   displayName: string;

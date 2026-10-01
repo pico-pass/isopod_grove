@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -29,6 +29,11 @@ export class GameStateController {
   @Get()
   findOrCreate(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.findOrCreate(user.userId);
+  }
+
+  @Get('profile/:userId')
+  getPublicProfile(@Param('userId') userId: string) {
+    return this.gameStateService.getPublicProfile(userId);
   }
 
   @Post('advance')

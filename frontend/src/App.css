@@ -247,6 +247,10 @@
   margin-bottom: 16px;
   justify-content: center;
 }
+.profile-message-readonly {
+  text-align: center;
+  margin-bottom: 16px;
+}
 .profile-message-form input {
   width: 100%;
   padding: 6px 12px;
@@ -1634,6 +1638,11 @@ main {
   gap: 12px;
   padding: 10px 14px;
   border-radius: 12px;
+  width: 100%;
+  text-align: left;
+}
+.ranking-row:hover {
+  background: var(--panel2);
 }
 .ranking-row.me {
   background: var(--panel2);
@@ -1707,6 +1716,17 @@ main {
 }
 .friend-section {
   margin-bottom: 18px;
+}
+.friend-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.friend-identity:hover .ranking-name {
+  color: var(--lime);
 }
 .friend-actions {
   display: flex;
@@ -1947,10 +1967,19 @@ main {
   align-items: center;
   gap: 8px;
   font-size: 0.82rem;
+  width: 100%;
+  text-align: left;
+}
+.online-row:hover {
+  color: var(--lime);
 }
 .online-row.me {
   color: var(--lime);
   font-weight: 700;
+}
+.chat-avatar-button {
+  flex-shrink: 0;
+  line-height: 0;
 }
 .chat-messages {
   flex: 1;

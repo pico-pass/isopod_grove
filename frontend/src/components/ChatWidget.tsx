@@ -15,7 +15,13 @@ function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function ChatWidget({ currentUserId }: { currentUserId: string }) {
+export function ChatWidget({
+  currentUserId,
+  onOpenProfile,
+}: {
+  currentUserId: string;
+  onOpenProfile: (userId: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [channel, setChannel] = useState<ChatChannel>('free');
   const [messagesByChannel, setMessagesByChannel] = useState<Record<ChatChannel, ChatMessage[]>>({
@@ -140,14 +146,18 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
                 <p className="empty">접속 중인 숲지기가 없어요.</p>
               ) : (
                 onlinePlayers.map((p) => (
-                  <div className={`online-row${p.userId === currentUserId ? ' me' : ''}`} key={p.userId}>
+                  <button
+                    className={`online-row${p.userId === currentUserId ? ' me' : ''}`}
+                    key={p.userId}
+                    onClick={() => onOpenProfile(p.userId)}
+                  >
                     {p.avatarUrl ? (
                       <img src={p.avatarUrl} alt="" className="chat-avatar" />
                     ) : (
                       <span className="chat-avatar chat-avatar-fallback">{p.displayName.slice(0, 1)}</span>
                     )}
                     <span>{p.displayName}</span>
-                  </div>
+                  </button>
                 ))
               )}
             </div>
@@ -156,11 +166,13 @@ export function ChatWidget({ currentUserId }: { currentUserId: string }) {
             {messages.length === 0 && <p className="empty">아직 대화가 없어요. 첫 인사를 건네보세요!</p>}
             {messages.map((m) => (
               <div className={`chat-message${m.userId === currentUserId ? ' me' : ''}`} key={m.id}>
-                {m.avatarUrl ? (
-                  <img src={m.avatarUrl} alt="" className="chat-avatar" />
-                ) : (
-                  <span className="chat-avatar chat-avatar-fallback">{m.displayName.slice(0, 1)}</span>
-                )}
+                <button className="chat-avatar-button" onClick={() => onOpenProfile(m.userId)} title={m.displayName}>
+                  {m.avatarUrl ? (
+                    <img src={m.avatarUrl} alt="" className="chat-avatar" />
+                  ) : (
+                    <span className="chat-avatar chat-avatar-fallback">{m.displayName.slice(0, 1)}</span>
+                  )}
+                </button>
                 <div className="chat-bubble">
                   <div className="chat-meta">
                     <span className="chat-name">{m.displayName}</span>

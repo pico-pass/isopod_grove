@@ -6,9 +6,17 @@ type RankingTab = 'level' | 'income' | 'pvp';
 
 const RANK_MEDAL: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
-function RankRow({ entry, valueLabel }: { entry: LeaderboardEntry; valueLabel: string }) {
+function RankRow({
+  entry,
+  valueLabel,
+  onOpenProfile,
+}: {
+  entry: LeaderboardEntry;
+  valueLabel: string;
+  onOpenProfile: (userId: string) => void;
+}) {
   return (
-    <div className={`ranking-row${entry.isMe ? ' me' : ''}`}>
+    <button className={`ranking-row${entry.isMe ? ' me' : ''}`} onClick={() => onOpenProfile(entry.userId)}>
       <span className="ranking-rank">{RANK_MEDAL[entry.rank] ?? entry.rank}</span>
       {entry.avatarUrl ? (
         <img src={entry.avatarUrl} alt="" className="ranking-avatar" />
@@ -20,14 +28,20 @@ function RankRow({ entry, valueLabel }: { entry: LeaderboardEntry; valueLabel: s
         {entry.isMe && <span className="ranking-me-badge">나</span>}
       </span>
       <strong className="ranking-value">{valueLabel}</strong>
-    </div>
+    </button>
   );
 }
 
-function RankingList({ result, loading, valueOf }: {
+function RankingList({
+  result,
+  loading,
+  valueOf,
+  onOpenProfile,
+}: {
   result: LeaderboardResult | null;
   loading: boolean;
   valueOf: (value: number) => string;
+  onOpenProfile: (userId: string) => void;
 }) {
   if (loading && !result) {
     return <p className="empty">랭킹을 불러오는 중이에요...</p>;
@@ -38,12 +52,12 @@ function RankingList({ result, loading, valueOf }: {
   return (
     <div className="ranking-list">
       {result.entries.map((entry) => (
-        <RankRow key={entry.userId} entry={entry} valueLabel={valueOf(entry.value)} />
+        <RankRow key={entry.userId} entry={entry} valueLabel={valueOf(entry.value)} onOpenProfile={onOpenProfile} />
       ))}
       {result.me && !result.me.inTop && (
         <>
           <div className="ranking-divider">···</div>
-          <RankRow entry={result.me} valueLabel={valueOf(result.me.value)} />
+          <RankRow entry={result.me} valueLabel={valueOf(result.me.value)} onOpenProfile={onOpenProfile} />
         </>
       )}
     </div>
@@ -56,12 +70,14 @@ export function RankingView({
   pvpLeaderboard,
   loading,
   onRefresh,
+  onOpenProfile,
 }: {
   levelLeaderboard: LeaderboardResult | null;
   incomeLeaderboard: LeaderboardResult | null;
   pvpLeaderboard: LeaderboardResult | null;
   loading: boolean;
   onRefresh: () => void;
+  onOpenProfile: (userId: string) => void;
 }) {
   const [tab, setTab] = useState<RankingTab>('level');
 
@@ -92,17 +108,28 @@ export function RankingView({
 
       <section className="panel">
         {tab === 'level' && (
-          <RankingList result={levelLeaderboard} loading={loading} valueOf={(v) => `Lv. ${v}`} />
+          <RankingList
+            result={levelLeaderboard}
+            loading={loading}
+            valueOf={(v) => `Lv. ${v}`}
+            onOpenProfile={onOpenProfile}
+          />
         )}
         {tab === 'income' && (
           <RankingList
             result={incomeLeaderboard}
             loading={loading}
             valueOf={(v) => `${formatNumber(v)} G/분`}
+            onOpenProfile={onOpenProfile}
           />
         )}
         {tab === 'pvp' && (
-          <RankingList result={pvpLeaderboard} loading={loading} valueOf={(v) => `${formatNumber(v)}점`} />
+          <RankingList
+            result={pvpLeaderboard}
+            loading={loading}
+            valueOf={(v) => `${formatNumber(v)}점`}
+            onOpenProfile={onOpenProfile}
+          />
         )}
       </section>
     </section>

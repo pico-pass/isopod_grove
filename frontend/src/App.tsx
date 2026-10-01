@@ -44,7 +44,7 @@ function App() {
   const [view, setView] = useState<ViewKey>('habitat');
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileTarget, setProfileTarget] = useState<string | null>(null);
 
   if (authLoading) {
     return (
@@ -98,7 +98,7 @@ function App() {
         diamonds={gameState.diamonds}
         user={user}
         onLogout={logout}
-        onOpenProfile={() => setProfileOpen(true)}
+        onOpenProfile={() => setProfileTarget(user._id)}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />
       <div className="app-shell">
@@ -181,6 +181,7 @@ function App() {
               pvpLeaderboard={pvpLeaderboard}
               loading={leaderboardLoading}
               onRefresh={reloadLeaderboards}
+              onOpenProfile={setProfileTarget}
             />
           )}
           {view === 'battle' && (
@@ -211,20 +212,23 @@ function App() {
               }
             />
           )}
-          {view === 'friends' && <FriendsView showToast={showToast} />}
+          {view === 'friends' && (
+            <FriendsView showToast={showToast} onOpenProfile={setProfileTarget} />
+          )}
           {view === 'journal' && <JournalView gameState={gameState} />}
           {view === 'admin' && user.isAdmin && <AdminView />}
         </main>
       </div>
-      <ChatWidget currentUserId={user._id} />
-      {profileOpen && (
+      <ChatWidget currentUserId={user._id} onOpenProfile={setProfileTarget} />
+      {profileTarget && (
         <ProfileModal
-          user={user}
+          targetUserId={profileTarget}
+          currentUser={user}
           gameState={gameState}
           species={species}
-          achievements={achievements}
+          achievementsTotal={achievements.length}
           diamonds={gameState.diamonds}
-          onClose={() => setProfileOpen(false)}
+          onClose={() => setProfileTarget(null)}
           onSetNickname={(nickname) =>
             runAction(() => api.setNickname(nickname)).then((result) => {
               if (result?.user) setUser(result.user);
@@ -236,6 +240,7 @@ function App() {
               .then((updated) => setUser(updated))
               .catch((e) => showToast(e instanceof Error ? e.message : '메시지 변경에 실패했어요.', true))
           }
+          showToast={showToast}
         />
       )}
       <Toast toast={toast} />

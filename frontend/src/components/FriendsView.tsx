@@ -12,8 +12,10 @@ function Avatar({ name, url }: { name: string; url?: string }) {
 
 export function FriendsView({
   showToast,
+  onOpenProfile,
 }: {
   showToast: (message: string, isError?: boolean) => void;
+  onOpenProfile: (userId: string) => void;
 }) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
@@ -98,8 +100,10 @@ export function FriendsView({
         <div className="ranking-list friend-section">
           {results.map((u) => (
             <div className="ranking-row" key={u.userId}>
-              <Avatar name={u.displayName} url={u.avatarUrl} />
-              <span className="ranking-name">{u.displayName}</span>
+              <button className="friend-identity" onClick={() => onOpenProfile(u.userId)}>
+                <Avatar name={u.displayName} url={u.avatarUrl} />
+                <span className="ranking-name">{u.displayName}</span>
+              </button>
               <button
                 className="button secondary"
                 disabled={busyId === u.userId}
@@ -118,8 +122,10 @@ export function FriendsView({
           <div className="ranking-list friend-section">
             {incoming.map((r) => (
               <div className="ranking-row" key={r.requestId}>
-                <Avatar name={r.displayName} url={r.avatarUrl} />
-                <span className="ranking-name">{r.displayName}</span>
+                <button className="friend-identity" onClick={() => onOpenProfile(r.userId)}>
+                  <Avatar name={r.displayName} url={r.avatarUrl} />
+                  <span className="ranking-name">{r.displayName}</span>
+                </button>
                 <div className="friend-actions">
                   <button
                     className="button primary"
@@ -148,8 +154,10 @@ export function FriendsView({
           <div className="ranking-list friend-section">
             {outgoing.map((r) => (
               <div className="ranking-row" key={r.requestId}>
-                <Avatar name={r.displayName} url={r.avatarUrl} />
-                <span className="ranking-name">{r.displayName} · 응답 대기 중</span>
+                <button className="friend-identity" onClick={() => onOpenProfile(r.userId)}>
+                  <Avatar name={r.displayName} url={r.avatarUrl} />
+                  <span className="ranking-name">{r.displayName} · 응답 대기 중</span>
+                </button>
                 <button
                   className="button secondary"
                   disabled={busyId === r.requestId}
@@ -172,8 +180,10 @@ export function FriendsView({
         <div className="ranking-list friend-section">
           {friends.map((f) => (
             <div className="ranking-row" key={f.userId}>
-              <Avatar name={f.displayName} url={f.avatarUrl} />
-              <span className="ranking-name">{f.displayName}</span>
+              <button className="friend-identity" onClick={() => onOpenProfile(f.userId)}>
+                <Avatar name={f.displayName} url={f.avatarUrl} />
+                <span className="ranking-name">{f.displayName}</span>
+              </button>
               <div className="friend-actions">
                 <button
                   className="button primary"

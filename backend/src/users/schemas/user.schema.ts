@@ -29,6 +29,10 @@ export class User {
   // 관리자 여부. 서버 관리 페이지 등 관리자 전용 기능 접근을 결정한다.
   @Prop({ default: false })
   isAdmin: boolean;
+
+  // @Schema({ timestamps: true })가 알아서 채워준다. 데코레이터 없이 타입 힌트만 선언한다.
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

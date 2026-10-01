@@ -11,6 +11,7 @@ import type {
   GameState,
   LeaderboardResult,
   OnlinePlayersResult,
+  PublicProfile,
   PvpBattleResponse,
   PvpOpponentResult,
   Quest,
@@ -71,6 +72,7 @@ export const api = {
   getPvpLeaderboard: () => request<LeaderboardResult>('/leaderboard/pvp'),
 
   getGameState: () => request<GameState>('/game-state'),
+  getPublicProfile: (userId: string) => request<PublicProfile>(`/game-state/profile/${userId}`),
 
   advance: (seconds: number) => post<ActionResult>('/game-state/advance', { seconds }),
   care: (action: CareAction, terrariumId?: string) =>

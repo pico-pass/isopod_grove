@@ -1182,6 +1182,37 @@ export class GameStateService {
     return gameState.speciesNicknames.get(speciesId) || fallback;
   }
 
+  // 다른 유저의 공개 프로필(상태 메시지 + 요약 전적)을 조회한다. 코인·다이아 등 민감한 정보는 빼고 돌려준다.
+  async getPublicProfile(userId: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new NotFoundException('존재하지 않는 유저예요.');
+
+    const gameState = await this.findOrCreate(userId);
+    const totalPopulation = gameState.terrariums.reduce(
+      (sum, t) => sum + getPopulationCount(t.population),
+      0,
+    );
+
+    return {
+      userId,
+      displayName: effectiveDisplayName(user),
+      avatarUrl: user.avatarUrl,
+      profileMessage: user.profileMessage,
+      createdAt: user.createdAt,
+      xp: gameState.xp,
+      pvpRating: gameState.pvpRating,
+      discoveredCount: gameState.discovered.length,
+      totalPopulation,
+      achievementsClaimedCount: gameState.achievementsClaimed.length,
+      stats: {
+        battlesWon: gameState.stats.battlesWon,
+        battlesLost: gameState.stats.battlesLost,
+        pvpWins: gameState.stats.pvpWins,
+        pvpLosses: gameState.stats.pvpLosses,
+      },
+    };
+  }
+
   private getDailyProgress(
     gameState: GameStateDocument,
     questId: string,

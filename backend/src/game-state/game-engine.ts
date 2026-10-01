@@ -47,7 +47,8 @@ export const BATTLE_LEVEL_XP_BASE = 20;
 export const BATTLE_LEVEL_XP_GROWTH = 1.25;
 export const BATTLE_LEVEL_STAT_BONUS = 0.08;
 // 전투 훈련: 상대 없이 코인을 내고 바로 전투 경험치를 산다. 승패가 없는 대신 확정적이다.
-export const TRAIN_COOLDOWN_MS = 5_000;
+// 강도가 높을수록 쿨다운도 길어진다: 가벼운 30초 / 보통 2분 / 강도 높은 8분.
+export const TRAIN_COOLDOWN_MS_BY_INTENSITY = [30_000, 120_000, 480_000];
 export const TRAIN_BASE_COST_BY_RARITY = [15, 40, 120, 400, 1200];
 export const TRAIN_COST_LEVEL_GROWTH = 1.12; // 전투 레벨이 오를수록 훈련 비용도 조금씩 비싸진다
 // 훈련 강도 3단계(가벼운/보통/강도 높은). 강도가 높을수록 경험치는 많지만 코인 대비 효율은 떨어진다.

@@ -43,7 +43,7 @@ import {
   OBSERVE_COOLDOWN_MS,
   OBSERVE_REWARD,
   STEP_SECONDS,
-  TRAIN_COOLDOWN_MS,
+  TRAIN_COOLDOWN_MS_BY_INTENSITY,
   TRAIN_EXTREME_DIAMOND_COST,
   TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_XP_BY_INTENSITY,
@@ -550,7 +550,10 @@ export class GameStateService {
         `극한 훈련에는 💎 ${diamondCost}개가 필요해요.`,
       );
     }
-    gameState.cooldowns.set('train', now + TRAIN_COOLDOWN_MS);
+    gameState.cooldowns.set(
+      'train',
+      now + TRAIN_COOLDOWN_MS_BY_INTENSITY[intensity],
+    );
     gameState.coins -= cost;
     gameState.diamonds -= diamondCost;
 

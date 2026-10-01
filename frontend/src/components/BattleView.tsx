@@ -4,10 +4,12 @@ import {
   BATTLE_DIAMOND_CHANCE_BY_RARITY,
   BATTLE_REWARD_BY_RARITY,
   RARITIES,
+  TRAIN_COOLDOWN_SECONDS_BY_INTENSITY,
   TRAIN_EXTREME_DIAMOND_COST,
   TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_INTENSITY_LABELS,
   TRAIN_XP_BY_INTENSITY,
+  formatDuration,
   formatNumber,
   getBattleLevelProgress,
   getCombatBaseStats,
@@ -219,6 +221,7 @@ export function BattleView({
                     : ''}
                   {extreme ? ` · 💎${TRAIN_EXTREME_DIAMOND_COST}` : ''}
                 </small>
+                <small>⏱ 쿨다운 {formatDuration(TRAIN_COOLDOWN_SECONDS_BY_INTENSITY[i])}</small>
               </button>
             ))}
           </div>
@@ -231,7 +234,7 @@ export function BattleView({
             <small>다이아 {TRAIN_EXTREME_DIAMOND_COST}개 추가 소모 · 경험치 {TRAIN_EXTREME_XP_MULTIPLIER}배</small>
           </button>
           <div className="info-banner">
-            🏋️ 상대도 승패도 없이, 코인을 내고 바로 전투 경험치를 얻어요. 레벨이 높을수록, 강도가 높을수록 비용이 올라가요.
+            🏋️ 상대도 승패도 없이, 코인을 내고 바로 전투 경험치를 얻어요. 레벨이 높을수록, 강도가 높을수록 비용과 쿨다운이 올라가요.
             {extreme && ' 극한 훈련 중엔 회당 💎가 추가로 들어요.'}
           </div>
         </>

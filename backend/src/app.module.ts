@@ -14,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { ChatModule } from './chat/chat.module';
 import { PresenceModule } from './presence/presence.module';
+import { FriendsModule } from './friends/friends.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PresenceModule } from './presence/presence.module';
     AdminModule,
     ChatModule,
     PresenceModule,
+    FriendsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

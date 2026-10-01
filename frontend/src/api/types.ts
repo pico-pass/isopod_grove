@@ -126,6 +126,32 @@ export interface LeaderboardResult {
   me: (LeaderboardEntry & { inTop: boolean }) | null;
 }
 
+export interface Friend {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  canGiftToday: boolean;
+}
+
+export interface FriendRequest {
+  requestId: string;
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
+export interface FriendsListResult {
+  friends: Friend[];
+  incomingRequests: FriendRequest[];
+  outgoingRequests: FriendRequest[];
+}
+
+export interface FriendSearchResult {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
 export interface OnlinePlayer {
   userId: string;
   displayName: string;

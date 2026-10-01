@@ -36,6 +36,23 @@ export class UsersService {
     return this.userModel.find({ _id: { $in: ids } }).exec();
   }
 
+  // 닉네임(직접 정한 이름) 또는 구글 표시 이름으로 유저를 찾는다. 친구 추가 검색에 쓴다.
+  searchByName(
+    query: string,
+    excludeUserId: string,
+    limit = 10,
+  ): Promise<UserDocument[]> {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+    return this.userModel
+      .find({
+        _id: { $ne: excludeUserId },
+        $or: [{ nickname: regex }, { displayName: regex }],
+      })
+      .limit(limit)
+      .exec();
+  }
+
   async isAdmin(userId: string): Promise<boolean> {
     const user = await this.userModel
       .findById(userId, { isAdmin: 1 })

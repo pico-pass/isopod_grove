@@ -1564,6 +1564,30 @@ main {
   margin: 2px 0;
 }
 
+/* Friends */
+.friend-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.friend-search-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.friend-section {
+  margin-bottom: 18px;
+}
+.friend-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* Achievements */
 .achievement-grid {
   display: grid;

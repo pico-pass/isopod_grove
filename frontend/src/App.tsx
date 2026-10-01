@@ -13,6 +13,7 @@ import { AchievementsView } from './components/AchievementsView';
 import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
+import { FriendsView } from './components/FriendsView';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
@@ -212,6 +213,7 @@ function App() {
               }
             />
           )}
+          {view === 'friends' && <FriendsView showToast={showToast} />}
           {view === 'journal' && <JournalView gameState={gameState} />}
           {view === 'admin' && user.isAdmin && <AdminView />}
         </main>

@@ -6,6 +6,8 @@ import type {
   CareAction,
   ChatChannel,
   ChatMessage,
+  FriendSearchResult,
+  FriendsListResult,
   GameState,
   LeaderboardResult,
   OnlinePlayersResult,
@@ -106,4 +108,18 @@ export const api = {
     post<ChatMessage>('/chat/messages', { channel, text }),
 
   getOnlinePlayers: () => request<OnlinePlayersResult>('/presence/online'),
+
+  getFriends: () => request<FriendsListResult>('/friends'),
+  searchFriends: (query: string) =>
+    request<FriendSearchResult[]>(`/friends/search?query=${encodeURIComponent(query)}`),
+  sendFriendRequest: (targetUserId: string) =>
+    post<{ message: string }>('/friends/request', { targetUserId }),
+  acceptFriendRequest: (requestId: string) =>
+    post<{ message: string }>('/friends/accept', { requestId }),
+  declineFriendRequest: (requestId: string) =>
+    post<{ message: string }>('/friends/decline', { requestId }),
+  removeFriend: (friendUserId: string) =>
+    post<{ message: string }>('/friends/remove', { friendUserId }),
+  giftFriend: (friendUserId: string) =>
+    post<{ message: string }>('/friends/gift', { friendUserId }),
 };

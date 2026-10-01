@@ -1192,6 +1192,209 @@ main {
   color: var(--muted);
 }
 
+/* Battle */
+.battle-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.battle-pick {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+.battle-pick img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.battle-pick-name {
+  font-size: 0.8rem;
+}
+.battle-pick small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+.battle-pick.active {
+  border-color: var(--lime);
+  background: var(--panel2);
+}
+.battle-pick-level {
+  color: var(--muted);
+  font-weight: 400;
+}
+.battle-fight-button {
+  margin-bottom: 20px;
+}
+.difficulty-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.difficulty-pick {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.difficulty-pick strong {
+  font-size: 0.85rem;
+}
+.difficulty-pick small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+.difficulty-pick.active {
+  background: var(--panel2);
+  border-width: 2px;
+}
+.mini-xp-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.mini-xp-bar i {
+  display: block;
+  height: 100%;
+  background: var(--lime);
+  transition: width 0.4s ease;
+}
+.mini-xp-bar.large {
+  height: 7px;
+}
+.battle-species-xp {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.level-up-badge {
+  color: var(--lime);
+  font-weight: 700;
+}
+.battle-result {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.battle-banner {
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+.battle-banner.win {
+  color: var(--lime);
+}
+.battle-banner.lose {
+  color: var(--danger);
+}
+.battle-banner.ongoing {
+  color: var(--muted);
+  animation: battle-pulse 1s ease-in-out infinite;
+}
+@keyframes battle-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.battle-vs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.battle-vs-mark {
+  font-weight: 800;
+  color: var(--muted);
+}
+.fighter-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel2);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 14px;
+  min-width: 140px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.fighter-card.acting {
+  border-color: var(--lime);
+  transform: scale(1.04);
+}
+.fighter-card img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+.hp-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.hp-bar i {
+  display: block;
+  height: 100%;
+  background: var(--danger);
+  transition: width 0.4s ease;
+}
+.fighter-card h3 {
+  font-size: 0.95rem;
+}
+.fighter-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.fighter-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 0.78rem;
+  margin-top: 4px;
+}
+.battle-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel2);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.battle-log-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.battle-log-row.me {
+  color: var(--text);
+}
+.battle-reward {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--gold);
+  font-weight: 700;
+}
+
 /* Upgrades */
 .upgrade-grid {
   display: grid;

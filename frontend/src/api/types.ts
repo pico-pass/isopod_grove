@@ -45,6 +45,8 @@ export interface Stats {
   earned: number;
   explored: number;
   played: number;
+  battlesWon: number;
+  battlesLost: number;
 }
 
 export interface LogEntry {
@@ -72,6 +74,8 @@ export interface GameState {
   explorationTickets: number;
   diamonds: number;
   xp: number;
+  // 야생 배틀 전투 경험치. key: speciesId. 레벨은 getBattleLevelProgress로 계산한다.
+  battleXp: Record<string, number>;
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;
@@ -149,6 +153,50 @@ export interface AdminStats {
       heapUsedMb: number;
     };
   };
+}
+
+export interface CombatStats {
+  hp: number;
+  atk: number;
+  def: number;
+}
+
+export interface BattleTurn {
+  turn: number;
+  attacker: 'me' | 'enemy';
+  damage: number;
+  remainingHp: number;
+}
+
+export interface BattleFighter {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+  stats: CombatStats;
+  level: number;
+}
+
+export interface SpeciesLevelResult {
+  speciesId: string;
+  leveledUp: boolean;
+  level: number;
+  currentXp: number;
+  requiredXp: number;
+  xpGained: number;
+}
+
+export interface BattleResponse {
+  gameState: GameState;
+  message: string;
+  result: 'win' | 'lose';
+  difficulty: number;
+  mine: BattleFighter;
+  enemy: BattleFighter;
+  log: BattleTurn[];
+  reward: { coins: number; diamonds: number };
+  speciesLevel: SpeciesLevelResult;
 }
 
 export type CareAction = 'feed' | 'mist' | 'climate';

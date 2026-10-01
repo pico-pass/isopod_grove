@@ -1,4 +1,4 @@
-import type { Achievement, GameState, Species } from '../api/types';
+import type { Achievement, CombatStats, GameState, Species } from '../api/types';
 
 export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
@@ -17,6 +17,11 @@ export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
 // 다이아: 업적/새 종 발견/레벨업으로 얻는다.
 export const NICKNAME_CHANGE_COST = 2000;
+// 야생 배틀 난이도(=상대 희귀도)별 보상/확률. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const BATTLE_REWARD_BY_RARITY = [10, 25, 70, 180, 450];
+export const BATTLE_DIAMOND_CHANCE_BY_RARITY = [0.04, 0.06, 0.08, 0.1, 0.14];
+export const BATTLE_LEVEL_XP_BASE = 20;
+export const BATTLE_LEVEL_XP_GROWTH = 1.25;
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },
@@ -26,31 +31,45 @@ export const RARITIES = [
   { name: '신화', color: '#aadfc0', odds: 1.5 },
 ];
 
-// level(그 레벨에서 다음 레벨까지) 구간에 필요한 경험치
-export function getLevelXpRequirement(level: number): number {
-  return Math.round(LEVEL_XP_BASE * Math.pow(LEVEL_XP_GROWTH, level - 1));
-}
-
 export interface LevelProgress {
   level: number;
   currentXp: number; // 현재 레벨 구간에서 쌓은 경험치
   requiredXp: number; // 다음 레벨까지 필요한 경험치
 }
 
-export function getLevelProgress(xp: number): LevelProgress {
+// 누적 경험치를 "레벨 1부터 base, 레벨마다 growth배씩 늘어나는 요구치"로 환산한다.
+// 계정 레벨과 종별 전투 레벨이 같은 방식을 쓴다. 백엔드(game-engine.ts)에도 같은 함수가 있다.
+function computeLevelProgress(xp: number, base: number, growth: number): LevelProgress {
   let level = 1;
   let remaining = xp;
-  let required = getLevelXpRequirement(level);
+  let required = Math.round(base * Math.pow(growth, level - 1));
   while (remaining >= required) {
     remaining -= required;
     level++;
-    required = getLevelXpRequirement(level);
+    required = Math.round(base * Math.pow(growth, level - 1));
   }
   return { level, currentXp: remaining, requiredXp: required };
 }
 
+// level(그 레벨에서 다음 레벨까지) 구간에 필요한 경험치
+export function getLevelXpRequirement(level: number): number {
+  return Math.round(LEVEL_XP_BASE * Math.pow(LEVEL_XP_GROWTH, level - 1));
+}
+
+export function getLevelProgress(xp: number): LevelProgress {
+  return computeLevelProgress(xp, LEVEL_XP_BASE, LEVEL_XP_GROWTH);
+}
+
 export function getLevel(xp: number): number {
   return getLevelProgress(xp).level;
+}
+
+export function getBattleLevelProgress(xp: number): LevelProgress {
+  return computeLevelProgress(xp, BATTLE_LEVEL_XP_BASE, BATTLE_LEVEL_XP_GROWTH);
+}
+
+export function getBattleLevel(xp: number): number {
+  return getBattleLevelProgress(xp).level;
 }
 
 export function getCapacity(spaceLevel: number): number {
@@ -102,6 +121,24 @@ export function getAutoIncomeRate(
     if (s) base += count * s.rate;
   }
   return base * (1 + soilLevel * SOIL_RATE_BONUS_PER_LEVEL) * (comfortable ? 1 : 0.4);
+}
+
+// 야생 배틀 예상 스탯(미리보기용). 실제 전투에선 ±15% 개체 편차가 추가로 붙는다.
+// 백엔드(game-engine.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export const BATTLE_LEVEL_STAT_BONUS = 0.08; // 전투 레벨 1당 기본 스탯 +8%
+
+export function getCombatBaseStats(rarity: number, level = 1): CombatStats {
+  const base = {
+    hp: 50 + rarity * 40,
+    atk: 10 + rarity * 8,
+    def: 5 + rarity * 4,
+  };
+  const levelMultiplier = 1 + (level - 1) * BATTLE_LEVEL_STAT_BONUS;
+  return {
+    hp: Math.round(base.hp * levelMultiplier),
+    atk: Math.round(base.atk * levelMultiplier),
+    def: Math.round(base.def * levelMultiplier),
+  };
 }
 
 export function getBaseBreedSeconds(rarity: number): number {

@@ -31,6 +31,7 @@ export function JournalView({ gameState }: { gameState: GameState }) {
           ['지금까지 받은 골드', gameState.stats.earned, 'G'],
           ['탐색 횟수', gameState.stats.explored, '회'],
           ['보유 다이아', gameState.diamonds, '💎'],
+          ['야생 배틀 전적', gameState.stats.battlesWon, `승 (${gameState.stats.battlesLost}패)`],
         ].map(([label, n, unit]) => (
           <div className="journal-stat" key={label as string}>
             {label}

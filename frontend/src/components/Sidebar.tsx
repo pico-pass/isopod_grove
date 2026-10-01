@@ -7,6 +7,7 @@ export type ViewKey =
   | 'upgrades'
   | 'achievements'
   | 'ranking'
+  | 'battle'
   | 'journal'
   | 'admin';
 
@@ -17,6 +18,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'upgrades', label: '사육장 업그레이드', icon: '🌱' },
   { key: 'achievements', label: '업적', icon: '🏆' },
   { key: 'ranking', label: '랭킹', icon: '📊' },
+  { key: 'battle', label: '야생 배틀', icon: '⚔️' },
   { key: 'journal', label: '사육 일지', icon: '📔' },
 ];
 

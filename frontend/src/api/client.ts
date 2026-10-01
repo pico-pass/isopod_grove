@@ -2,6 +2,7 @@ import type {
   Achievement,
   ActionResult,
   AdminStats,
+  BattleResponse,
   CareAction,
   ChatMessage,
   GameState,
@@ -64,6 +65,8 @@ export const api = {
     post<ActionResult>('/game-state/care', { action, terrariumId }),
   observe: (speciesId: string) => post<ActionResult>('/game-state/observe', { speciesId }),
   collect: () => post<ActionResult>('/game-state/collect'),
+  battle: (speciesId: string, difficulty: number) =>
+    post<BattleResponse>('/game-state/battle', { speciesId, difficulty }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),

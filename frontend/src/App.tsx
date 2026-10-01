@@ -11,6 +11,7 @@ import { MarketView } from './components/MarketView';
 import { UpgradesView } from './components/UpgradesView';
 import { AchievementsView } from './components/AchievementsView';
 import { RankingView } from './components/RankingView';
+import { BattleView } from './components/BattleView';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
@@ -167,6 +168,13 @@ function App() {
               incomeLeaderboard={incomeLeaderboard}
               loading={leaderboardLoading}
               onRefresh={reloadLeaderboards}
+            />
+          )}
+          {view === 'battle' && (
+            <BattleView
+              gameState={gameState}
+              species={species}
+              onBattle={(speciesId, difficulty) => runAction(() => api.battle(speciesId, difficulty))}
             />
           )}
           {view === 'journal' && <JournalView gameState={gameState} />}

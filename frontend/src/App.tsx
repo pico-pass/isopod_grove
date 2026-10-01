@@ -175,7 +175,9 @@ function App() {
               gameState={gameState}
               species={species}
               onBattle={(speciesId, difficulty) => runAction(() => api.battle(speciesId, difficulty))}
-              onTrain={(speciesId, intensity) => runAction(() => api.train(speciesId, intensity))}
+              onTrain={(speciesId, intensity, extreme) =>
+                runAction(() => api.train(speciesId, intensity, extreme))
+              }
             />
           )}
           {view === 'journal' && <JournalView gameState={gameState} />}

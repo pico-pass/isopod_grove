@@ -44,6 +44,8 @@ import {
   OBSERVE_REWARD,
   STEP_SECONDS,
   TRAIN_COOLDOWN_MS,
+  TRAIN_EXTREME_DIAMOND_COST,
+  TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_XP_BY_INTENSITY,
   canBreedInEnvironment,
   clamp,
@@ -507,7 +509,13 @@ export class GameStateService {
   }
 
   // 상대 없이 코인을 내고 보유한 종 하나의 전투 경험치를 바로 올린다. 승패가 없는 대신 비용이 확정적이다.
-  async train(userId: string, speciesId: string, intensity: number) {
+  // extreme(극한 훈련)을 켜면 다이아 1개를 추가로 쓰고 경험치가 12배로 뛴다.
+  async train(
+    userId: string,
+    speciesId: string,
+    intensity: number,
+    extreme = false,
+  ) {
     if (
       !Number.isInteger(intensity) ||
       intensity < 0 ||
@@ -531,20 +539,29 @@ export class GameStateService {
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
     const beforeLevel = getBattleLevel(beforeXp);
     const cost = getTrainCost(species.rarity, beforeLevel, intensity);
+    const diamondCost = extreme ? TRAIN_EXTREME_DIAMOND_COST : 0;
     if (gameState.coins < cost) {
       throw new BadRequestException(
         `훈련에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`,
       );
     }
+    if (gameState.diamonds < diamondCost) {
+      throw new BadRequestException(
+        `극한 훈련에는 💎 ${diamondCost}개가 필요해요.`,
+      );
+    }
     gameState.cooldowns.set('train', now + TRAIN_COOLDOWN_MS);
     gameState.coins -= cost;
+    gameState.diamonds -= diamondCost;
 
-    const xpGain = TRAIN_XP_BY_INTENSITY[intensity];
+    const xpGain =
+      TRAIN_XP_BY_INTENSITY[intensity] *
+      (extreme ? TRAIN_EXTREME_XP_MULTIPLIER : 1);
     gameState.battleXp.set(speciesId, beforeXp + xpGain);
     const afterLevel = getBattleLevel(beforeXp + xpGain);
     const leveledUp = afterLevel > beforeLevel;
 
-    let message = `${species.name}을(를) 훈련시켰어요. -${cost.toLocaleString('ko-KR')} G · 경험치 +${xpGain}`;
+    let message = `${species.name}을(를) ${extreme ? '극한 ' : ''}훈련시켰어요. -${cost.toLocaleString('ko-KR')} G${diamondCost ? ` · 💎 ${diamondCost}` : ''} · 경험치 +${xpGain}`;
     if (leveledUp) {
       message += ` 🆙 전투 Lv.${afterLevel}로 성장했어요!`;
     }
@@ -556,6 +573,7 @@ export class GameStateService {
       gameState,
       message,
       cost,
+      diamondCost,
       speciesLevel: {
         speciesId: species.speciesId,
         leveledUp,

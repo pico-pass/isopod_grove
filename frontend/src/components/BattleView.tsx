@@ -4,6 +4,8 @@ import {
   BATTLE_DIAMOND_CHANCE_BY_RARITY,
   BATTLE_REWARD_BY_RARITY,
   RARITIES,
+  TRAIN_EXTREME_DIAMOND_COST,
+  TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_INTENSITY_LABELS,
   TRAIN_XP_BY_INTENSITY,
   formatNumber,
@@ -70,11 +72,12 @@ export function BattleView({
   gameState: GameState;
   species: Species[];
   onBattle: (speciesId: string, difficulty: number) => Promise<BattleResponse | null>;
-  onTrain: (speciesId: string, intensity: number) => Promise<TrainResponse | null>;
+  onTrain: (speciesId: string, intensity: number, extreme: boolean) => Promise<TrainResponse | null>;
 }) {
   const [mode, setMode] = useState<Mode>('wild');
   const [difficulty, setDifficulty] = useState(0);
   const [intensity, setIntensity] = useState(0);
+  const [extreme, setExtreme] = useState(false);
   const [selected, setSelected] = useState('');
   const [result, setResult] = useState<BattleResponse | null>(null);
   const [trainResult, setTrainResult] = useState<TrainResponse | null>(null);
@@ -120,7 +123,9 @@ export function BattleView({
     selectedSpecies && selectedProgress
       ? getTrainCost(selectedSpecies.rarity, selectedProgress.level, intensity)
       : null;
-  const canAffordTrain = trainCost !== null && gameState.coins >= trainCost;
+  const trainDiamondCost = extreme ? TRAIN_EXTREME_DIAMOND_COST : 0;
+  const canAffordTrain =
+    trainCost !== null && gameState.coins >= trainCost && gameState.diamonds >= trainDiamondCost;
 
   const fight = async () => {
     if (!selected || fighting || animating || cooldownRemaining > 0) return;
@@ -136,7 +141,7 @@ export function BattleView({
   const train = async () => {
     if (!selected || training || trainCooldownRemaining > 0 || !canAffordTrain) return;
     setTraining(true);
-    const r = await onTrain(selected, intensity);
+    const r = await onTrain(selected, intensity, extreme);
     if (r) setTrainResult(r);
     setTraining(false);
   };
@@ -208,16 +213,26 @@ export function BattleView({
               >
                 <strong>{label}</strong>
                 <small>
-                  경험치 +{TRAIN_XP_BY_INTENSITY[i]}
+                  경험치 +{TRAIN_XP_BY_INTENSITY[i] * (extreme ? TRAIN_EXTREME_XP_MULTIPLIER : 1)}
                   {selectedSpecies && selectedProgress
                     ? ` · ${formatNumber(getTrainCost(selectedSpecies.rarity, selectedProgress.level, i))} G`
                     : ''}
+                  {extreme ? ` · 💎${TRAIN_EXTREME_DIAMOND_COST}` : ''}
                 </small>
               </button>
             ))}
           </div>
+          <button
+            className={`extreme-toggle${extreme ? ' active' : ''}`}
+            onClick={() => setExtreme((v) => !v)}
+            disabled={training}
+          >
+            ☢️ 극한 훈련 {extreme ? 'ON' : 'OFF'}
+            <small>다이아 {TRAIN_EXTREME_DIAMOND_COST}개 추가 소모 · 경험치 {TRAIN_EXTREME_XP_MULTIPLIER}배</small>
+          </button>
           <div className="info-banner">
             🏋️ 상대도 승패도 없이, 코인을 내고 바로 전투 경험치를 얻어요. 레벨이 높을수록, 강도가 높을수록 비용이 올라가요.
+            {extreme && ' 극한 훈련 중엔 회당 💎가 추가로 들어요.'}
           </div>
         </>
       )}
@@ -279,8 +294,10 @@ export function BattleView({
               : training
                 ? '훈련 중...'
                 : !canAffordTrain
-                  ? `G가 부족해요 (${formatNumber(trainCost ?? 0)} G 필요)`
-                  : `🏋️ ${TRAIN_INTENSITY_LABELS[intensity]} 시작 (-${formatNumber(trainCost ?? 0)} G)`}
+                  ? trainCost !== null && gameState.coins < trainCost
+                    ? `G가 부족해요 (${formatNumber(trainCost ?? 0)} G 필요)`
+                    : `💎가 부족해요 (${trainDiamondCost}개 필요)`
+                  : `${extreme ? '☢️ 극한 ' : '🏋️ '}${TRAIN_INTENSITY_LABELS[intensity]} 시작 (-${formatNumber(trainCost ?? 0)} G${trainDiamondCost ? ` · 💎${trainDiamondCost}` : ''})`}
         </button>
       )}
 
@@ -340,8 +357,13 @@ export function BattleView({
 
       {mode === 'train' && trainResult && (
         <section className="panel battle-result">
-          <div className="battle-banner win">🏋️ 훈련 완료!</div>
-          <p className="battle-reward">-{formatNumber(trainResult.cost)} G</p>
+          <div className="battle-banner win">
+            {trainResult.diamondCost ? '☢️ 극한 훈련 완료!' : '🏋️ 훈련 완료!'}
+          </div>
+          <p className="battle-reward">
+            -{formatNumber(trainResult.cost)} G
+            {trainResult.diamondCost ? ` · 💎 ${trainResult.diamondCost}개` : ''}
+          </p>
           <p className="battle-species-xp">
             전투 경험치 +{trainResult.speciesLevel.xpGained}
             {trainResult.speciesLevel.leveledUp && (

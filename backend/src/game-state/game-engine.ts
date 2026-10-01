@@ -53,6 +53,9 @@ export const TRAIN_COST_LEVEL_GROWTH = 1.12; // 전투 레벨이 오를수록 �
 // 훈련 강도 3단계(가벼운/보통/강도 높은). 강도가 높을수록 경험치는 많지만 코인 대비 효율은 떨어진다.
 export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
 export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
+// 극한 훈련: 켜면 코인 비용은 그대로지만 다이아 1개를 추가로 쓰고, 경험치가 12배로 뛴다.
+export const TRAIN_EXTREME_DIAMOND_COST = 1;
+export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
 
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다

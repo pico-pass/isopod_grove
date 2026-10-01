@@ -28,6 +28,8 @@ export const TRAIN_COST_LEVEL_GROWTH = 1.12;
 export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
 export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
 export const TRAIN_INTENSITY_LABELS = ['가벼운 훈련', '보통 훈련', '강도 높은 훈련'];
+export const TRAIN_EXTREME_DIAMOND_COST = 1;
+export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
 
 export const RARITIES = [
   { name: '일반', color: '#b7ce9a', odds: 65 },

@@ -1,4 +1,4 @@
-import { IsInt, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class TrainDto {
   @IsString()
@@ -9,4 +9,9 @@ export class TrainDto {
   @Min(0)
   @Max(2)
   intensity: number;
+
+  // 극한 훈련: 다이아 1개를 추가로 쓰고 경험치가 12배가 된다.
+  @IsOptional()
+  @IsBoolean()
+  extreme?: boolean;
 }

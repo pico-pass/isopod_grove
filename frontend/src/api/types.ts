@@ -203,6 +203,7 @@ export interface TrainResponse {
   gameState: GameState;
   message: string;
   cost: number;
+  diamondCost: number;
   speciesLevel: SpeciesLevelResult;
 }
 

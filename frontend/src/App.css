@@ -1260,6 +1260,34 @@ main {
   background: var(--panel2);
   border-width: 2px;
 }
+.extreme-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.extreme-toggle small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.extreme-toggle.active {
+  background: rgba(224, 93, 93, 0.14);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.extreme-toggle.active small {
+  color: var(--danger);
+  opacity: 0.85;
+}
 .mini-xp-bar {
   width: 100%;
   height: 4px;

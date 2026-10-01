@@ -68,8 +68,8 @@ export const api = {
   collect: () => post<ActionResult>('/game-state/collect'),
   battle: (speciesId: string, difficulty: number) =>
     post<BattleResponse>('/game-state/battle', { speciesId, difficulty }),
-  train: (speciesId: string, intensity: number) =>
-    post<TrainResponse>('/game-state/train', { speciesId, intensity }),
+  train: (speciesId: string, intensity: number, extreme?: boolean) =>
+    post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),

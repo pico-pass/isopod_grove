@@ -55,7 +55,12 @@ export class GameStateController {
 
   @Post('train')
   train(@CurrentUser() user: AuthenticatedUser, @Body() dto: TrainDto) {
-    return this.gameStateService.train(user.userId, dto.speciesId, dto.intensity);
+    return this.gameStateService.train(
+      user.userId,
+      dto.speciesId,
+      dto.intensity,
+      dto.extreme,
+    );
   }
 
   @Post('explore')

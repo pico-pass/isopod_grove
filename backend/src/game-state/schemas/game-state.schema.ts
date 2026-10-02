@@ -66,6 +66,10 @@ export class Stats {
   // 보유 종 중 가장 높이 올린 전투 레벨. 야생 배틀/훈련/투기장 어디서 올려도 갱신된다.
   @Prop({ default: 0 })
   highestBattleLevel: number;
+
+  // 장비 뽑기 누적 횟수(10연차는 10회로 센다). 업적 조건으로 쓴다.
+  @Prop({ default: 0 })
+  equipmentPulls: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 

@@ -100,7 +100,7 @@ function App() {
   );
   const claimableAchievements = achievements.filter((a) => {
     if (gameState.achievementsClaimed.includes(a.achievementId)) return false;
-    const { progress, target } = getAchievementProgress(a, gameState, species, friendsCount);
+    const { progress, target } = getAchievementProgress(a, gameState, species, { friendsCount, equipmentCatalog });
     return target > 0 && progress >= target;
   }).length;
 
@@ -186,6 +186,7 @@ function App() {
               species={species}
               achievements={achievements}
               friendsCount={friendsCount}
+              equipmentCatalog={equipmentCatalog}
               onClaim={(achievementId) => runAction(() => api.claimAchievement(achievementId))}
             />
           )}

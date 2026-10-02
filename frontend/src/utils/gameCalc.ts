@@ -301,11 +301,45 @@ export function formatNumber(n: number): string {
 
 // ---- 업적 진행도 계산 ----
 // 백엔드(game-engine.ts)에 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+// 게임 상태 밖에서 따로 불러오는 값들(친구 수, 장비 카탈로그)
+export interface AchievementExtras {
+  friendsCount?: number;
+  equipmentCatalog?: readonly EquipmentCatalogItem[];
+}
+
+export interface EquipmentSummary {
+  owned: number;
+  legend: number;
+  mythic: number;
+  maxLevel: number;
+  awakenings: number;
+  slots: number;
+}
+
+// 보유 장비를 업적용 숫자로 요약한다. 전설 이상(legend)에는 신화(mythic)도 포함된다.
+export function summarizeEquipment(
+  items: readonly EquipmentItemState[] | undefined,
+  slotCount: number,
+  catalog: readonly EquipmentCatalogItem[],
+): EquipmentSummary {
+  const summary: EquipmentSummary = { owned: 0, legend: 0, mythic: 0, maxLevel: 0, awakenings: 0, slots: slotCount };
+  for (const item of items ?? []) {
+    const def = catalog.find((c) => c.equipmentId === item.itemId);
+    if (!def) continue;
+    summary.owned += 1;
+    if (def.rarity >= 3) summary.legend += 1;
+    if (def.rarity >= 4) summary.mythic += 1;
+    summary.maxLevel = Math.max(summary.maxLevel, item.level);
+    summary.awakenings += item.awakenCount;
+  }
+  return summary;
+}
+
 export function getAchievementProgress(
   achievement: Achievement,
   gameState: GameState,
   speciesList: Species[],
-  friendsCount = 0,
+  extras: AchievementExtras = {},
 ): { progress: number; target: number } {
   if (achievement.type === 'collectionAll') {
     return { progress: gameState.discovered.length, target: speciesList.length };
@@ -322,9 +356,26 @@ export function getAchievementProgress(
     case 'terrariums':
       return { progress: gameState.terrariums.length, target };
     case 'friendsCount':
-      return { progress: friendsCount, target };
+      return { progress: extras.friendsCount ?? 0, target };
     case 'nicknames':
       return { progress: Object.keys(gameState.speciesNicknames).length, target };
+    case 'equipmentOwned':
+    case 'legendEquipment':
+    case 'mythicEquipment':
+    case 'equipmentLevel':
+    case 'equipmentAwakenings':
+    case 'equipmentSlots': {
+      const eq = summarizeEquipment(gameState.equipment, gameState.equipmentSlots?.length ?? 0, extras.equipmentCatalog ?? []);
+      const byKey = {
+        equipmentOwned: eq.owned,
+        legendEquipment: eq.legend,
+        mythicEquipment: eq.mythic,
+        equipmentLevel: eq.maxLevel,
+        equipmentAwakenings: eq.awakenings,
+        equipmentSlots: eq.slots,
+      } as const;
+      return { progress: byKey[achievement.statKey], target };
+    }
     case 'births':
     case 'sold':
     case 'explored':
@@ -334,6 +385,7 @@ export function getAchievementProgress(
     case 'peakPvpRating':
     case 'trainCount':
     case 'highestBattleLevel':
+    case 'equipmentPulls':
       return { progress: gameState.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

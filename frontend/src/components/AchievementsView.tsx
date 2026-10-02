@@ -1,4 +1,4 @@
-import type { Achievement, GameState, Species } from '../api/types';
+import type { Achievement, EquipmentCatalogItem, GameState, Species } from '../api/types';
 import { RARITIES, formatNumber, getAchievementProgress } from '../utils/gameCalc';
 
 const ICONS: Record<string, string> = {
@@ -17,6 +17,13 @@ const ICONS: Record<string, string> = {
   star: '⭐',
   friends: '🤝',
   pencil: '✏️',
+  gift: '🎁',
+  backpack: '🎒',
+  gem: '💠',
+  crown: '👑',
+  hammer: '🔨',
+  sparkles: '✨',
+  box: '📦',
 };
 
 export function AchievementsView({
@@ -24,12 +31,14 @@ export function AchievementsView({
   species,
   achievements,
   friendsCount,
+  equipmentCatalog,
   onClaim,
 }: {
   gameState: GameState;
   species: Species[];
   achievements: Achievement[];
   friendsCount: number;
+  equipmentCatalog: EquipmentCatalogItem[];
   onClaim: (achievementId: string) => void;
 }) {
   const claimedCount = gameState.achievementsClaimed.length;
@@ -49,7 +58,7 @@ export function AchievementsView({
       <div className="achievement-grid">
         {achievements.map((a) => {
           const claimed = gameState.achievementsClaimed.includes(a.achievementId);
-          const { progress, target } = getAchievementProgress(a, gameState, species, friendsCount);
+          const { progress, target } = getAchievementProgress(a, gameState, species, { friendsCount, equipmentCatalog });
           const complete = progress >= target && target > 0;
           const ratio = target > 0 ? Math.min(1, progress / target) : 0;
           return (

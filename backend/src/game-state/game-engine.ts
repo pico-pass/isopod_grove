@@ -345,6 +345,41 @@ export function computeEquipmentBonuses(
   return result;
 }
 
+// 보유 장비를 업적용 숫자로 요약한다. 프론트(gameCalc.ts)에도 같은 함수가 있다.
+// 전설 이상(legend)에는 신화(mythic)도 포함된다.
+export interface EquipmentSummary {
+  owned: number;
+  legend: number;
+  mythic: number;
+  maxLevel: number;
+  awakenings: number;
+  slots: number;
+}
+
+export function summarizeEquipment(
+  items: readonly EquipmentItemLike[] | undefined,
+  slotCount: number,
+): EquipmentSummary {
+  const summary: EquipmentSummary = {
+    owned: 0,
+    legend: 0,
+    mythic: 0,
+    maxLevel: 0,
+    awakenings: 0,
+    slots: slotCount,
+  };
+  for (const item of items ?? []) {
+    const def = EQUIPMENT_BY_ID.get(item.itemId);
+    if (!def) continue;
+    summary.owned += 1;
+    if (def.rarity >= 3) summary.legend += 1;
+    if (def.rarity >= 4) summary.mythic += 1;
+    summary.maxLevel = Math.max(summary.maxLevel, item.level);
+    summary.awakenings += item.awakenCount;
+  }
+  return summary;
+}
+
 // 미리보기용: 기본 스탯에 보너스를 곱해 반올림한다.
 export function applyStatBonuses(stats: CombatStats, bonuses: StatBonuses): CombatStats {
   return {
@@ -451,7 +486,14 @@ export interface AchievementProgressInput {
     | 'trainCount'
     | 'highestBattleLevel'
     | 'friendsCount'
-    | 'nicknames';
+    | 'nicknames'
+    | 'equipmentPulls'
+    | 'equipmentOwned'
+    | 'legendEquipment'
+    | 'mythicEquipment'
+    | 'equipmentLevel'
+    | 'equipmentAwakenings'
+    | 'equipmentSlots';
   target?: number;
   rarity?: number;
 }
@@ -461,6 +503,7 @@ export interface AchievementSubject {
   terrariumCount: number;
   friendsCount: number;
   nicknamesCount: number;
+  equipment: EquipmentSummary;
   stats: {
     births: number;
     sold: number;
@@ -471,6 +514,7 @@ export interface AchievementSubject {
     peakPvpRating: number;
     trainCount: number;
     highestBattleLevel: number;
+    equipmentPulls: number;
   };
 }
 
@@ -499,6 +543,18 @@ export function getAchievementProgress(
       return { progress: subject.friendsCount, target };
     case 'nicknames':
       return { progress: subject.nicknamesCount, target };
+    case 'equipmentOwned':
+      return { progress: subject.equipment.owned, target };
+    case 'legendEquipment':
+      return { progress: subject.equipment.legend, target };
+    case 'mythicEquipment':
+      return { progress: subject.equipment.mythic, target };
+    case 'equipmentLevel':
+      return { progress: subject.equipment.maxLevel, target };
+    case 'equipmentAwakenings':
+      return { progress: subject.equipment.awakenings, target };
+    case 'equipmentSlots':
+      return { progress: subject.equipment.slots, target };
     case 'births':
     case 'sold':
     case 'explored':
@@ -508,6 +564,7 @@ export function getAchievementProgress(
     case 'peakPvpRating':
     case 'trainCount':
     case 'highestBattleLevel':
+    case 'equipmentPulls':
       return { progress: subject.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

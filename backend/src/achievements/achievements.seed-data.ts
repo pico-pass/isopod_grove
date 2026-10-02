@@ -152,6 +152,82 @@ const STAT_TIERS: StatTier[] = [
     descriptionOf: (t) => `콩벌레에게 별명 ${t}개 지어주기`,
     tiers: [{ target: 3, reward: 500, diamondReward: 8 }],
   },
+  {
+    statKey: 'equipmentPulls',
+    icon: 'gift',
+    label: '뽑기의 달인',
+    descriptionOf: (t) => `장비 뽑기 누적 ${t}회`,
+    tiers: [
+      { target: 10, reward: 500, diamondReward: 10 },
+      { target: 50, reward: 2000, diamondReward: 30 },
+      { target: 200, reward: 8000, diamondReward: 100 },
+    ],
+  },
+  {
+    statKey: 'equipmentOwned',
+    icon: 'backpack',
+    label: '장비 수집가',
+    descriptionOf: (t) => `서로 다른 장비 ${t}종 모으기`,
+    tiers: [
+      { target: 5, reward: 500, diamondReward: 5 },
+      { target: 15, reward: 2500, diamondReward: 15 },
+      { target: 30, reward: 10000, ticketReward: 5, diamondReward: 50 },
+    ],
+  },
+  {
+    statKey: 'legendEquipment',
+    icon: 'gem',
+    label: '전설의 수집품',
+    descriptionOf: (t) => `전설 이상 장비 ${t}종 보유`,
+    tiers: [
+      { target: 1, reward: 1000, diamondReward: 15 },
+      { target: 5, reward: 4000, diamondReward: 30 },
+      { target: 12, reward: 15000, diamondReward: 80 },
+    ],
+  },
+  {
+    statKey: 'mythicEquipment',
+    icon: 'crown',
+    label: '신화의 증표',
+    descriptionOf: (t) => `신화 장비 ${t}종 보유`,
+    tiers: [
+      { target: 1, reward: 2000, diamondReward: 30 },
+      { target: 3, reward: 8000, diamondReward: 60 },
+      { target: 6, reward: 30000, ticketReward: 5, diamondReward: 150 },
+    ],
+  },
+  {
+    statKey: 'equipmentLevel',
+    icon: 'hammer',
+    label: '장비 단련',
+    descriptionOf: (t) => `장비 하나를 Lv.${t}까지 올리기`,
+    tiers: [
+      { target: 3, reward: 400, diamondReward: 5 },
+      { target: 5, reward: 1500, diamondReward: 12 },
+      { target: 10, reward: 8000, diamondReward: 40 },
+    ],
+  },
+  {
+    statKey: 'equipmentAwakenings',
+    icon: 'sparkles',
+    label: '각성의 불꽃',
+    descriptionOf: (t) => `장비 각성 성공 누적 ${t}회`,
+    tiers: [
+      { target: 1, reward: 2000, diamondReward: 20 },
+      { target: 5, reward: 8000, diamondReward: 50 },
+      { target: 15, reward: 30000, diamondReward: 120 },
+    ],
+  },
+  {
+    statKey: 'equipmentSlots',
+    icon: 'box',
+    label: '넓어진 장비칸',
+    descriptionOf: (t) => `장비 슬롯 ${t}칸까지 확장하기`,
+    tiers: [
+      { target: 4, reward: 1000, diamondReward: 10 },
+      { target: 5, reward: 3000, diamondReward: 20 },
+    ],
+  },
 ];
 
 const statAchievements = STAT_TIERS.flatMap(({ statKey, icon, label, descriptionOf, tiers }) =>

@@ -52,6 +52,7 @@ export interface Stats {
   trainCount: number;
   peakPvpRating: number;
   highestBattleLevel: number;
+  equipmentPulls: number;
 }
 
 export interface LogEntry {
@@ -136,7 +137,14 @@ export type AchievementStatKey =
   | 'trainCount'
   | 'highestBattleLevel'
   | 'friendsCount'
-  | 'nicknames';
+  | 'nicknames'
+  | 'equipmentPulls'
+  | 'equipmentOwned'
+  | 'legendEquipment'
+  | 'mythicEquipment'
+  | 'equipmentLevel'
+  | 'equipmentAwakenings'
+  | 'equipmentSlots';
 
 export interface Achievement {
   achievementId: string;

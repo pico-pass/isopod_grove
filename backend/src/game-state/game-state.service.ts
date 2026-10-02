@@ -94,6 +94,7 @@ import {
   rollCombatStats,
   rollEnemyLevel,
   rollEquipmentRarity,
+  summarizeEquipment,
   rollRarity,
   simulateBattle,
 } from './game-engine';
@@ -976,6 +977,7 @@ export class GameStateService {
       });
     }
     gameState.equipmentPity = pity;
+    gameState.stats.equipmentPulls += count;
 
     const best = results.reduce((a, b) =>
       (EQUIPMENT_BY_ID.get(b.itemId)?.rarity ?? 0) > (EQUIPMENT_BY_ID.get(a.itemId)?.rarity ?? 0) ? b : a,
@@ -1337,6 +1339,7 @@ export class GameStateService {
         terrariumCount: gameState.terrariums.length,
         friendsCount,
         nicknamesCount: gameState.speciesNicknames.size,
+        equipment: summarizeEquipment(gameState.equipment, gameState.equipmentSlots.length),
         stats: gameState.stats,
       },
       speciesList,

@@ -11,7 +11,6 @@ import { UpgradeDto } from './dto/upgrade.dto';
 import { ClaimDto } from './dto/claim.dto';
 import { ClaimAchievementDto } from './dto/claim-achievement.dto';
 import { ExploreDto } from './dto/explore.dto';
-import { BuyTicketDto } from './dto/buy-ticket.dto';
 import { CreateTerrariumDto } from './dto/create-terrarium.dto';
 import { MoveSpeciesDto } from './dto/move-species.dto';
 import { SetNicknameDto } from './dto/set-nickname.dto';
@@ -109,14 +108,6 @@ export class GameStateController {
       dto?.terrariumId,
       dto?.useTicket,
     );
-  }
-
-  @Post('buy-ticket')
-  buyTicket(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: BuyTicketDto,
-  ) {
-    return this.gameStateService.buyTicket(user.userId, dto?.quantity ?? 1);
   }
 
   @Post('sell')

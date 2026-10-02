@@ -2,11 +2,11 @@
 // ratePerMin: 희귀도별 마리당 분당 수익(G). 시드의 종별 rate보다 우선하며, 서버 시작 시 모든 종에 적용된다.
 // (DB의 rate는 초당 값이라 ratePerMin / 60으로 저장한다.)
 export const RARITIES = [
-  { name: '일반', color: '#b7ce9a', odds: 65, price: 72, ratePerMin: 2.7 },
+  { name: '일반', color: '#b7ce9a', odds: 70, price: 72, ratePerMin: 2.7 },
   { name: '희귀', color: '#90c9de', odds: 20, price: 180, ratePerMin: 3.3 },
-  { name: '에픽', color: '#c5a7e5', odds: 10, price: 1500, ratePerMin: 4 },
-  { name: '전설', color: '#e6c37e', odds: 3.5, price: 9000, ratePerMin: 5 },
-  { name: '신화', color: '#aadfc0', odds: 1.5, price: 24000, ratePerMin: 6.2 },
+  { name: '에픽', color: '#c5a7e5', odds: 8, price: 1500, ratePerMin: 4 },
+  { name: '전설', color: '#e6c37e', odds: 1.9, price: 9000, ratePerMin: 5 },
+  { name: '신화', color: '#aadfc0', odds: 0.1, price: 24000, ratePerMin: 6.2 },
 ];
 
 // 희귀도 기준 마리당 초당 수익(DB의 rate 필드에 들어가는 값)

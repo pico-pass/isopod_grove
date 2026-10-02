@@ -125,7 +125,6 @@ export const api = {
     post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
-  buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),
   sell: (speciesId: string, quantity: number, terrariumId?: string) =>
     post<ActionResult>('/game-state/sell', { speciesId, quantity, terrariumId }),
   upgrade: (upgradeId: string, terrariumId?: string) =>

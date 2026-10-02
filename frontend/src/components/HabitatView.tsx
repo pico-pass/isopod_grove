@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { GameState, Quest, Species, Terrarium } from '../api/types';
 import { WanderingCreatures } from './WanderingCreatures';
 import {
-  EXPLORE_COST,
+  EXPLORE_COST_STEP,
   MAX_TERRARIUMS,
   RARITIES,
   canBreedInEnvironment,
@@ -15,7 +15,7 @@ import {
   getPopulationCount,
   getTerrariumCost,
   isComfortable,
-  getExploreRemainingSeconds,
+  getExploreCost,
 } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
 
@@ -80,7 +80,9 @@ export function HabitatView({
     (id) => (terrarium.population[id] || 0) > 0,
   );
 
-  const exploreRemaining = getExploreRemainingSeconds(gameState, now);
+  // 오늘 한 탐색 횟수에 따라 오르는 골드 비용(매일 처음 가격부터 다시 시작)
+  const exploreTimesToday = gameState.daily.explore ?? 0;
+  const exploreCost = getExploreCost(exploreTimesToday);
 
   const cooldownRemaining = (action: string) => {
     if (!now) return 0;
@@ -371,23 +373,20 @@ export function HabitatView({
           <div className="explore-banner">
             <span className="eyebrow">A NEW LITTLE FRIEND</span>
             <h3>낙엽 아래엔 누가 있을까?</h3>
-            <p>숲을 탐색하고 새로운 종을 만나보세요. (탐색은 20분에 한 번만 할 수 있어요)</p>
+            <p>
+              숲을 탐색하고 새로운 종을 만나보세요. (오늘 {exploreTimesToday}번 탐색 · 한 번 할 때마다 비용이{' '}
+              {formatNumber(EXPLORE_COST_STEP)} G씩 올라가고, 매일 처음 가격으로 돌아가요)
+            </p>
             <button
               className="button primary full"
-              disabled={gameState.paused || exploreRemaining > 0}
+              disabled={gameState.paused}
               onClick={() => onExplore(false)}
             >
-              {exploreRemaining > 0 ? (
-                <>⏳ {formatDuration(exploreRemaining)} 후 탐색할 수 있어요</>
-              ) : (
-                <>
-                  🔍 숲 탐색하기 <span className="price">{formatNumber(EXPLORE_COST)} G</span>
-                </>
-              )}
+              🔍 숲 탐색하기 <span className="price">{formatNumber(exploreCost)} G</span>
             </button>
             <button
               className="button secondary full ticket-button"
-              disabled={gameState.paused || gameState.explorationTickets < 1 || exploreRemaining > 0}
+              disabled={gameState.paused || gameState.explorationTickets < 1}
               onClick={() => onExplore(true)}
             >
               🎟️ 탐색권으로 탐색하기 <span className="price">보유 {gameState.explorationTickets}장</span>

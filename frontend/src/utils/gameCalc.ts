@@ -18,12 +18,14 @@ export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
-export const EXPLORE_COST = 777;
-// 숲 탐색은 골드/탐색권과 상관없이 20분에 한 번만 할 수 있다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
-export const EXPLORE_COOLDOWN_MS = 20 * 60_000;
-// 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
-export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
-export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
+// 숲 탐색(골드) 비용: 그날 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
+// 오늘 탐색 횟수(daily.explore)로 세므로 매일 처음 가격으로 돌아간다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const EXPLORE_COST_BASE = 500;
+export const EXPLORE_COST_STEP = 50;
+export const getExploreCost = (timesToday: number): number =>
+  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, timesToday);
+// 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템. 골드로 살 수 없고, 하루 1장 무료 충전·보상으로만 얻는다.
+export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(보상으로는 더 가질 수 있음)
 // 다이아: 업적/새 종 발견/레벨업으로 얻는다.
 export const NICKNAME_CHANGE_COST = 200;
 // 야생 배틀 난이도(=상대 희귀도)별 보상/확률. 백엔드(game-engine.ts)와 같은 값이어야 한다.
@@ -67,11 +69,11 @@ export function applySpeciesNicknames(species: Species[], gameState: GameState):
 }
 
 export const RARITIES = [
-  { name: '일반', color: '#b7ce9a', odds: 65 },
+  { name: '일반', color: '#b7ce9a', odds: 70 },
   { name: '희귀', color: '#90c9de', odds: 20 },
-  { name: '에픽', color: '#c5a7e5', odds: 10 },
-  { name: '전설', color: '#e6c37e', odds: 3.5 },
-  { name: '신화', color: '#aadfc0', odds: 1.5 },
+  { name: '에픽', color: '#c5a7e5', odds: 8 },
+  { name: '전설', color: '#e6c37e', odds: 1.9 },
+  { name: '신화', color: '#aadfc0', odds: 0.1 },
 ];
 
 export interface LevelProgress {
@@ -294,12 +296,6 @@ export function getBreedInterval(baseBreedSeconds: number, nurseryLevel: number)
 
 export function upgradeCost(baseCost: number, factor: number, currentLevel: number): number {
   return Math.round(baseCost * Math.pow(factor, currentLevel));
-}
-
-// 숲 탐색까지 남은 초. now가 0(아직 시계가 안 돌기 시작함)이면 0으로 본다.
-export function getExploreRemainingSeconds(gameState: GameState, now: number): number {
-  if (!now) return 0;
-  return Math.max(0, Math.ceil(((gameState.cooldowns.explore || 0) - now) / 1000));
 }
 
 export function formatDuration(totalSeconds: number): string {

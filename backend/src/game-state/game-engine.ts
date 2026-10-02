@@ -15,12 +15,15 @@ export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
 export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
-export const EXPLORE_COST = 777;
-// 숲 탐색은 골드/탐색권과 상관없이 계정 전체에서 20분에 한 번만 할 수 있다.
-export const EXPLORE_COOLDOWN_MS = 20 * 60_000;
-// 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
-export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
-export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
+// 숲 탐색(골드) 비용: 그날 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
+// 오늘 탐색 횟수(daily.explore)로 세므로 매일 처음 가격으로 돌아간다. 탐색권으로 탐색해도 횟수에는 센다.
+// 프론트(gameCalc.ts)에도 같은 값·함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export const EXPLORE_COST_BASE = 500;
+export const EXPLORE_COST_STEP = 50;
+export const getExploreCost = (timesToday: number): number =>
+  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, timesToday);
+// 탐색권은 골드로 살 수 없다. 하루 1장씩 무료로 채워지고(최대 MAX_FREE_EXPLORE_TICKETS장), 업적·일일 목표·우편 보상으로 얻는다.
+export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(보상으로는 더 가질 수 있음)
 export const EXPLORE_YIELD = 2;
 export const FEEDER_REFILL_THRESHOLD = 40;
 export const FEEDER_REFILL_TARGET = 85;

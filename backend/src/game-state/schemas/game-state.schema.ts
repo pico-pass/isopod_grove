@@ -184,7 +184,7 @@ export class GameState {
   @Prop({ default: 0, min: 0 })
   pending: number;
 
-  // 숲 탐색권 보유 개수. 탐색 시 777G 대신 1장을 쓸 수 있다.
+  // 숲 탐색권 보유 개수. 탐색 시 골드 대신 1장을 쓸 수 있다(골드로 살 수는 없다).
   @Prop({ default: 0, min: 0 })
   explorationTickets: number;
 

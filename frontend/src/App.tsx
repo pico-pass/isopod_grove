@@ -215,7 +215,6 @@ function App() {
                 runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId))
               }
               onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
-              onBuyTicket={(quantity) => runAction(() => api.buyTicket(quantity))}
             />
           )}
           {view === 'upgrades' && (

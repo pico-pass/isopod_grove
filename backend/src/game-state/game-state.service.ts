@@ -47,9 +47,6 @@ import {
   EQUIPMENT_PULL10_COST,
   EQUIPMENT_PULL_COST,
   EQUIPMENT_SLOT_EXPAND_COSTS,
-  EXPLORE_COOLDOWN_MS,
-  EXPLORE_COST,
-  EXPLORE_TICKET_PRICE,
   EXPLORE_YIELD,
   MAX_FREE_EXPLORE_TICKETS,
   FEEDER_REFILL_TARGET,
@@ -95,6 +92,7 @@ import {
   getBreedInterval,
   getCapacity,
   getCombatBaseStats,
+  getExploreCost,
   getEquipmentLevelUpCopies,
   getLevel,
   getPopulationCount,
@@ -1370,15 +1368,6 @@ export class GameStateService {
     this.guardPaused(gameState);
     this.resetDailyIfNeeded(gameState);
 
-    const now = Date.now();
-    const exploreReadyAt = gameState.cooldowns.get('explore') || 0;
-    if (exploreReadyAt > now) {
-      const remain = Math.ceil((exploreReadyAt - now) / 1000);
-      throw new BadRequestException(
-        `숲 탐색은 20분에 한 번만 할 수 있어요. (남은 시간 ${Math.floor(remain / 60)}분 ${remain % 60}초)`,
-      );
-    }
-
     const terrarium = this.getTerrarium(gameState, terrariumId);
     const capacity = getCapacity(terrarium.spaceLevel);
     const count = getPopulationCount(terrarium.population);
@@ -1388,21 +1377,22 @@ export class GameStateService {
       );
     }
 
+    // 오늘 한 탐색 횟수가 많을수록 골드 비용이 오른다(탐색권으로 하는 탐색은 비용이 없다).
+    const cost = getExploreCost(gameState.daily.explore || 0);
     if (useTicket) {
       if (gameState.explorationTickets < 1) {
         throw new BadRequestException('숲 탐색권이 없어요.');
       }
       gameState.explorationTickets -= 1;
     } else {
-      if (gameState.coins < EXPLORE_COST) {
+      if (gameState.coins < cost) {
         throw new BadRequestException(
-          `탐색에는 ${EXPLORE_COST} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
+          `오늘 ${(gameState.daily.explore || 0) + 1}번째 탐색에는 ${cost.toLocaleString('ko-KR')} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
         );
       }
-      gameState.coins -= EXPLORE_COST;
+      gameState.coins -= cost;
     }
-    gameState.daily.explore++;
-    gameState.cooldowns.set('explore', now + EXPLORE_COOLDOWN_MS);
+    gameState.daily.explore = (gameState.daily.explore || 0) + 1;
 
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);
@@ -1423,7 +1413,7 @@ export class GameStateService {
     this.pushLog(
       gameState,
       'search',
-      `${species.name} 2마리를 만나 ${terrarium.name}에 데려왔어요.${isNew ? ` 도감에 새롭게 기록했어요! 💎 ${newSpeciesDiamonds}개 획득!` : ''}${useTicket ? ' (탐색권 사용)' : ''}`,
+      `${species.name} 2마리를 만나 ${terrarium.name}에 데려왔어요.${isNew ? ` 도감에 새롭게 기록했어요! 💎 ${newSpeciesDiamonds}개 획득!` : ''}${useTicket ? ' (탐색권 사용)' : ` (-${cost.toLocaleString('ko-KR')} G)`}`,
     );
 
     await gameState.save();
@@ -1432,32 +1422,6 @@ export class GameStateService {
       species,
       isNew,
       message: `${species.name} 2마리가 숲에 왔어요!`,
-    };
-  }
-
-  async buyTicket(userId: string, quantity = 1) {
-    const gameState = await this.getOrThrow(userId);
-    this.guardPaused(gameState);
-
-    const cost = EXPLORE_TICKET_PRICE * quantity;
-    if (gameState.coins < cost) {
-      throw new BadRequestException(
-        `탐색권 ${quantity}장에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`,
-      );
-    }
-
-    gameState.coins -= cost;
-    gameState.explorationTickets += quantity;
-    this.pushLog(
-      gameState,
-      'search',
-      `숲 탐색권 ${quantity}장을 구매했어요. -${cost.toLocaleString('ko-KR')} G`,
-    );
-
-    await gameState.save();
-    return {
-      gameState,
-      message: `숲 탐색권 ${quantity}장을 구매했어요!`,
     };
   }
 

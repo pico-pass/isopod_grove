@@ -1,11 +1,19 @@
 // price: 희귀도별 분양 가격(G). 시드의 종별 price보다 우선하며, 서버 시작 시 모든 종에 적용된다.
+// ratePerMin: 희귀도별 마리당 분당 수익(G). 시드의 종별 rate보다 우선하며, 서버 시작 시 모든 종에 적용된다.
+// (DB의 rate는 초당 값이라 ratePerMin / 60으로 저장한다.)
 export const RARITIES = [
-  { name: '일반', color: '#b7ce9a', odds: 65, price: 120 },
-  { name: '희귀', color: '#90c9de', odds: 20, price: 300 },
-  { name: '에픽', color: '#c5a7e5', odds: 10, price: 2500 },
-  { name: '전설', color: '#e6c37e', odds: 3.5, price: 15000 },
-  { name: '신화', color: '#aadfc0', odds: 1.5, price: 40000 },
+  { name: '일반', color: '#b7ce9a', odds: 65, price: 72, ratePerMin: 2.7 },
+  { name: '희귀', color: '#90c9de', odds: 20, price: 180, ratePerMin: 3.3 },
+  { name: '에픽', color: '#c5a7e5', odds: 10, price: 1500, ratePerMin: 4 },
+  { name: '전설', color: '#e6c37e', odds: 3.5, price: 9000, ratePerMin: 5 },
+  { name: '신화', color: '#aadfc0', odds: 1.5, price: 24000, ratePerMin: 6.2 },
 ];
+
+// 희귀도 기준 마리당 초당 수익(DB의 rate 필드에 들어가는 값)
+export const rateOfRarity = (rarity: number): number | undefined => {
+  const perMin = RARITIES[rarity]?.ratePerMin;
+  return perMin === undefined ? undefined : perMin / 60;
+};
 
 export interface SpeciesSeed {
   speciesId: string;
@@ -28,7 +36,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Panda King"',
     rarity: 0,
     price: 35,
-    rate: 0.09,
+    rate: 0.045,
     breed: 90,
     filter: 'none',
     description:
@@ -41,7 +49,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Red Panda King"',
     rarity: 0,
     price: 35,
-    rate: 0.09,
+    rate: 0.045,
     breed: 90,
     filter: 'none',
     description:
@@ -54,7 +62,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Murina White-Out"',
     rarity:0,
     price: 55,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -67,7 +75,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Pink Panda King"',
     rarity: 0,
     price: 55,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -80,7 +88,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Pak Chong"',
     rarity: 0,
     price: 230,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -93,7 +101,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Troglodillo sp. "Soil"',
     rarity: 0,
     price: 230,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -107,7 +115,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Milk Tea"',
     rarity: 0,
     price: 1400,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -120,7 +128,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Armadillidium maculatum "Yellow Zebra"',
     rarity: 0,
     price: 35,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -134,7 +142,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Armadillidium maculatum "Zebra Chocolete"',
     rarity: 0,
     price: 35,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -146,7 +154,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Armadillidium "Pallasii Orange"',
     rarity: 0,
     price: 35,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -158,7 +166,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Happinun"',
     rarity: 0,
     price: 35,
-    rate: 0.13,
+    rate: 0.045,
     breed: 70,
     filter: 'none',
     description:
@@ -175,7 +183,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Troglodillo sp. "Vex"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -187,7 +195,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Tiramisu"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -199,7 +207,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Troglodillo sp. "SunRise"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -211,7 +219,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Blind Saturn"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -223,7 +231,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Ice Flower"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -235,7 +243,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Mandarin Ducky"',
     rarity: 1,
     price: 35,
-    rate: 0.13,
+    rate: 0.055,
     breed: 70,
     filter: 'none',
     description:
@@ -250,7 +258,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Rubber Ducky"',
     rarity: 2,
     price: 35 ,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -264,7 +272,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Laureola sp. "White Skull Spiky"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -276,7 +284,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Laureola sp. "Ivory Spiky"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -288,7 +296,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Laureola sp. "Durian Spiky"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -300,7 +308,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Porcellio "Werneri"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -312,7 +320,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Ardentiella sp. "tri Color"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -324,7 +332,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Ardentiella sp. "Scarlet"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -336,7 +344,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Ardentiella sp. "Amber Bee"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -348,7 +356,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Amber Ducky"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -360,7 +368,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Nguyen"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -372,7 +380,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Bumble Bee"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -384,7 +392,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Filipinodillo sp. "Bumble Pot"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -396,7 +404,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Cherry Blossom"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -408,7 +416,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Porcellio Hoffmannseggi "Orange"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -420,7 +428,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Rubber Bee"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -432,7 +440,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Cappuccino"',
     rarity: 2,
     price: 35,
-    rate: 0.13,
+    rate: 0.0666667,
     breed: 70,
     filter: 'none',
     description:
@@ -448,7 +456,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "White Tiger"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -460,7 +468,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "White Island Tiger"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -472,7 +480,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "White Ducky Firefly"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -484,7 +492,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Siberian Tiger"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -496,7 +504,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Saffron Serpent"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -508,7 +516,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Ardentiella sp. "Pink Lambo"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -520,7 +528,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Panda Firefly"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -532,7 +540,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Blonde Ducky"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -544,7 +552,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Cappuccino Pink"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -556,7 +564,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Amber Firefly OG"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -568,7 +576,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Lemon Blue"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -580,7 +588,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Jupiter"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -592,7 +600,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Angry Monk High Cality"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -604,7 +612,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Flame White Ducky"',
     rarity: 3,
     price: 35,
-    rate: 0.13,
+    rate: 0.0833333,
     breed: 70,
     filter: 'none',
     description:
@@ -622,7 +630,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Isopoda sp. "Ancient Gator"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -634,7 +642,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Bone Phantom"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -646,7 +654,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Troglodillo sp. "Glass Skaleton"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -658,7 +666,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Troglodillo sp. "Moth"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -670,7 +678,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Cubaris sp. "Moth"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -682,7 +690,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Fillipinodillo sp. "R5 Giant"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -694,7 +702,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Pseudarmadillo spinosus',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:
@@ -706,7 +714,7 @@ export const SPECIES_SEED: SpeciesSeed[] = [
     latin: 'Isopoda sp. "Saichani Spiky"',
     rarity: 4,
     price: 35,
-    rate: 0.13,
+    rate: 0.103333,
     breed: 70,
     filter: 'none',
     description:

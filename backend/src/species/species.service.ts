@@ -7,7 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Species, SpeciesDocument } from './schemas/species.schema';
-import { RARITIES, SPECIES_SEED } from './species.seed-data';
+import { RARITIES, SPECIES_SEED, rateOfRarity } from './species.seed-data';
 
 // 분양 시세 변동 설정. 기준가(basePrice) 대비 ±25% 범위 안에서, 5분마다 한 번씩
 // 평균으로 되돌아가려는 힘(감쇠 0.7)과 임의의 흔들림을 더해 자연스럽게 오르내리게 한다.
@@ -37,15 +37,25 @@ export class SpeciesService implements OnModuleInit, OnModuleDestroy {
     for (const seed of SPECIES_SEED) {
       await this.speciesModel.updateOne(
         { speciesId: seed.speciesId },
-        { $set: { ...seed, price: RARITIES[seed.rarity]?.price ?? seed.price } },
+        {
+          $set: {
+            ...seed,
+            price: RARITIES[seed.rarity]?.price ?? seed.price,
+            rate: rateOfRarity(seed.rarity) ?? seed.rate,
+          },
+        },
         { upsert: true },
       );
     }
     // 분양 가격은 희귀도가 기준이다. 시드에 없는 종(DB에서 직접 추가한 종)도 함께 맞춘다.
     // 기준가(basePrice)는 항상 이 값으로 다시 맞추고, 지금 가격(price)은 시세 변동으로
     // 흔들려 있을 수 있으니 기준가와 다를 때만 되돌린다(재시작 시 시세도 기준가로 리셋된다).
+    // 분당 수익(rate)도 희귀도가 기준이라 같은 방식으로 모든 종에 맞춘다.
     for (const [rarity, { price }] of RARITIES.entries()) {
-      await this.speciesModel.updateMany({ rarity }, { $set: { basePrice: price } });
+      await this.speciesModel.updateMany(
+        { rarity },
+        { $set: { basePrice: price, rate: rateOfRarity(rarity) } },
+      );
       await this.speciesModel.updateMany(
         { rarity, price: { $ne: price } },
         { $set: { price } },

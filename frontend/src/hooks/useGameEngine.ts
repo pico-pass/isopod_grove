@@ -7,6 +7,7 @@ import type {
   EquipmentCatalogItem,
   GameState,
   LeaderboardResult,
+  MailSummary,
   Quest,
   Species,
   Upgrade,
@@ -35,6 +36,8 @@ export function useGameEngine(userKey: string | null) {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   // 친구 수(업적 진행도 계산용). 랭킹과 같은 주기로 같이 불러온다.
   const [friendsCount, setFriendsCount] = useState(0);
+  // 우편함 배지용 요약. 1분마다 새로 확인하고, 안 읽은 우편이 늘었으면 알려준다.
+  const [mailSummary, setMailSummary] = useState<MailSummary>({ unread: 0, claimable: 0, badge: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToastState] = useState<ToastState | null>(null);
@@ -68,6 +71,28 @@ export function useGameEngine(userKey: string | null) {
       setLeaderboardLoading(false);
     }
   }, [showToast]);
+
+  const lastUnreadRef = useRef<number | null>(null);
+  const refreshMailSummary = useCallback(async () => {
+    try {
+      const summary = await api.getMailSummary();
+      setMailSummary(summary);
+      // 처음 불러올 때는 알리지 않고, 그 뒤로 안 읽은 우편이 늘어났을 때만 알린다.
+      if (lastUnreadRef.current !== null && summary.unread > lastUnreadRef.current) {
+        showToast('📬 새 우편이 도착했어요! 우편함을 확인해 보세요.');
+      }
+      lastUnreadRef.current = summary.unread;
+    } catch {
+      // 우편 확인 실패는 게임 진행에 영향이 없으니 다음 주기에 다시 시도한다.
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!userKey) return;
+    Promise.resolve().then(() => refreshMailSummary());
+    const id = setInterval(() => void refreshMailSummary(), 60_000);
+    return () => clearInterval(id);
+  }, [userKey, refreshMailSummary]);
 
   // 랭킹은 다른 유저 데이터라 게임 본체 로딩/에러와는 분리해서, 실패해도 게임 진행에 영향을 주지 않는다.
   // Promise.resolve().then(...)으로 감싸서 setState 호출이 이펙트 본문에서 동기로 일어나지 않게 한다.
@@ -181,6 +206,8 @@ export function useGameEngine(userKey: string | null) {
     pvpLeaderboard,
     bossLeaderboard,
     friendsCount,
+    mailSummary,
+    refreshMailSummary,
     leaderboardLoading,
     reloadLeaderboards,
     loading,

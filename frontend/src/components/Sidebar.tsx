@@ -8,6 +8,7 @@ export type ViewKey =
   | 'achievements'
   | 'ranking'
   | 'friends'
+  | 'mail'
   | 'battle'
   | 'boss'
   | 'pvp'
@@ -23,6 +24,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'achievements', label: '업적', icon: '🏆' },
   { key: 'ranking', label: '랭킹', icon: '📊' },
   { key: 'friends', label: '친구', icon: '🤝' },
+  { key: 'mail', label: '우편함', icon: '📬' },
   { key: 'battle', label: '야생 배틀', icon: '⚔️' },
   { key: 'boss', label: '보스 타워', icon: '🗼' },
   { key: 'pvp', label: '투기장', icon: '🆚' },
@@ -37,6 +39,7 @@ export function Sidebar({
   discoveredCount,
   speciesTotal,
   claimableAchievements,
+  mailBadge,
   xp,
   isAdmin,
   mobileOpen,
@@ -48,6 +51,7 @@ export function Sidebar({
   discoveredCount: number;
   speciesTotal: number;
   claimableAchievements: number;
+  mailBadge: number;
   xp: number;
   isAdmin: boolean;
   mobileOpen: boolean;
@@ -101,6 +105,7 @@ export function Sidebar({
             {item.key === 'achievements' && claimableAchievements > 0 && (
               <span className="nav-count">{claimableAchievements}</span>
             )}
+            {item.key === 'mail' && mailBadge > 0 && <span className="nav-count">{mailBadge}</span>}
           </button>
         ))}
       </nav>

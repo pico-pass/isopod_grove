@@ -16,6 +16,7 @@ import { PvpView } from './components/PvpView';
 import { BossView } from './components/BossView';
 import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
+import { MailView } from './components/MailView';
 import { ProfileModal } from './components/ProfileModal';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
@@ -44,6 +45,8 @@ function App() {
     pvpLeaderboard,
     bossLeaderboard,
     friendsCount,
+    mailSummary,
+    refreshMailSummary,
     leaderboardLoading,
     reloadLeaderboards,
     loading,
@@ -124,6 +127,7 @@ function App() {
           onChange={setView}
           populationCount={totalPopulation}
           claimableAchievements={claimableAchievements}
+          mailBadge={mailSummary.badge}
           discoveredCount={gameState.discovered.length}
           speciesTotal={species.length}
           xp={gameState.xp}
@@ -254,6 +258,14 @@ function App() {
               onAwaken={(itemId) => runAction(() => api.awakenEquipment(itemId))}
               onEquip={(slotIndex, itemId) => runAction(() => api.equipEquipment(slotIndex, itemId))}
               onExpandSlot={() => runAction(() => api.expandEquipmentSlots())}
+            />
+          )}
+          {view === 'mail' && (
+            <MailView
+              onClaim={(mailId) => runAction(() => api.claimMail(mailId))}
+              onClaimAll={() => runAction(() => api.claimAllMail())}
+              onChanged={refreshMailSummary}
+              showToast={showToast}
             />
           )}
           {view === 'friends' && (

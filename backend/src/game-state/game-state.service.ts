@@ -1583,6 +1583,28 @@ export class GameStateService {
     };
   }
 
+  // 우편으로 받은 자원을 지급한다(우편 수령 처리는 MailService가 하고, 여기서는 지급과 일지만 한다).
+  // 관리자가 보낸 선물이라 누적 수익(stats.earned)에는 넣지 않는다 — 업적의 "번 돈"은 직접 번 것만 센다.
+  async grantMailRewards(
+    userId: string,
+    rewards: { coins: number; diamonds: number; explorationTickets: number },
+    title: string,
+  ) {
+    const gameState = await this.getOrThrow(userId);
+    gameState.coins += rewards.coins;
+    gameState.diamonds += rewards.diamonds;
+    gameState.explorationTickets += rewards.explorationTickets;
+    const parts = [
+      rewards.coins ? `+${rewards.coins.toLocaleString('ko-KR')} G` : '',
+      rewards.diamonds ? `💎 ${rewards.diamonds.toLocaleString('ko-KR')}개` : '',
+      rewards.explorationTickets ? `🎟️ 탐색권 ${rewards.explorationTickets.toLocaleString('ko-KR')}장` : '',
+    ].filter(Boolean);
+    const message = `📬 우편 "${title}"을(를) 받았어요. ${parts.join(' · ')}`;
+    this.pushLog(gameState, 'diamond', message);
+    await gameState.save();
+    return { gameState, message };
+  }
+
   async setNickname(userId: string, nickname: string) {
     const trimmed = nickname.trim();
     if (trimmed.length < 2 || trimmed.length > 12) {

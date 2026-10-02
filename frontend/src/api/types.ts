@@ -248,6 +248,76 @@ export interface ChatMessage {
   createdAt: number;
 }
 
+export interface MailRewards {
+  coins: number;
+  diamonds: number;
+  explorationTickets: number;
+}
+
+export interface MailItem {
+  id: string;
+  title: string;
+  body: string;
+  rewards: MailRewards;
+  hasRewards: boolean;
+  read: boolean;
+  claimed: boolean;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface MailSummary {
+  unread: number;
+  claimable: number;
+  badge: number;
+}
+
+export interface MailListResult {
+  mails: MailItem[];
+  summary: MailSummary;
+}
+
+export interface MailClaimResult extends ActionResult {
+  summary: MailSummary;
+  claimed?: number; // 모두 받기에서 받은 우편 수
+}
+
+export interface AdminMailRequest {
+  target: 'all' | 'users';
+  userIds?: string[];
+  title: string;
+  body?: string;
+  coins?: number;
+  diamonds?: number;
+  explorationTickets?: number;
+  expireDays?: number;
+}
+
+export interface AdminMailSendResult {
+  batchId: string;
+  recipients: number;
+  message: string;
+}
+
+export interface AdminMailHistoryItem {
+  batchId: string;
+  title: string;
+  body: string;
+  rewards: MailRewards;
+  createdAt: string;
+  expiresAt: string;
+  recipients: number;
+  read: number;
+  claimed: number;
+}
+
+export interface AdminUserSearchResult {
+  userId: string;
+  displayName: string;
+  email: string;
+  avatarUrl?: string;
+}
+
 export interface AdminStats {
   content: {
     species: number;

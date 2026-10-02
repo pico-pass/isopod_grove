@@ -53,6 +53,23 @@ export class UsersService {
       .exec();
   }
 
+  // 우편 "전체 발송"의 수신자 목록. 가입한 모든 유저의 id를 돌려준다.
+  async findAllIds(): Promise<string[]> {
+    const docs = await this.userModel.find({}, { _id: 1 }).lean().exec();
+    return docs.map((d) => d._id.toString());
+  }
+
+  // 관리자용 유저 검색. 닉네임·구글 이름·이메일로 찾고, 검색어가 비어 있으면 최근 가입한 유저를 보여준다.
+  // (친구 검색과 달리 자기 자신도 포함한다 — 관리자가 자기 계정으로 시험 발송을 해볼 수 있게.)
+  adminSearch(query: string, limit = 10): Promise<UserDocument[]> {
+    const trimmed = query.trim();
+    const regex = new RegExp(trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const filter = trimmed
+      ? { $or: [{ nickname: regex }, { displayName: regex }, { email: regex }] }
+      : {};
+    return this.userModel.find(filter).sort({ createdAt: -1 }).limit(limit).exec();
+  }
+
   async isAdmin(userId: string): Promise<boolean> {
     const user = await this.userModel
       .findById(userId, { isAdmin: 1 })

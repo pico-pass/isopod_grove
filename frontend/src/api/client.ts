@@ -1,7 +1,11 @@
 import type {
   Achievement,
   ActionResult,
+  AdminMailHistoryItem,
+  AdminMailRequest,
+  AdminMailSendResult,
   AdminStats,
+  AdminUserSearchResult,
   BattleResponse,
   CareAction,
   ChatChannel,
@@ -13,6 +17,9 @@ import type {
   FriendsListResult,
   GameState,
   LeaderboardResult,
+  MailClaimResult,
+  MailListResult,
+  MailSummary,
   OnlinePlayersResult,
   PublicProfile,
   BossBattleResponse,
@@ -126,6 +133,17 @@ export const api = {
     post<ActionResult>('/game-state/species-nickname', { speciesId, nickname }),
 
   getAdminStats: () => request<AdminStats>('/admin/stats'),
+  searchAdminUsers: (query: string) =>
+    request<AdminUserSearchResult[]>(`/admin/mail/users?query=${encodeURIComponent(query)}`),
+  sendAdminMail: (mail: AdminMailRequest) => post<AdminMailSendResult>('/admin/mail', mail),
+  getAdminMailHistory: () => request<AdminMailHistoryItem[]>('/admin/mail'),
+
+  getMails: () => request<MailListResult>('/mail'),
+  getMailSummary: () => request<MailSummary>('/mail/summary'),
+  readMail: (id: string) => post<{ summary: MailSummary }>(`/mail/${id}/read`),
+  claimMail: (id: string) => post<MailClaimResult>(`/mail/${id}/claim`),
+  claimAllMail: () => post<MailClaimResult>('/mail/claim-all'),
+  deleteMail: (id: string) => request<{ summary: MailSummary }>(`/mail/${id}`, { method: 'DELETE' }),
 
   getChatMessages: (channel: ChatChannel, afterId?: string) =>
     request<ChatMessage[]>(`/chat/messages?channel=${channel}${afterId ? `&after=${afterId}` : ''}`),

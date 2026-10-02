@@ -17,6 +17,7 @@ import { PresenceModule } from './presence/presence.module';
 import { FriendsModule } from './friends/friends.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { BossModule } from './boss/boss.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { BossModule } from './boss/boss.module';
     FriendsModule,
     EquipmentModule,
     BossModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,6 +1,8 @@
 import type {
   Achievement,
   ActionResult,
+  AdminChatBan,
+  AdminChatReportList,
   AdminMailHistoryItem,
   AdminMailRequest,
   AdminMailSendResult,
@@ -13,20 +15,27 @@ import type {
   EquipmentAwakenResponse,
   EquipmentCatalogItem,
   EquipmentPullResponse,
+  ChatReportReason,
+  FriendChatMessage,
+  FriendChatPoll,
+  FriendChatUnread,
   FriendSearchResult,
   FriendsListResult,
   GameState,
   LeaderboardResult,
   MailClaimResult,
+  NotificationPrefs,
   MailListResult,
   MailSummary,
   OnlinePlayersResult,
   PublicProfile,
+  PushConfig,
   BossBattleResponse,
   BossCatalog,
   PvpBattleResponse,
   PvpOpponentResult,
   Quest,
+  ResolveReportResult,
   Species,
   TrainResponse,
   Upgrade,
@@ -151,6 +160,44 @@ export const api = {
     post<ChatMessage>('/chat/messages', { channel, text }),
 
   getOnlinePlayers: () => request<OnlinePlayersResult>('/presence/online'),
+
+  getFriendChatUnread: () => request<FriendChatUnread>('/friend-chat/unread'),
+  getFriendMessages: (friendId: string, afterId?: string) =>
+    request<FriendChatPoll>(`/friend-chat/${friendId}/messages${afterId ? `?after=${afterId}` : ''}`),
+  sendFriendMessage: (friendId: string, text: string) =>
+    post<FriendChatMessage>(`/friend-chat/${friendId}/messages`, { text }),
+  deleteFriendMessage: (friendId: string, messageId: string) =>
+    request<{ id: string }>(`/friend-chat/${friendId}/messages/${messageId}`, { method: 'DELETE' }),
+  reportFriendMessage: (messageId: string, reason: ChatReportReason, detail?: string) =>
+    post<{ message: string }>('/friend-chat/reports', { messageId, reason, detail: detail || undefined }),
+
+  getPushConfig: () => request<PushConfig>('/push/config'),
+  subscribePush: (sub: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    post<{ ok: boolean }>('/push/subscribe', sub),
+  unsubscribePush: (endpoint: string) => post<{ ok: boolean }>('/push/unsubscribe', { endpoint }),
+
+  getAdminChatReports: (status: 'open' | 'handled' | 'all') =>
+    request<AdminChatReportList>(`/admin/friend-chat/reports?status=${status}`),
+  // banDays: 처리 완료일 때 함께 걸 채팅 정지 일수(0이면 없음), notify: 정지 안내 우편 발송 여부
+  resolveAdminChatReport: (
+    reportId: string,
+    status: 'resolved' | 'dismissed',
+    adminNote?: string,
+    banDays?: number,
+    notify?: boolean,
+  ) =>
+    post<ResolveReportResult>(`/admin/friend-chat/reports/${reportId}/resolve`, {
+      status,
+      adminNote,
+      banDays: banDays || undefined,
+      notify: banDays ? notify : undefined,
+    }),
+  getAdminChatBans: () => request<AdminChatBan[]>('/admin/chat-bans'),
+  liftAdminChatBan: (userId: string) => post<{ userId: string }>(`/admin/chat-bans/${userId}/lift`),
+
+  getNotificationPrefs: () => request<NotificationPrefs>('/push/preferences'),
+  updateNotificationPrefs: (patch: Partial<NotificationPrefs>) =>
+    post<NotificationPrefs>('/push/preferences', patch),
 
   getFriends: () => request<FriendsListResult>('/friends'),
   searchFriends: (query: string) =>

@@ -66,6 +66,7 @@ export function AdminMailPanel() {
   const [diamonds, setDiamonds] = useState('');
   const [tickets, setTickets] = useState('');
   const [expireDays, setExpireDays] = useState(String(DEFAULT_EXPIRE_DAYS));
+  const [pushToo, setPushToo] = useState(true);
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [history, setHistory] = useState<AdminMailHistoryItem[]>([]);
@@ -138,7 +139,7 @@ export function AdminMailPanel() {
       [c ? `골드 ${formatNumber(c)}` : '', d ? `다이아 ${formatNumber(d)}` : '', t ? `탐색권 ${formatNumber(t)}장` : '']
         .filter(Boolean)
         .join(' · ') || '자원 없음(메시지만)';
-    if (!window.confirm(`${who}에게 우편을 보낼까요?\n\n제목: ${title.trim()}\n자원: ${what}\n보관: ${days}일\n\n보낸 우편은 되돌릴 수 없어요.`)) {
+    if (!window.confirm(`${who}에게 우편을 보낼까요?\n\n제목: ${title.trim()}\n자원: ${what}\n보관: ${days}일\n푸시 알림: ${pushToo ? '함께 보냄(켜 둔 유저에게만)' : '보내지 않음'}\n\n보낸 우편은 되돌릴 수 없어요.`)) {
       return;
     }
 
@@ -154,6 +155,7 @@ export function AdminMailPanel() {
         diamonds: d,
         explorationTickets: t,
         expireDays: days,
+        push: pushToo,
       });
       setStatus({ kind: 'ok', text: `✅ ${r.message}` });
       setTitle('');
@@ -274,6 +276,10 @@ export function AdminMailPanel() {
             <input inputMode="numeric" value={expireDays} onChange={(e) => setExpireDays(e.target.value)} />
           </label>
         </div>
+        <label className="admin-check">
+          <input type="checkbox" checked={pushToo} onChange={(e) => setPushToo(e.target.checked)} />
+          🔔 푸시 알림도 보내기 <small>(푸시 알림을 켜 둔 유저에게만 가요)</small>
+        </label>
         <p className="admin-hint">보관 기간이 지나면 받지 않은 자원도 함께 사라져요. 발송 전에 한 번 더 확인 창이 떠요.</p>
 
         {status && <p className={`admin-status ${status.kind}`}>{status.text}</p>}

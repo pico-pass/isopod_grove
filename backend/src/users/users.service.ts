@@ -18,6 +18,29 @@ export function effectiveDisplayName(user: {
   return user.nickname || user.displayName;
 }
 
+export type NotificationCategory = 'friendChat' | 'mail';
+export interface NotificationPrefsView {
+  friendChat: boolean;
+  mail: boolean;
+}
+
+// 채팅이 정지된 유저가 메시지를 보내려 할 때 보여주는 안내. 풀리는 시각(한국 시간)과 남은 시간을 알려준다.
+export function chatBanMessage(until: number, now = Date.now()): string {
+  const minutes = Math.max(1, Math.ceil((until - now) / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const left = days > 0 ? `${days}일 ${hours}시간` : hours > 0 ? `${hours}시간 ${minutes % 60}분` : `${minutes}분`;
+  const at = new Date(until).toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return `채팅이 정지된 상태예요. ${at}까지 메시지를 보낼 수 없어요. (${left} 남음)`;
+}
+
 const MONGO_DUPLICATE_KEY_ERROR = 11000;
 
 @Injectable()
@@ -68,6 +91,70 @@ export class UsersService {
       ? { $or: [{ nickname: regex }, { displayName: regex }, { email: regex }] }
       : {};
     return this.userModel.find(filter).sort({ createdAt: -1 }).limit(limit).exec();
+  }
+
+  // ---- 채팅 정지 ----
+
+  // 지금 정지 중이면 풀리는 시각과 사유를, 아니면 null을 돌려준다(기간이 지난 정지는 자동으로 풀린 것으로 본다).
+  async getChatBan(userId: string): Promise<{ until: number; reason: string } | null> {
+    const user = await this.userModel
+      .findById(userId, { chatBannedUntil: 1, chatBanReason: 1 })
+      .lean<{ chatBannedUntil?: number | null; chatBanReason?: string }>()
+      .exec();
+    const until = user?.chatBannedUntil;
+    if (!until || until <= Date.now()) return null;
+    return { until, reason: user?.chatBanReason ?? '' };
+  }
+
+  // until이 null이면 정지를 푼다.
+  async setChatBan(userId: string, until: number | null, reason = ''): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: userId }, { $set: { chatBannedUntil: until, chatBanReason: until ? reason : '' } })
+      .exec();
+  }
+
+  // 지금 정지 중인 유저(풀리는 시각이 먼 순서)
+  listChatBanned(limit = 100): Promise<UserDocument[]> {
+    return this.userModel
+      .find({ chatBannedUntil: { $gt: Date.now() } })
+      .sort({ chatBannedUntil: -1 })
+      .limit(limit)
+      .exec();
+  }
+
+  // ---- 알림 설정 ----
+
+  async getNotificationPrefs(userId: string): Promise<NotificationPrefsView> {
+    const user = await this.userModel
+      .findById(userId, { notificationPrefs: 1 })
+      .lean<{ notificationPrefs?: Partial<NotificationPrefsView> }>()
+      .exec();
+    // 값이 없는 예전 계정은 모두 켜진 것으로 본다.
+    return {
+      friendChat: user?.notificationPrefs?.friendChat ?? true,
+      mail: user?.notificationPrefs?.mail ?? true,
+    };
+  }
+
+  async setNotificationPrefs(userId: string, patch: Partial<NotificationPrefsView>): Promise<NotificationPrefsView> {
+    const set: Record<string, boolean> = {};
+    if (typeof patch.friendChat === 'boolean') set['notificationPrefs.friendChat'] = patch.friendChat;
+    if (typeof patch.mail === 'boolean') set['notificationPrefs.mail'] = patch.mail;
+    if (Object.keys(set).length === 0) {
+      throw new BadRequestException('변경할 알림 설정이 없어요.');
+    }
+    await this.userModel.updateOne({ _id: userId }, { $set: set }).exec();
+    return this.getNotificationPrefs(userId);
+  }
+
+  // 그 종류의 알림을 꺼 둔 유저들(푸시를 보낼 때 이 유저들은 뺀다)
+  async findNotificationOptOuts(userIds: string[], category: NotificationCategory): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const docs = await this.userModel
+      .find({ _id: { $in: userIds }, [`notificationPrefs.${category}`]: false }, { _id: 1 })
+      .lean()
+      .exec();
+    return new Set(docs.map((d) => d._id.toString()));
   }
 
   async isAdmin(userId: string): Promise<boolean> {

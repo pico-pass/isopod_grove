@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api } from '../api/client';
 import type { Friend, FriendRequest, FriendSearchResult } from '../api/types';
+import { FriendChatModal } from './FriendChatModal';
+import { PushToggle } from './PushToggle';
 
 function Avatar({ name, url }: { name: string; url?: string }) {
   return url ? (
@@ -10,10 +12,26 @@ function Avatar({ name, url }: { name: string; url?: string }) {
   );
 }
 
+// 친구 아바타 위에 접속 여부 점을 얹는다.
+function PresenceAvatar({ name, url, online }: { name: string; url?: string; online: boolean }) {
+  return (
+    <span className="presence-wrap">
+      <Avatar name={name} url={url} />
+      <i className={`presence-dot${online ? ' on' : ''}`} title={online ? '접속 중' : '접속 안 함'} />
+    </span>
+  );
+}
+
 export function FriendsView({
+  currentUserId,
+  unreadByFriend,
+  onUnreadChanged,
   showToast,
   onOpenProfile,
 }: {
+  currentUserId: string;
+  unreadByFriend: Record<string, number>;
+  onUnreadChanged: () => void;
   showToast: (message: string, isError?: boolean) => void;
   onOpenProfile: (userId: string) => void;
 }) {
@@ -25,22 +43,30 @@ export function FriendsView({
   const [results, setResults] = useState<FriendSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [chatWith, setChatWith] = useState<Friend | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await api.getFriends();
-      setFriends(r.friends);
-      setIncoming(r.incomingRequests);
-      setOutgoing(r.outgoingRequests);
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : '친구 목록을 불러오지 못했어요.', true);
-    } finally {
-      setLoading(false);
-    }
-  }, [showToast]);
+  // silent: 주기적인 새로고침(접속 표시 갱신)은 실패해도 알림을 띄우지 않는다.
+  const load = useCallback(
+    async (silent = false) => {
+      try {
+        const r = await api.getFriends();
+        setFriends(r.friends);
+        setIncoming(r.incomingRequests);
+        setOutgoing(r.outgoingRequests);
+      } catch (e) {
+        if (!silent) showToast(e instanceof Error ? e.message : '친구 목록을 불러오지 못했어요.', true);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [showToast],
+  );
 
   useEffect(() => {
-    Promise.resolve().then(load);
+    Promise.resolve().then(() => load());
+    // 친구의 접속 표시와 새 친구(수락된 요청)를 주기적으로 맞춘다.
+    const id = setInterval(() => void load(true), 20_000);
+    return () => clearInterval(id);
   }, [load]);
 
   const search = async (e: FormEvent) => {
@@ -79,10 +105,12 @@ export function FriendsView({
           <p className="eyebrow">FOREST FRIENDS</p>
           <h1>친구</h1>
           <p className="subheading">
-            친구를 맺으면 하루 한 번씩 서로에게 💎 다이아를 선물할 수 있어요. 내 다이아는 줄지 않아요!
+            친구를 맺으면 하루 한 번씩 서로에게 💎 다이아를 선물하고, 1:1로 채팅할 수 있어요. 내 다이아는 줄지 않아요!
           </p>
         </div>
       </div>
+
+      <PushToggle showToast={showToast} />
 
       <p className="nav-caption">친구 추가</p>
       <form className="friend-search-row" onSubmit={search}>
@@ -181,10 +209,19 @@ export function FriendsView({
           {friends.map((f) => (
             <div className="ranking-row" key={f.userId}>
               <button className="friend-identity" onClick={() => onOpenProfile(f.userId)}>
-                <Avatar name={f.displayName} url={f.avatarUrl} />
-                <span className="ranking-name">{f.displayName}</span>
+                <PresenceAvatar name={f.displayName} url={f.avatarUrl} online={f.online} />
+                <span className="ranking-name">
+                  {f.displayName}
+                  {f.online && <small className="presence-text on"> 접속 중</small>}
+                </span>
               </button>
               <div className="friend-actions">
+                <button className="button secondary friend-chat-button" onClick={() => setChatWith(f)}>
+                  💬 채팅
+                  {(unreadByFriend[f.userId] ?? 0) > 0 && (
+                    <span className="friend-unread">{unreadByFriend[f.userId]}</span>
+                  )}
+                </button>
                 <button
                   className="button primary"
                   disabled={!f.canGiftToday || busyId === f.userId}
@@ -203,6 +240,20 @@ export function FriendsView({
             </div>
           ))}
         </div>
+      )}
+
+      {chatWith && (
+        <FriendChatModal
+          friend={chatWith}
+          currentUserId={currentUserId}
+          onClose={() => {
+            setChatWith(null);
+            onUnreadChanged();
+          }}
+          onRead={onUnreadChanged}
+          onOpenProfile={onOpenProfile}
+          showToast={showToast}
+        />
       )}
     </section>
   );

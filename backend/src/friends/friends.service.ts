@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Friendship, FriendshipDocument } from './schemas/friendship.schema';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { GameStateService } from '../game-state/game-state.service';
+import { PresenceService } from '../presence/presence.service';
 
 // 친구 선물: 보내는 사람은 아무것도 잃지 않는다(시스템이 지급). 받는 사람만 다이아가 늘어난다.
 // 같은 친구에게는 하루에 한 번만 보낼 수 있고, 두 친구는 각자 독립적으로 하루 한 번씩 보낼 수 있다.
@@ -19,6 +20,7 @@ export interface FriendView {
   displayName: string;
   avatarUrl?: string;
   canGiftToday: boolean;
+  online: boolean; // 지금 접속 중인지(친구에게만 보인다)
 }
 
 export interface FriendRequestView {
@@ -35,6 +37,8 @@ export class FriendsService {
     private friendshipModel: Model<FriendshipDocument>,
     private readonly usersService: UsersService,
     private readonly gameStateService: GameStateService,
+    // 접속 표시용. 끝자리에 둬서 기존 테스트 생성자 호출이 깨지지 않게 한다(PresenceModule은 전역이라 주입된다).
+    private readonly presenceService?: PresenceService,
   ) {}
 
   async list(userId: string) {
@@ -73,7 +77,11 @@ export class FriendsService {
 
       if (doc.status === 'accepted') {
         const lastGiftDay = doc.lastGiftDayByUser.get(userId);
-        friends.push({ ...view, canGiftToday: lastGiftDay !== today });
+        friends.push({
+          ...view,
+          canGiftToday: lastGiftDay !== today,
+          online: this.presenceService?.isOnline(otherId) ?? false,
+        });
       } else if (recipientId === userId) {
         incomingRequests.push({ requestId: doc._id.toString(), ...view });
       } else {

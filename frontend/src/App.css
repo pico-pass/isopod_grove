@@ -2473,3 +2473,417 @@ main {
   color: var(--muted);
 }
 
+/* Friend chat */
+.friend-chat-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.friend-unread {
+  background: var(--danger);
+  color: #111b19;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.friend-chat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 420px;
+  height: min(620px, calc(100vh - 40px));
+  padding: 18px;
+}
+.friend-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 28px;
+  color: var(--text);
+  text-align: left;
+}
+.friend-chat-header small {
+  color: var(--muted);
+}
+.friend-chat-messages {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-height: 0;
+}
+.friend-chat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.friend-chat-day {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.72rem;
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 2px 12px;
+}
+.friend-chat-card .chat-bubble {
+  max-width: 260px;
+  text-align: left;
+}
+.friend-chat-card .chat-bubble p {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88rem;
+}
+.friend-chat-card .chat-input-row {
+  padding: 0;
+  border-top: 0;
+}
+
+/* Presence */
+.presence-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--muted);
+  border: 2px solid var(--panel);
+}
+.presence-dot.on {
+  background: #5fd38a;
+}
+.presence-text {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.presence-text.on {
+  color: #5fd38a;
+}
+.friend-chat-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* Friend chat extras: read receipt, delete, report */
+.chat-bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.chat-message.me .chat-bubble-wrap {
+  align-items: flex-end;
+}
+.chat-bubble-button {
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.chat-message.me .chat-bubble-button {
+  color: #111b19;
+}
+.chat-bubble.deleted {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+.chat-message.me .chat-bubble.deleted {
+  background: transparent;
+  color: var(--muted);
+}
+.chat-bubble.deleted p {
+  font-style: italic;
+}
+.friend-chat-card .chat-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.chat-read {
+  color: var(--lime);
+  font-weight: 700;
+}
+.chat-actions {
+  display: flex;
+  gap: 6px;
+}
+.chat-actions button {
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.chat-actions button:hover {
+  color: var(--text);
+}
+.report-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+}
+.report-preview {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 3.6em;
+  overflow: hidden;
+}
+.report-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.report-reasons label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.report-panel textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: none;
+}
+.report-note {
+  color: var(--muted);
+}
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Push toggle */
+.push-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+.push-toggle small {
+  color: var(--muted);
+}
+.push-on {
+  color: var(--lime);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+/* Admin: push checkbox and reports */
+.admin-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.admin-check input {
+  width: auto;
+}
+.admin-check small {
+  color: var(--muted);
+}
+.report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.report-card.open {
+  border-color: var(--danger);
+}
+.report-card header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.report-card header small {
+  color: var(--muted);
+  margin-left: auto;
+}
+.report-status.open {
+  color: var(--danger);
+}
+.report-status.resolved {
+  color: var(--green);
+}
+.report-status.dismissed {
+  color: var(--muted);
+}
+.report-who {
+  font-size: 0.88rem;
+}
+.report-repeat {
+  color: var(--danger);
+}
+.report-detail {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.report-context {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+.report-line {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+}
+.report-line small {
+  flex-shrink: 0;
+  min-width: 70px;
+}
+.report-line span {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.report-line.target {
+  color: var(--text);
+  font-weight: 700;
+  background: rgba(224, 138, 138, 0.15);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.report-resolve {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.report-resolve input {
+  flex: 1;
+  min-width: 140px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+}
+.report-handled {
+  color: var(--muted);
+}
+
+/* Notification settings */
+.notification-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+.notification-settings h3 {
+  font-size: 0.95rem;
+}
+.notification-settings .push-toggle {
+  margin: 0;
+}
+.notification-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notification-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.notification-row input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.notification-row span {
+  display: flex;
+  flex-direction: column;
+}
+.notification-row small,
+.notification-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+/* Chat bans in the admin reports panel */
+.report-ban {
+  color: var(--danger);
+}
+.report-ban-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.report-ban-select select {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+}
+.ban-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+}
+.ban-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ban-row span {
+  display: flex;
+  flex-direction: column;
+}
+.ban-row small {
+  color: var(--muted);
+}
+

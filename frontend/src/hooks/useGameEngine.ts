@@ -5,9 +5,11 @@ import type {
   ActionResult,
   BossCatalog,
   EquipmentCatalogItem,
+  FriendChatUnread,
   GameState,
   LeaderboardResult,
   MailSummary,
+  NotificationPrefs,
   Quest,
   Species,
   Upgrade,
@@ -38,6 +40,10 @@ export function useGameEngine(userKey: string | null) {
   const [friendsCount, setFriendsCount] = useState(0);
   // 우편함 배지용 요약. 1분마다 새로 확인하고, 안 읽은 우편이 늘었으면 알려준다.
   const [mailSummary, setMailSummary] = useState<MailSummary>({ unread: 0, claimable: 0, badge: 0 });
+  // 친구 채팅의 안 읽은 메시지 수(친구별·전체). 사이드바 배지와 친구 목록에 쓴다.
+  const [friendChatUnread, setFriendChatUnread] = useState<FriendChatUnread>({ total: 0, byFriend: {} });
+  // 알림 종류별 켜기/끄기. 꺼 둔 종류는 화면 안의 알림(토스트)도 띄우지 않는다(서버는 푸시 알림도 같은 설정으로 거른다).
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({ friendChat: true, mail: true });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToastState] = useState<ToastState | null>(null);
@@ -72,13 +78,41 @@ export function useGameEngine(userKey: string | null) {
     }
   }, [showToast]);
 
+  // 알림 확인 콜백(1분·15초 주기)이 항상 최신 설정을 보게 ref로도 들고 있는다.
+  const prefsRef = useRef(notificationPrefs);
+  useEffect(() => {
+    prefsRef.current = notificationPrefs;
+  }, [notificationPrefs]);
+
+  useEffect(() => {
+    if (!userKey) return;
+    api
+      .getNotificationPrefs()
+      .then(setNotificationPrefs)
+      .catch(() => {});
+  }, [userKey]);
+
+  const updateNotificationPrefs = useCallback(
+    async (patch: Partial<NotificationPrefs>) => {
+      const before = prefsRef.current;
+      setNotificationPrefs({ ...before, ...patch }); // 바로 반영하고, 서버가 거부하면 되돌린다
+      try {
+        setNotificationPrefs(await api.updateNotificationPrefs(patch));
+      } catch (e) {
+        setNotificationPrefs(before);
+        showToast(e instanceof Error ? e.message : '알림 설정을 바꾸지 못했어요.', true);
+      }
+    },
+    [showToast],
+  );
+
   const lastUnreadRef = useRef<number | null>(null);
   const refreshMailSummary = useCallback(async () => {
     try {
       const summary = await api.getMailSummary();
       setMailSummary(summary);
       // 처음 불러올 때는 알리지 않고, 그 뒤로 안 읽은 우편이 늘어났을 때만 알린다.
-      if (lastUnreadRef.current !== null && summary.unread > lastUnreadRef.current) {
+      if (prefsRef.current.mail && lastUnreadRef.current !== null && summary.unread > lastUnreadRef.current) {
         showToast('📬 새 우편이 도착했어요! 우편함을 확인해 보세요.');
       }
       lastUnreadRef.current = summary.unread;
@@ -93,6 +127,28 @@ export function useGameEngine(userKey: string | null) {
     const id = setInterval(() => void refreshMailSummary(), 60_000);
     return () => clearInterval(id);
   }, [userKey, refreshMailSummary]);
+
+  const lastFriendUnreadRef = useRef<number | null>(null);
+  const refreshFriendChatUnread = useCallback(async () => {
+    try {
+      const unread = await api.getFriendChatUnread();
+      setFriendChatUnread(unread);
+      // 처음 불러올 때는 알리지 않고, 그 뒤로 안 읽은 메시지가 늘어났을 때만 알린다.
+      if (prefsRef.current.friendChat && lastFriendUnreadRef.current !== null && unread.total > lastFriendUnreadRef.current) {
+        showToast('💬 친구에게서 새 메시지가 왔어요!');
+      }
+      lastFriendUnreadRef.current = unread.total;
+    } catch {
+      // 다음 주기에 다시 시도한다.
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!userKey) return;
+    Promise.resolve().then(() => refreshFriendChatUnread());
+    const id = setInterval(() => void refreshFriendChatUnread(), 15_000);
+    return () => clearInterval(id);
+  }, [userKey, refreshFriendChatUnread]);
 
   // 랭킹은 다른 유저 데이터라 게임 본체 로딩/에러와는 분리해서, 실패해도 게임 진행에 영향을 주지 않는다.
   // Promise.resolve().then(...)으로 감싸서 setState 호출이 이펙트 본문에서 동기로 일어나지 않게 한다.
@@ -208,6 +264,10 @@ export function useGameEngine(userKey: string | null) {
     friendsCount,
     mailSummary,
     refreshMailSummary,
+    friendChatUnread,
+    refreshFriendChatUnread,
+    notificationPrefs,
+    updateNotificationPrefs,
     leaderboardLoading,
     reloadLeaderboards,
     loading,

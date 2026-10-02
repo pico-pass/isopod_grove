@@ -18,6 +18,8 @@ import { FriendsModule } from './friends/friends.module';
 import { EquipmentModule } from './equipment/equipment.module';
 import { BossModule } from './boss/boss.module';
 import { MailModule } from './mail/mail.module';
+import { FriendChatModule } from './friend-chat/friend-chat.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { MailModule } from './mail/mail.module';
     EquipmentModule,
     BossModule,
     MailModule,
+    FriendChatModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [AppService],

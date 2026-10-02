@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
@@ -6,7 +6,7 @@ import {
   ChatMessageDocument,
   DEFAULT_CHAT_CHANNEL,
 } from './schemas/chat-message.schema';
-import { UsersService, effectiveDisplayName } from '../users/users.service';
+import { UsersService, chatBanMessage, effectiveDisplayName } from '../users/users.service';
 
 const MAX_MESSAGES = 300; // 채널별로 이 개수를 넘으면 오래된 메시지부터 지운다
 const INITIAL_FETCH_LIMIT = 50;
@@ -58,6 +58,12 @@ export class ChatService {
     const trimmed = text.trim();
     if (!trimmed) {
       throw new BadRequestException('메시지를 입력해 주세요.');
+    }
+
+    // 신고 처리로 채팅이 정지된 유저는 보낼 수 없다(읽기는 가능).
+    const ban = await this.usersService.getChatBan(userId);
+    if (ban) {
+      throw new ForbiddenException(chatBanMessage(ban.until));
     }
 
     const now = Date.now();

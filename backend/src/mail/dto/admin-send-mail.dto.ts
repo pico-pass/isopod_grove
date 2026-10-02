@@ -1,5 +1,6 @@
 import {
   ArrayMaxSize,
+  IsBoolean,
   ArrayMinSize,
   IsArray,
   IsIn,
@@ -63,6 +64,11 @@ export class AdminSendMailDto {
   @Min(0)
   @Max(MAIL_MAX_TICKETS)
   explorationTickets?: number;
+
+  // 받는 유저의 기기로 푸시 알림도 보낼지. 생략하면 보낸다(푸시를 켜 둔 유저에게만 간다).
+  @IsOptional()
+  @IsBoolean()
+  push?: boolean;
 
   // 우편이 유지되는 기간(일). 지나면 받지 않은 자원도 함께 사라진다.
   @IsOptional()

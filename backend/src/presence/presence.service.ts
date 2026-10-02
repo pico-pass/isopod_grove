@@ -20,6 +20,11 @@ export class PresenceService implements OnModuleDestroy {
     this.lastSeenAt.set(userId, Date.now());
   }
 
+  isOnline(userId: string): boolean {
+    const at = this.lastSeenAt.get(userId);
+    return at !== undefined && Date.now() - at <= ONLINE_THRESHOLD_MS;
+  }
+
   getOnlineUserIds(): string[] {
     const now = Date.now();
     const ids: string[] = [];

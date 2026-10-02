@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type AuthUser } from '../api/client';
-import type { GameState, PublicProfile, Species } from '../api/types';
+import type { GameState, NotificationPrefs, PublicProfile, Species } from '../api/types';
+import { NotificationSettings } from './NotificationSettings';
 import { NICKNAME_CHANGE_COST, formatNumber, getLevelProgress, getPopulationCount } from '../utils/gameCalc';
 
 const PROFILE_MESSAGE_MAX_LENGTH = 60;
@@ -15,6 +16,8 @@ export function ProfileModal({
   onClose,
   onSetNickname,
   onSetProfileMessage,
+  notificationPrefs,
+  onUpdateNotificationPrefs,
   showToast,
 }: {
   targetUserId: string;
@@ -26,6 +29,8 @@ export function ProfileModal({
   onClose: () => void;
   onSetNickname: (nickname: string) => void;
   onSetProfileMessage: (message: string) => void;
+  notificationPrefs: NotificationPrefs;
+  onUpdateNotificationPrefs: (patch: Partial<NotificationPrefs>) => void;
   showToast: (message: string, isError?: boolean) => void;
 }) {
   const isSelf = targetUserId === currentUser._id;
@@ -234,6 +239,10 @@ export function ProfileModal({
             <span>업적 달성</span>
           </div>
         </div>
+
+        {isSelf && (
+          <NotificationSettings prefs={notificationPrefs} onChange={onUpdateNotificationPrefs} showToast={showToast} />
+        )}
 
         {joinedAt && <p className="footnote profile-joined">가입일: {joinedAt}</p>}
       </div>

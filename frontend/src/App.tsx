@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api/client';
 import { useAuth } from './auth/useAuth';
 import { useGameEngine } from './hooks/useGameEngine';
 import { LoginView } from './components/LoginView';
 import { TopBar } from './components/TopBar';
 import { Sidebar, type ViewKey } from './components/Sidebar';
+import { NAVIGABLE_VIEWS } from './utils/views';
 import { HabitatView } from './components/HabitatView';
 import { CollectionView } from './components/CollectionView';
 import { MarketView } from './components/MarketView';
@@ -28,7 +29,18 @@ import {
   getAchievementProgress,
   getPopulationCount,
 } from './utils/gameCalc';
+import { releasePushOnLogout, syncPushSubscription } from './utils/push';
 import './App.css';
+
+// 푸시 알림을 눌러 열었을 때 주소 조각(#friends, #mail)으로 처음 보여줄 화면을 정한다.
+function initialViewFromHash(): ViewKey {
+  const key = window.location.hash.slice(1) as ViewKey;
+  if (NAVIGABLE_VIEWS.includes(key)) {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    return key;
+  }
+  return 'habitat';
+}
 
 function App() {
   const { user, loading: authLoading, logout, setUser } = useAuth();
@@ -47,6 +59,10 @@ function App() {
     friendsCount,
     mailSummary,
     refreshMailSummary,
+    friendChatUnread,
+    refreshFriendChatUnread,
+    notificationPrefs,
+    updateNotificationPrefs,
     leaderboardLoading,
     reloadLeaderboards,
     loading,
@@ -55,10 +71,33 @@ function App() {
     showToast,
     runAction,
   } = useGameEngine(user?._id ?? null);
-  const [view, setView] = useState<ViewKey>('habitat');
+  const [view, setView] = useState<ViewKey>(initialViewFromHash);
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
+
+  // 이미 열려 있는 창에서 푸시 알림을 눌렀을 때 서비스 워커가 보내는 "이 화면으로 이동" 메시지를 받는다.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (e: MessageEvent<{ type?: string; view?: string }>) => {
+      const target = e.data?.view as ViewKey | undefined;
+      if (e.data?.type === 'navigate' && target && NAVIGABLE_VIEWS.includes(target)) setView(target);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, []);
+
+  // 로그인되면 이 브라우저의 푸시 구독을 지금 유저로 맞춘다(구독이 없으면 아무것도 하지 않는다).
+  const userId = user?._id;
+  useEffect(() => {
+    if (userId) void syncPushSubscription();
+  }, [userId]);
+
+  // 로그아웃할 때 이 기기의 푸시 구독을 먼저 정리해서, 다음에 로그인하는 사람이 이전 사람의 알림을 받지 않게 한다.
+  const handleLogout = async () => {
+    await releasePushOnLogout();
+    logout();
+  };
 
   if (authLoading) {
     return (
@@ -117,7 +156,7 @@ function App() {
         explorationTickets={gameState.explorationTickets}
         diamonds={gameState.diamonds}
         user={user}
-        onLogout={logout}
+        onLogout={() => void handleLogout()}
         onOpenProfile={() => setProfileTarget(user._id)}
         onToggleSidebar={() => setSidebarOpen((v) => !v)}
       />
@@ -128,6 +167,7 @@ function App() {
           populationCount={totalPopulation}
           claimableAchievements={claimableAchievements}
           mailBadge={mailSummary.badge}
+          friendChatBadge={friendChatUnread.total}
           discoveredCount={gameState.discovered.length}
           speciesTotal={species.length}
           xp={gameState.xp}
@@ -269,7 +309,13 @@ function App() {
             />
           )}
           {view === 'friends' && (
-            <FriendsView showToast={showToast} onOpenProfile={setProfileTarget} />
+            <FriendsView
+              currentUserId={user._id}
+              unreadByFriend={friendChatUnread.byFriend}
+              onUnreadChanged={refreshFriendChatUnread}
+              showToast={showToast}
+              onOpenProfile={setProfileTarget}
+            />
           )}
           {view === 'journal' && <JournalView gameState={gameState} />}
           {view === 'admin' && user.isAdmin && <AdminView />}
@@ -290,6 +336,8 @@ function App() {
               if (result?.user) setUser(result.user);
             })
           }
+          notificationPrefs={notificationPrefs}
+          onUpdateNotificationPrefs={(patch) => void updateNotificationPrefs(patch)}
           onSetProfileMessage={(message) =>
             api
               .setProfileMessage(message)

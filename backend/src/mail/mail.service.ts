@@ -14,6 +14,7 @@ import {
 } from './dto/admin-send-mail.dto';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { GameStateService } from '../game-state/game-state.service';
+import { PushService } from '../push/push.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_LIMIT = 100;
@@ -59,6 +60,8 @@ export class MailService {
     @InjectModel(Mail.name) private mailModel: Model<MailDocument>,
     private readonly usersService: UsersService,
     private readonly gameStateService: GameStateService,
+    // 푸시 알림용. 끝자리에 둬서 기존 테스트 생성자 호출이 깨지지 않게 한다.
+    private readonly pushService?: PushService,
   ) {}
 
   // ---------- 관리자 ----------
@@ -115,10 +118,25 @@ export class MailService {
     this.logger.log(
       `우편 발송 batch=${batchId} by=${adminId} → ${dto.target === 'all' ? '전체' : '선택'} ${recipientIds.length}명 · "${title}"${hasRewards ? ` · ${describeRewards(rewards)}` : ''}`,
     );
+    // 푸시 알림은 기다리지 않는다(실패해도 우편 발송에는 영향이 없다).
+    const wantsPush = dto.push !== false && !!this.pushService?.enabled;
+    if (wantsPush) {
+      // PushService는 던지지 않지만, 어떤 이유로든 거부되어도 처리되지 않은 예외로 번지지 않게 한 번 더 막는다.
+      Promise.resolve(
+        this.pushService?.sendToUsers(
+          recipientIds,
+          { title: '📬 새 우편이 도착했어요', body: title, view: 'mail', tag: 'mail' },
+          'mail', // 우편 알림을 꺼 둔 유저는 푸시를 받지 않는다
+        ),
+      ).catch((e: unknown) => {
+        this.logger.warn(`우편 푸시 실패: ${e instanceof Error ? e.message : String(e)}`);
+      });
+    }
     return {
       batchId,
       recipients: recipientIds.length,
-      message: `우편을 ${recipientIds.length}명에게 보냈어요.`,
+      pushRequested: wantsPush,
+      message: `우편을 ${recipientIds.length}명에게 보냈어요.${wantsPush ? ' (푸시 알림을 켜 둔 유저에게는 알림도 갔어요.)' : ''}`,
     };
   }
 

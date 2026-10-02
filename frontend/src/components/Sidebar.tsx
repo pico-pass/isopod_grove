@@ -40,6 +40,7 @@ export function Sidebar({
   speciesTotal,
   claimableAchievements,
   mailBadge,
+  friendChatBadge,
   xp,
   isAdmin,
   mobileOpen,
@@ -52,6 +53,7 @@ export function Sidebar({
   speciesTotal: number;
   claimableAchievements: number;
   mailBadge: number;
+  friendChatBadge: number;
   xp: number;
   isAdmin: boolean;
   mobileOpen: boolean;
@@ -106,6 +108,7 @@ export function Sidebar({
               <span className="nav-count">{claimableAchievements}</span>
             )}
             {item.key === 'mail' && mailBadge > 0 && <span className="nav-count">{mailBadge}</span>}
+            {item.key === 'friends' && friendChatBadge > 0 && <span className="nav-count">{friendChatBadge}</span>}
           </button>
         ))}
       </nav>

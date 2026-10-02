@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { AdminStats } from '../api/types';
 import { formatNumber } from '../utils/gameCalc';
 import { AdminMailPanel } from './AdminMailPanel';
+import { AdminReportsPanel } from './AdminReportsPanel';
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -85,6 +86,8 @@ export function AdminView() {
           </div>
 
           <AdminMailPanel />
+
+          <AdminReportsPanel />
 
           <section className="panel">
             <div className="panel-heading">

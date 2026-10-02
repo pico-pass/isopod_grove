@@ -208,6 +208,7 @@ export interface Friend {
   displayName: string;
   avatarUrl?: string;
   canGiftToday: boolean;
+  online: boolean;
 }
 
 export interface FriendRequest {
@@ -250,6 +251,80 @@ export interface ChatMessage {
   channel: ChatChannel;
   text: string;
   createdAt: number;
+}
+
+export interface FriendChatMessage {
+  id: string;
+  userId: string; // 보낸 사람
+  text: string; // 삭제된 메시지는 빈 문자열
+  createdAt: number;
+  deleted: boolean;
+}
+
+// 대화를 가져올 때마다 "지금 상태"가 함께 온다(읽음·삭제·접속 표시를 항상 최신으로 맞추려고).
+export interface FriendChatPoll {
+  messages: FriendChatMessage[];
+  friendUnreadIds: string[]; // 내가 보낸 메시지 중 상대가 아직 안 읽은 것
+  deletedIds: string[];
+  friendOnline: boolean;
+}
+
+export type ChatReportReason = 'abuse' | 'spam' | 'inappropriate' | 'other';
+export type ChatReportStatus = 'open' | 'resolved' | 'dismissed';
+
+export interface AdminChatReport {
+  id: string;
+  reporter: { userId: string; displayName: string };
+  reported: { userId: string; displayName: string };
+  reportedReporterCount: number; // 신고당한 사람을 지금까지 신고한 서로 다른 유저 수
+  reason: ChatReportReason;
+  reasonLabel: string;
+  detail: string;
+  messageText: string;
+  messageId: string;
+  context: { messageId: string; sender: 'reporter' | 'reported'; text: string; createdAt: number }[];
+  status: ChatReportStatus;
+  adminNote: string;
+  handledAt: number | null;
+  createdAt: number;
+  // 신고당한 유저가 지금 채팅 정지 중이면 풀리는 시각, 그리고 이 신고를 처리하면서 건 정지
+  reportedBanUntil: number | null;
+  sanction: { days: number; until: number } | null;
+}
+
+export interface AdminChatBan {
+  userId: string;
+  displayName: string;
+  until: number;
+  reason: string;
+}
+
+export interface ResolveReportResult {
+  id: string;
+  status: string;
+  ban: { days: number; until: number } | null;
+  notified: boolean;
+}
+
+// 알림 종류별 켜기/끄기(푸시 알림과 화면 안의 알림 모두에 적용)
+export interface NotificationPrefs {
+  friendChat: boolean;
+  mail: boolean;
+}
+
+export interface AdminChatReportList {
+  openCount: number;
+  reports: AdminChatReport[];
+}
+
+export interface PushConfig {
+  enabled: boolean;
+  publicKey: string | null;
+}
+
+export interface FriendChatUnread {
+  total: number;
+  byFriend: Record<string, number>;
 }
 
 export interface MailRewards {
@@ -295,11 +370,13 @@ export interface AdminMailRequest {
   diamonds?: number;
   explorationTickets?: number;
   expireDays?: number;
+  push?: boolean;
 }
 
 export interface AdminMailSendResult {
   batchId: string;
   recipients: number;
+  pushRequested: boolean;
   message: string;
 }
 

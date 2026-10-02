@@ -37,18 +37,24 @@ export const TRAIN_COST_LEVEL_GROWTH = 1.12;
 export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
 export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
 export const TRAIN_INTENSITY_LABELS = ['가벼운 훈련', '보통 훈련', '강도 높은 훈련'];
-export const TRAIN_EXTREME_DIAMOND_COST = 1;
+export const TRAIN_EXTREME_DIAMOND_COST = 4;
 export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
 // 강도별 훈련 쿨다운(초). 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const TRAIN_COOLDOWN_SECONDS_BY_INTENSITY = [30, 120, 480];
 // 투기장(PvP). 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const PVP_RATING_WIN_DELTA = 18;
 export const PVP_RATING_LOSE_DELTA = 12;
+// 이긴 상대에게 다시 도전할 수 있게 되기까지의 시간(분). 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const PVP_REMATCH_COOLDOWN_MINUTES = 30;
+// 재도전 제한은 cooldowns 맵에 `${접두사}${상대 userId}` 키로 들어 있다(값 = 풀리는 시각 ms).
+export const PVP_REMATCH_KEY_PREFIX = 'pvpWin:';
 export const PVP_WIN_COIN_REWARD = 120;
 export const PVP_WIN_DIAMOND_CHANCE = 0.08;
 // 보스 타워. 층 정보(상대·스탯·패턴·보상)는 서버가 GET /boss로 내려준다.
 // 하루 도전 횟수만 화면 표시용으로 같은 값을 둔다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const BOSS_DAILY_ATTEMPTS = 5;
+// 보스 전투 사이의 쿨타임(분). 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const BOSS_COOLDOWN_MINUTES = 15;
 // 종(콩벌레) 별명. 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const SPECIES_NICKNAME_MAX_LENGTH = 10;
 
@@ -399,6 +405,7 @@ export function getAchievementProgress(
     case 'equipmentPulls':
     case 'highestBossFloor':
     case 'bossWins':
+    case 'bestPvpWinStreak':
       return { progress: gameState.stats[achievement.statKey] ?? 0, target };
     default:
       return { progress: 0, target };

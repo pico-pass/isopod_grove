@@ -82,6 +82,14 @@ export class Stats {
   // 보스 타워 승리 누적 횟수(이미 깬 층을 다시 이긴 것도 센다)
   @Prop({ default: 0 })
   bossWins: number;
+
+  // 투기장 현재 연승. 지면 0으로 돌아간다(재도전 제한으로 거절된 시도는 영향이 없다).
+  @Prop({ default: 0 })
+  pvpWinStreak: number;
+
+  // 투기장 최고 연승 기록. 한 번 오르면 내려가지 않아 업적 조건으로 쓴다.
+  @Prop({ default: 0 })
+  bestPvpWinStreak: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 

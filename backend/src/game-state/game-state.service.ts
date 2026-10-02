@@ -66,6 +66,8 @@ import {
   PVP_EQUIPMENT_EFFECT_RATE,
   PVP_LOSE_ACCOUNT_XP,
   PVP_MATCH_RATING_BANDS,
+  PVP_REMATCH_COOLDOWN_MS,
+  PVP_REMATCH_KEY_PREFIX,
   PVP_RATING_LOSE_DELTA,
   PVP_RATING_WIN_DELTA,
   PVP_WIN_ACCOUNT_XP,
@@ -144,6 +146,8 @@ export class GameStateService {
   // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
   // 중복으로 받지 못하게 막는다(서버는 pm2 fork 한 프로세스라 메모리 집합으로 충분하다).
   private readonly bossInFlight = new Set<string>();
+  // 투기장도 같은 이유로 막는다(연타로 같은 상대를 두 번 이기는 것 방지).
+  private readonly pvpInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -577,7 +581,7 @@ export class GameStateService {
   }
 
   // 상대 없이 코인을 내고 보유한 종 하나의 전투 경험치를 바로 올린다. 승패가 없는 대신 비용이 확정적이다.
-  // extreme(극한 훈련)을 켜면 다이아 1개를 추가로 쓰고 경험치가 12배로 뛴다.
+  // extreme(극한 훈련)을 켜면 다이아 4개를 추가로 쓰고 경험치가 12배로 뛴다.
   async train(
     userId: string,
     speciesId: string,
@@ -784,6 +788,18 @@ export class GameStateService {
     if (opponentUserId === userId) {
       throw new BadRequestException('자기 자신과는 대결할 수 없어요.');
     }
+    if (this.pvpInFlight.has(userId)) {
+      throw new BadRequestException('전투가 진행 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.pvpInFlight.add(userId);
+    try {
+      return await this.runPvpBattle(userId, speciesId, opponentUserId);
+    } finally {
+      this.pvpInFlight.delete(userId);
+    }
+  }
+
+  private async runPvpBattle(userId: string, speciesId: string, opponentUserId: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
     if (!(this.totalOf(gameState, speciesId) > 0)) {
@@ -792,6 +808,15 @@ export class GameStateService {
     const now = Date.now();
     if ((gameState.cooldowns.get('pvp') || 0) > now) {
       throw new BadRequestException('조금만 기다려 주세요.');
+    }
+    // 방금 이긴 상대에게는 한동안 다시 도전할 수 없다(클라이언트가 어떤 상대를 보여줬든 서버가 막는다).
+    const rematchKey = PVP_REMATCH_KEY_PREFIX + opponentUserId;
+    const rematchUntil = gameState.cooldowns.get(rematchKey) || 0;
+    if (rematchUntil > now) {
+      const remain = Math.ceil((rematchUntil - now) / 1000);
+      throw new BadRequestException(
+        `방금 이긴 상대예요. ${Math.floor(remain / 60)}분 ${remain % 60}초 뒤에 다시 도전할 수 있어요. 다른 상대를 찾아 보세요.`,
+      );
     }
 
     const opponentState = await this.gameStateModel
@@ -879,16 +904,27 @@ export class GameStateService {
     let reward = { coins: 0, diamonds: 0 };
     let message: string;
     if (won) {
+      // 이긴 상대는 한동안 재도전 불가. 지난 기록은 이때 같이 정리해서 맵이 계속 커지지 않게 한다.
+      for (const [key, until] of [...gameState.cooldowns.entries()]) {
+        if (key.startsWith(PVP_REMATCH_KEY_PREFIX) && until <= now) gameState.cooldowns.delete(key);
+      }
+      gameState.cooldowns.set(rematchKey, now + PVP_REMATCH_COOLDOWN_MS);
       const diamonds = Math.random() < PVP_WIN_DIAMOND_CHANCE ? 1 : 0;
       gameState.coins += PVP_WIN_COIN_REWARD;
       gameState.diamonds += diamonds;
       gameState.stats.earned += PVP_WIN_COIN_REWARD;
       gameState.stats.pvpWins++;
+      gameState.stats.pvpWinStreak = (gameState.stats.pvpWinStreak || 0) + 1;
+      gameState.stats.bestPvpWinStreak = Math.max(
+        gameState.stats.bestPvpWinStreak || 0,
+        gameState.stats.pvpWinStreak,
+      );
       this.grantXp(gameState, PVP_WIN_ACCOUNT_XP);
       reward = { coins: PVP_WIN_COIN_REWARD, diamonds };
       message = `승리! ${opponentName}님의 ${opponentSpecies.name}을(를) 이겼어요. +${PVP_WIN_COIN_REWARD} G${diamonds ? ' · 💎 1개' : ''} · 레이팅 +${PVP_RATING_WIN_DELTA}`;
     } else {
       gameState.stats.pvpLosses++;
+      gameState.stats.pvpWinStreak = 0;
       this.grantXp(gameState, PVP_LOSE_ACCOUNT_XP);
       message = `아쉽게 패배했어요. ${opponentName}님의 ${opponentSpecies.name}이(가) 더 강했어요. 레이팅 -${PVP_RATING_LOSE_DELTA}`;
     }
@@ -968,8 +1004,12 @@ export class GameStateService {
       throw new BadRequestException('아직 만나지 못한 식구예요.');
     }
     const now = Date.now();
-    if ((gameState.cooldowns.get('boss') || 0) > now) {
-      throw new BadRequestException('조금만 기다려 주세요.');
+    const bossReadyAt = gameState.cooldowns.get('boss') || 0;
+    if (bossReadyAt > now) {
+      const remain = Math.ceil((bossReadyAt - now) / 1000);
+      throw new BadRequestException(
+        `보스 전투 쿨타임이에요. ${Math.floor(remain / 60)}분 ${remain % 60}초 뒤에 다시 도전할 수 있어요.`,
+      );
     }
     const highestBefore = gameState.stats.highestBossFloor || 0;
     if (floor.floor > highestBefore + 1) {
@@ -1026,7 +1066,12 @@ export class GameStateService {
       if (firstClear) gameState.stats.highestBossFloor = floor.floor;
 
       const coins = firstClear ? floor.rewards.firstCoins : floor.rewards.repeatCoins;
-      const diamonds = firstClear ? floor.rewards.firstDiamonds : 0;
+      // 다이아: 첫 클리어는 확정, 이미 깬 층을 다시 이기면 낮은 확률로만(일반 층은 둘 다 0).
+      const diamonds = firstClear
+        ? floor.rewards.firstDiamonds
+        : Math.random() < floor.rewards.repeatDiamondChance
+          ? floor.rewards.repeatDiamonds
+          : 0;
       gameState.coins += coins;
       gameState.diamonds += diamonds;
       gameState.stats.earned += coins;

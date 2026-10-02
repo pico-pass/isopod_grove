@@ -36,6 +36,9 @@ const STAT_TIERS: StatTier[] = [
       { target: 20, reward: 300, diamondReward: 3 },
       { target: 100, reward: 1500, diamondReward: 8 },
       { target: 500, reward: 8000, diamondReward: 20 },
+      { target: 2000, reward: 25000, diamondReward: 30 },
+      { target: 10000, reward: 80000, diamondReward: 50 },
+      { target: 50000, reward: 300000, diamondReward: 100 },
     ],
   },
   {
@@ -58,6 +61,9 @@ const STAT_TIERS: StatTier[] = [
       { target: 5000, reward: 500, diamondReward: 3 },
       { target: 50000, reward: 3000, diamondReward: 8 },
       { target: 500000, reward: 15000, diamondReward: 20 },
+      { target: 5000000, reward: 40000, diamondReward: 30 },
+      { target: 20000000, reward: 100000, diamondReward: 50 },
+      { target: 100000000, reward: 400000, diamondReward: 100 },
     ],
   },
   {
@@ -104,6 +110,18 @@ const STAT_TIERS: StatTier[] = [
     ],
   },
   {
+    statKey: 'bestPvpWinStreak',
+    icon: 'fire',
+    label: '연전연승',
+    descriptionOf: (t) => `투기장 ${t}연승 달성`,
+    tiers: [
+      { target: 3, reward: 500, diamondReward: 5 },
+      { target: 5, reward: 1500, diamondReward: 10 },
+      { target: 10, reward: 5000, diamondReward: 25 },
+      { target: 20, reward: 15000, diamondReward: 50 },
+    ],
+  },
+  {
     statKey: 'peakPvpRating',
     icon: 'medal',
     label: '레이팅 등반가',
@@ -133,6 +151,9 @@ const STAT_TIERS: StatTier[] = [
     tiers: [
       { target: 10, reward: 600, diamondReward: 12 },
       { target: 25, reward: 2500, diamondReward: 30 },
+      { target: 30, reward: 6000, diamondReward: 40 },
+      { target: 35, reward: 15000, diamondReward: 60 },
+      { target: 40, reward: 40000, diamondReward: 100 },
     ],
   },
   {
@@ -253,10 +274,13 @@ const STAT_TIERS: StatTier[] = [
   },
 ];
 
+// 단계 표기(I, II, III, IV…). 4단계 이상에서 'IIII'가 되지 않게 로마 숫자를 따로 둔다.
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+
 const statAchievements = STAT_TIERS.flatMap(({ statKey, icon, label, descriptionOf, tiers }) =>
   tiers.map((tier, i) => ({
     achievementId: `${statKey}_${tier.target}`,
-    label: tiers.length > 1 ? `${label} ${'I'.repeat(i + 1)}` : label,
+    label: tiers.length > 1 ? `${label} ${ROMAN[i] ?? i + 1}` : label,
     description: descriptionOf(tier.target),
     icon,
     type: 'stat' as const,

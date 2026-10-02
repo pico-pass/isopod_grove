@@ -57,6 +57,9 @@ export interface Stats {
   equipmentPulls: number;
   highestBossFloor: number;
   bossWins: number;
+  // 투기장 현재 연승 / 최고 연승. 예전 데이터에는 없을 수 있다.
+  pvpWinStreak?: number;
+  bestPvpWinStreak?: number;
 }
 
 export interface LogEntry {
@@ -150,7 +153,8 @@ export type AchievementStatKey =
   | 'equipmentAwakenings'
   | 'equipmentSlots'
   | 'highestBossFloor'
-  | 'bossWins';
+  | 'bossWins'
+  | 'bestPvpWinStreak';
 
 export interface Achievement {
   achievementId: string;
@@ -463,6 +467,8 @@ export interface BossFloorInfo {
   rewards: {
     firstCoins: number;
     firstDiamonds: number;
+    repeatDiamondChance: number;
+    repeatDiamonds: number;
     firstEquipmentRarity: number | null;
     repeatCoins: number;
     repeatCopyChance: number;

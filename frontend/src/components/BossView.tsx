@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useState } from 'react';
 import type { BossBattleResponse, BossCatalog, EquipmentCatalogItem, GameState, Species } from '../api/types';
 import {
+  BOSS_COOLDOWN_MINUTES,
   BOSS_DAILY_ATTEMPTS,
   RARITIES,
   formatBonusPercent,
+  formatDuration,
   formatNumber,
   getBossAttemptsLeft,
   getTotalPopulationBySpecies,
@@ -92,8 +94,8 @@ export function BossView({
       </div>
 
       <div className="info-banner">
-        👹 도전은 승패와 상관없이 하루 {BOSS_DAILY_ATTEMPTS}회예요. 깬 층의 바로 다음 층까지만 열리고, 처음 깰 때는 보상이 커요.
-        이미 깬 층은 다시 도전해 골드(보스 층은 장비 복사본 확률)를 받을 수 있어요.
+        👹 도전은 승패와 상관없이 하루 {BOSS_DAILY_ATTEMPTS}회이고, 전투 사이에는 {BOSS_COOLDOWN_MINUTES}분 쿨타임이 있어요. 깬 층의 바로 다음 층까지만 열리고, 처음 깰 때는 보상이 커요.
+        이미 깬 층은 다시 도전해 골드(보스 층은 장비 복사본·다이아 확률)를 받을 수 있어요.
       </div>
 
       <p className="nav-caption">층 선택</p>
@@ -141,7 +143,7 @@ export function BossView({
                 </span>
               </span>
               <small>
-                ❤️{info.stats.hp} ⚔️{info.stats.atk} 🛡️{info.stats.def} (전투마다 ±15% 편차)
+                ❤️{formatNumber(info.stats.hp)} ⚔️{formatNumber(info.stats.atk)} 🛡️{formatNumber(info.stats.def)} (전투마다 ±15% 편차)
               </small>
             </div>
           </div>
@@ -163,6 +165,12 @@ export function BossView({
                     {' · '}
                     {Math.round(info.rewards.repeatCopyChance * 100)}% 확률로{' '}
                     {RARITIES[info.rewards.firstEquipmentRarity].name} 장비 복사본
+                  </>
+                )}
+                {info.rewards.repeatDiamondChance > 0 && (
+                  <>
+                    {' · '}
+                    {Math.round(info.rewards.repeatDiamondChance * 100)}% 확률로 💎 {info.rewards.repeatDiamonds}개
                   </>
                 )}
               </>
@@ -208,7 +216,7 @@ export function BossView({
         {attemptsLeft <= 0
           ? '오늘 도전 횟수를 모두 썼어요 (내일 다시)'
           : cooldownRemaining > 0
-            ? `${cooldownRemaining}초 후 다시 도전할 수 있어요`
+            ? `⏳ ${formatDuration(cooldownRemaining)} 뒤에 다시 도전할 수 있어요`
             : !info
               ? '층을 불러오는 중이에요'
               : !selected

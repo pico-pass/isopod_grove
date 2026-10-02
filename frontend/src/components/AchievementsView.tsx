@@ -26,6 +26,7 @@ const ICONS: Record<string, string> = {
   box: '📦',
   tower: '🗼',
   ogre: '👹',
+  fire: '🔥',
 };
 
 export function AchievementsView({

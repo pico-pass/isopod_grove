@@ -11,6 +11,8 @@ import {
   PVP_EQUIPMENT_EFFECT_RATE,
   PVP_RATING_LOSE_DELTA,
   PVP_RATING_WIN_DELTA,
+  PVP_REMATCH_COOLDOWN_MINUTES,
+  PVP_REMATCH_KEY_PREFIX,
   PVP_WIN_COIN_REWARD,
   PVP_WIN_DIAMOND_CHANCE,
   formatBonusPercent,
@@ -59,6 +61,11 @@ export function PvpView({
   const cooldownRemaining = now
     ? Math.max(0, Math.ceil(((gameState.cooldowns.pvp || 0) - now) / 1000))
     : 0;
+  // 방금 이긴 상대에게는 한동안 다시 도전할 수 없다(서버에서도 막는다). 같은 상대가 다시 매칭돼도 찾기는 되고 도전만 막힌다.
+  const rematchRemaining =
+    now && opponent
+      ? Math.max(0, Math.ceil(((gameState.cooldowns[PVP_REMATCH_KEY_PREFIX + opponent.userId] || 0) - now) / 1000))
+      : 0;
   // 투기장에서는 장비 효과를 PVP_EQUIPMENT_EFFECT_RATE만큼만 반영한다(서버와 같은 값).
   const pvpBonuses = scaleBonuses(equipmentBonuses, PVP_EQUIPMENT_EFFECT_RATE);
   const opponentPreviewStats = opponent ? opponent.stats : null;
@@ -79,7 +86,7 @@ export function PvpView({
   };
 
   const fight = async () => {
-    if (!selected || !opponent || fighting || animating || cooldownRemaining > 0) return;
+    if (!selected || !opponent || fighting || animating || cooldownRemaining > 0 || rematchRemaining > 0) return;
     setFighting(true);
     const r = await onPvpBattle(selected, opponent.userId);
     if (r) {
@@ -103,6 +110,7 @@ export function PvpView({
             투기장{' '}
             <span>
               {formatNumber(gameState.pvpRating)}점 · {gameState.stats.pvpWins}승 {gameState.stats.pvpLosses}패
+              {(gameState.stats.pvpWinStreak ?? 0) > 0 && ` · 🔥 ${gameState.stats.pvpWinStreak}연승`}
             </span>
           </h1>
           <p className="subheading">
@@ -194,15 +202,17 @@ export function PvpView({
       <div className="info-banner">
         🆚 승리 시 레이팅 +{PVP_RATING_WIN_DELTA}점 · +{formatNumber(PVP_WIN_COIN_REWARD)} G · 💎{' '}
         {Math.round(PVP_WIN_DIAMOND_CHANCE * 100)}% 확률. 패배 시 레이팅 -{PVP_RATING_LOSE_DELTA}점만
-        깎여요(다른 손실 없음).
+        깎여요(다른 손실 없음). 이긴 상대에게는 {PVP_REMATCH_COOLDOWN_MINUTES}분 동안 다시 도전할 수 없어요.
       </div>
 
       <button
         className="button primary full battle-fight-button"
-        disabled={!selected || !opponent || fighting || animating || cooldownRemaining > 0}
+        disabled={!selected || !opponent || fighting || animating || cooldownRemaining > 0 || rematchRemaining > 0}
         onClick={fight}
       >
-        {cooldownRemaining > 0
+        {rematchRemaining > 0
+          ? `🔒 방금 이긴 상대예요 · ${Math.floor(rematchRemaining / 60)}분 ${rematchRemaining % 60}초 뒤에 다시 도전할 수 있어요`
+          : cooldownRemaining > 0
           ? `${cooldownRemaining}초 후 다시 도전할 수 있어요`
           : !opponent
             ? '상대를 먼저 찾아주세요'

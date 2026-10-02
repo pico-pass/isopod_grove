@@ -63,7 +63,7 @@ export const TRAIN_COST_LEVEL_GROWTH = 1.12; // 전투 레벨이 오를수록 �
 export const TRAIN_XP_BY_INTENSITY = [8, 18, 36];
 export const TRAIN_COST_MULT_BY_INTENSITY = [1, 2.2, 4.5];
 // 극한 훈련: 켜면 코인 비용은 그대로지만 다이아 1개를 추가로 쓰고, 경험치가 12배로 뛴다.
-export const TRAIN_EXTREME_DIAMOND_COST = 1;
+export const TRAIN_EXTREME_DIAMOND_COST = 4;
 export const TRAIN_EXTREME_XP_MULTIPLIER = 12;
 // ---- 유저 PvP(투기장) ----
 // 비동기 매칭: 상대가 접속 중이 아니어도 상대가 직접 지정해 둔 "방어 식구" 스냅샷과 즉시 대결한다.
@@ -74,6 +74,9 @@ export const PVP_RATING_WIN_DELTA = 18;
 export const PVP_RATING_LOSE_DELTA = 12;
 // 이 범위(±) 안에서 순서대로 상대를 찾고, 마지막 값은 사실상 전체 범위다.
 export const PVP_MATCH_RATING_BANDS = [150, 400, 1000, 100_000];
+// 이긴 상대에게 다시 도전할 수 있게 되기까지의 시간. 같은 상대를 연달아 이겨 레이팅·보상을 쌓는 걸 막는다.
+export const PVP_REMATCH_COOLDOWN_MS = 30 * 60_000;
+export const PVP_REMATCH_KEY_PREFIX = 'pvpWin:'; // cooldowns 맵의 키 = 접두사 + 상대 userId
 export const PVP_WIN_COIN_REWARD = 120;
 export const PVP_WIN_DIAMOND_CHANCE = 0.08;
 export const PVP_WIN_SPECIES_XP = 30;
@@ -481,15 +484,11 @@ export function simulateBattle(
 export const BOSS_DAILY_ATTEMPTS = 5;
 export const BOSS_FLOOR_COUNT = 50;
 export const BOSS_FLOOR_INTERVAL = 5; // 5층마다 보스(패턴이 붙는다)
-export const BOSS_COOLDOWN_MS = 3_000; // 연타 방지용. 하루 횟수 제한이 본 제한이다.
+export const BOSS_COOLDOWN_MS = 15 * 60_000; // 보스 전투 쿨타임(하루 횟수 제한과 별개로 적용된다)
 
 // 1층 기준 스탯과 층마다 곱해지는 성장률. 보스 층은 체력/공격/방어를 따로 한 번 더 곱한다.
 export const BOSS_BASE_STATS: CombatStats = { hp: 45, atk: 9, def: 4 };
-export const BOSS_FLOOR_GROWTH = 1.06;
-// 30층 뒤로는 성장률을 낮춘다. 최고 전투 레벨 구간(신화 Lv.20대)과 장비 효과가 한계에 닿아서
-// 계속 같은 속도로 세지면 40층대부터 아무도 못 깨는 벽이 된다.
-export const BOSS_FLOOR_GROWTH_LATE_START = 30;
-export const BOSS_FLOOR_GROWTH_LATE = 1.04;
+export const BOSS_FLOOR_GROWTH = 1.15; // 층이 오를 때마다 체력·공격·방어가 15%씩(복리로) 늘어난다
 export const BOSS_STAT_MULTIPLIER: CombatStats = { hp: 1.3, atk: 1.15, def: 1.15 };
 
 export const BOSS_FIRST_CLEAR_COINS_BASE = 200;
@@ -497,6 +496,9 @@ export const BOSS_FIRST_CLEAR_COINS_PER_FLOOR = 120;
 export const BOSS_COINS_BOSS_MULTIPLIER = 3;
 export const BOSS_REPEAT_COIN_RATIO = 0.25;
 export const BOSS_REPEAT_COPY_CHANCE = 0.4; // 이미 깬 보스 층을 다시 이겼을 때 장비 복사본이 나올 확률
+export const BOSS_FIRST_CLEAR_DIAMONDS = 10; // 보스 층을 처음 깼을 때 받는 다이아
+export const BOSS_REPEAT_DIAMOND_CHANCE = 0.02; // 이미 깬 보스 층을 다시 이겼을 때 다이아가 나올 확률
+export const BOSS_REPEAT_DIAMONDS = 5; // 그때 나오는 다이아 개수
 export const BOSS_SPECIES_XP_BASE = 10;
 export const BOSS_SPECIES_XP_PER_FLOOR = 4;
 export const BOSS_ACCOUNT_XP_BASE = 10;
@@ -565,6 +567,9 @@ const BOSS_PATTERNS_BY_FLOOR: Record<number, BossPattern[]> = {
 export interface BossFloorRewards {
   firstCoins: number;
   firstDiamonds: number;
+  // 다시 이겼을 때 다이아가 나올 확률과 개수(보스 층만). 일반 층은 0
+  repeatDiamondChance: number;
+  repeatDiamonds: number;
   // 첫 클리어 때 확정으로 주는 장비 희귀도(보스 층만). 일반 층은 null
   firstEquipmentRarity: number | null;
   repeatCoins: number;
@@ -593,9 +598,7 @@ export function bossFloorSpeciesRandom(floor: number): number {
 export function getBossFloor(floor: number): BossFloor | null {
   if (!Number.isInteger(floor) || floor < 1 || floor > BOSS_FLOOR_COUNT) return null;
   const isBoss = isBossFloor(floor);
-  const growth =
-    Math.pow(BOSS_FLOOR_GROWTH, Math.min(floor, BOSS_FLOOR_GROWTH_LATE_START) - 1) *
-    Math.pow(BOSS_FLOOR_GROWTH_LATE, Math.max(0, floor - BOSS_FLOOR_GROWTH_LATE_START));
+  const growth = Math.pow(BOSS_FLOOR_GROWTH, floor - 1);
   const mult = (stat: keyof CombatStats) =>
     Math.round(BOSS_BASE_STATS[stat] * growth * (isBoss ? BOSS_STAT_MULTIPLIER[stat] : 1));
   const firstCoins =
@@ -611,7 +614,9 @@ export function getBossFloor(floor: number): BossFloor | null {
     patterns: isBoss ? (BOSS_PATTERNS_BY_FLOOR[floor] ?? []) : [],
     rewards: {
       firstCoins,
-      firstDiamonds: isBoss ? 3 + Math.floor(floor / 5) : 0,
+      firstDiamonds: isBoss ? BOSS_FIRST_CLEAR_DIAMONDS : 0,
+      repeatDiamondChance: isBoss ? BOSS_REPEAT_DIAMOND_CHANCE : 0,
+      repeatDiamonds: isBoss ? BOSS_REPEAT_DIAMONDS : 0,
       firstEquipmentRarity: isBoss ? equipmentRarity : null,
       repeatCoins: Math.round(firstCoins * BOSS_REPEAT_COIN_RATIO),
       repeatCopyChance: isBoss ? BOSS_REPEAT_COPY_CHANCE : 0,
@@ -731,7 +736,8 @@ export interface AchievementProgressInput {
     | 'equipmentAwakenings'
     | 'equipmentSlots'
     | 'highestBossFloor'
-    | 'bossWins';
+    | 'bossWins'
+    | 'bestPvpWinStreak';
   target?: number;
   rarity?: number;
 }
@@ -755,6 +761,7 @@ export interface AchievementSubject {
     equipmentPulls: number;
     highestBossFloor: number;
     bossWins: number;
+    bestPvpWinStreak: number;
   };
 }
 
@@ -807,6 +814,7 @@ export function getAchievementProgress(
     case 'equipmentPulls':
     case 'highestBossFloor':
     case 'bossWins':
+    case 'bestPvpWinStreak':
       return { progress: subject.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

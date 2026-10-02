@@ -19,6 +19,7 @@ import { BattleDto } from './dto/battle.dto';
 import { TrainDto } from './dto/train.dto';
 import { PvpSetDefenseDto } from './dto/pvp-set-defense.dto';
 import { PvpBattleDto } from './dto/pvp-battle.dto';
+import { BossBattleDto } from './dto/boss-battle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
 import { EquipmentItemDto } from './dto/equipment-item.dto';
@@ -94,6 +95,11 @@ export class GameStateController {
       dto.speciesId,
       dto.opponentUserId,
     );
+  }
+
+  @Post('boss/battle')
+  bossBattle(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossBattleDto) {
+    return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor);
   }
 
   @Post('explore')

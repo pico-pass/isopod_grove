@@ -434,6 +434,10 @@ export interface BattleTurn {
   attacker: 'me' | 'enemy';
   damage: number;
   remainingHp: number;
+  // 아래 셋은 보스 패턴이 있을 때만 붙는다. 일반 전투 로그에는 나오지 않는다.
+  note?: string; // 이번 턴에 발동한 패턴 설명(연출용)
+  myHp?: number; // 이 턴 도중 내 HP가 상대 공격 말고도 바뀐 경우(가시갑옷 반사)의 최종 HP
+  enemyHp?: number; // 이 턴 도중 보스 HP가 내 공격 말고도 바뀐 경우(재생)의 최종 HP
 }
 
 export interface BattleResult {
@@ -471,6 +475,236 @@ export function simulateBattle(
   return { winner: myHp >= enemyHp ? 'me' : 'enemy', log };
 }
 
+// ---- 보스 타워 ----
+// 층 정보(상대 종·스탯·패턴·보상)는 서버가 GET /boss로 내려주므로 프론트에는 이 계산이 없다.
+// 단, 프론트(gameCalc.ts)가 화면에 쓰는 BOSS_DAILY_ATTEMPTS는 같은 값을 따로 둔다.
+export const BOSS_DAILY_ATTEMPTS = 5;
+export const BOSS_FLOOR_COUNT = 50;
+export const BOSS_FLOOR_INTERVAL = 5; // 5층마다 보스(패턴이 붙는다)
+export const BOSS_COOLDOWN_MS = 3_000; // 연타 방지용. 하루 횟수 제한이 본 제한이다.
+
+// 1층 기준 스탯과 층마다 곱해지는 성장률. 보스 층은 체력/공격/방어를 따로 한 번 더 곱한다.
+export const BOSS_BASE_STATS: CombatStats = { hp: 45, atk: 9, def: 4 };
+export const BOSS_FLOOR_GROWTH = 1.06;
+// 30층 뒤로는 성장률을 낮춘다. 최고 전투 레벨 구간(신화 Lv.20대)과 장비 효과가 한계에 닿아서
+// 계속 같은 속도로 세지면 40층대부터 아무도 못 깨는 벽이 된다.
+export const BOSS_FLOOR_GROWTH_LATE_START = 30;
+export const BOSS_FLOOR_GROWTH_LATE = 1.04;
+export const BOSS_STAT_MULTIPLIER: CombatStats = { hp: 1.3, atk: 1.15, def: 1.15 };
+
+export const BOSS_FIRST_CLEAR_COINS_BASE = 200;
+export const BOSS_FIRST_CLEAR_COINS_PER_FLOOR = 120;
+export const BOSS_COINS_BOSS_MULTIPLIER = 3;
+export const BOSS_REPEAT_COIN_RATIO = 0.25;
+export const BOSS_REPEAT_COPY_CHANCE = 0.4; // 이미 깬 보스 층을 다시 이겼을 때 장비 복사본이 나올 확률
+export const BOSS_SPECIES_XP_BASE = 10;
+export const BOSS_SPECIES_XP_PER_FLOOR = 4;
+export const BOSS_ACCOUNT_XP_BASE = 10;
+export const BOSS_ACCOUNT_XP_PER_FLOOR = 1;
+export const BOSS_LOSE_ACCOUNT_XP = 3;
+
+export type BossPattern = 'guard' | 'enrage' | 'heavy' | 'regen' | 'thorns';
+
+export const BOSS_GUARD_EVERY = 3; // 3턴마다 웅크려서
+export const BOSS_GUARD_DAMAGE_MULT = 0.4; // 그 턴에 받는 피해가 40%로 줄어든다
+export const BOSS_ENRAGE_HP_RATIO = 0.5; // HP가 절반 이하가 되면
+export const BOSS_ENRAGE_ATK_MULT = 1.5; // 공격력이 1.5배가 된다(이후 계속)
+export const BOSS_HEAVY_EVERY = 4; // 보스가 4번째 공격마다
+export const BOSS_HEAVY_MULT = 2; // 피해가 2배
+export const BOSS_REGEN_RATIO = 0.03; // 보스 턴마다 최대 HP의 3% 회복
+export const BOSS_THORNS_RATIO = 0.15; // 내가 준 피해의 15%를 되돌려 받는다
+
+export interface BossPatternInfo {
+  id: BossPattern;
+  name: string;
+  description: string;
+}
+
+export const BOSS_PATTERNS: Record<BossPattern, BossPatternInfo> = {
+  guard: {
+    id: 'guard',
+    name: '웅크리기',
+    description: `${BOSS_GUARD_EVERY}턴마다 웅크려서 그 턴에 받는 피해가 ${Math.round(BOSS_GUARD_DAMAGE_MULT * 100)}%로 줄어요.`,
+  },
+  enrage: {
+    id: 'enrage',
+    name: '분노',
+    description: `HP가 ${Math.round(BOSS_ENRAGE_HP_RATIO * 100)}% 이하가 되면 공격력이 ${BOSS_ENRAGE_ATK_MULT}배가 돼요.`,
+  },
+  heavy: {
+    id: 'heavy',
+    name: '강타',
+    description: `${BOSS_HEAVY_EVERY}번째 공격마다 피해가 ${BOSS_HEAVY_MULT}배로 들어와요.`,
+  },
+  regen: {
+    id: 'regen',
+    name: '재생',
+    description: `자기 턴마다 최대 HP의 ${Math.round(BOSS_REGEN_RATIO * 100)}%를 회복해요.`,
+  },
+  thorns: {
+    id: 'thorns',
+    name: '가시갑옷',
+    description: `내가 준 피해의 ${Math.round(BOSS_THORNS_RATIO * 100)}%가 나에게 되돌아와요.`,
+  },
+};
+
+// 보스 층별 패턴. 층이 오를수록 겹쳐서 붙는다.
+const BOSS_PATTERNS_BY_FLOOR: Record<number, BossPattern[]> = {
+  5: ['guard'],
+  10: ['enrage'],
+  15: ['heavy'],
+  20: ['regen'],
+  25: ['thorns'],
+  30: ['guard', 'enrage'],
+  35: ['heavy', 'regen'],
+  40: ['enrage', 'thorns'],
+  45: ['guard', 'heavy', 'thorns'],
+  50: ['enrage', 'heavy', 'regen'],
+};
+
+export interface BossFloorRewards {
+  firstCoins: number;
+  firstDiamonds: number;
+  // 첫 클리어 때 확정으로 주는 장비 희귀도(보스 층만). 일반 층은 null
+  firstEquipmentRarity: number | null;
+  repeatCoins: number;
+  // 다시 이겼을 때 복사본이 나올 확률(보스 층만). 일반 층은 0
+  repeatCopyChance: number;
+}
+
+export interface BossFloor {
+  floor: number;
+  isBoss: boolean;
+  speciesRarity: number; // 화면에 나올 종의 희귀도. 스탯과는 별개다
+  stats: CombatStats; // 편차를 주기 전 기준 스탯
+  patterns: BossPattern[];
+  rewards: BossFloorRewards;
+}
+
+export function isBossFloor(floor: number): boolean {
+  return floor % BOSS_FLOOR_INTERVAL === 0;
+}
+
+// 어떤 종이 나올지는 층 번호로 고정해서(같은 층은 항상 같은 상대) 도감처럼 미리 볼 수 있게 한다.
+export function bossFloorSpeciesRandom(floor: number): number {
+  return (floor * 0.6180339887) % 1;
+}
+
+export function getBossFloor(floor: number): BossFloor | null {
+  if (!Number.isInteger(floor) || floor < 1 || floor > BOSS_FLOOR_COUNT) return null;
+  const isBoss = isBossFloor(floor);
+  const growth =
+    Math.pow(BOSS_FLOOR_GROWTH, Math.min(floor, BOSS_FLOOR_GROWTH_LATE_START) - 1) *
+    Math.pow(BOSS_FLOOR_GROWTH_LATE, Math.max(0, floor - BOSS_FLOOR_GROWTH_LATE_START));
+  const mult = (stat: keyof CombatStats) =>
+    Math.round(BOSS_BASE_STATS[stat] * growth * (isBoss ? BOSS_STAT_MULTIPLIER[stat] : 1));
+  const firstCoins =
+    (BOSS_FIRST_CLEAR_COINS_BASE + BOSS_FIRST_CLEAR_COINS_PER_FLOOR * floor) *
+    (isBoss ? BOSS_COINS_BOSS_MULTIPLIER : 1);
+  const equipmentRarity = floor >= 50 ? 4 : floor >= 30 ? 3 : floor >= 15 ? 2 : 1;
+  return {
+    floor,
+    isBoss,
+    // 보스 층은 한 단계 위 희귀도의 종으로 보여준다(최대 신화).
+    speciesRarity: Math.min(4, Math.floor((floor - 1) / 10) + (isBoss ? 1 : 0)),
+    stats: { hp: mult('hp'), atk: mult('atk'), def: mult('def') },
+    patterns: isBoss ? (BOSS_PATTERNS_BY_FLOOR[floor] ?? []) : [],
+    rewards: {
+      firstCoins,
+      firstDiamonds: isBoss ? 3 + Math.floor(floor / 5) : 0,
+      firstEquipmentRarity: isBoss ? equipmentRarity : null,
+      repeatCoins: Math.round(firstCoins * BOSS_REPEAT_COIN_RATIO),
+      repeatCopyChance: isBoss ? BOSS_REPEAT_COPY_CHANCE : 0,
+    },
+  };
+}
+
+// 보스 스탯에도 일반 개체처럼 ±15% 편차를 준다(전투 시작 시 한 번).
+export function rollBossStats(stats: CombatStats, random: () => number = Math.random): CombatStats {
+  const vary = (v: number) =>
+    Math.max(1, Math.round(v * (1 - BATTLE_STAT_VARIANCE + random() * BATTLE_STAT_VARIANCE * 2)));
+  return { hp: vary(stats.hp), atk: vary(stats.atk), def: vary(stats.def) };
+}
+
+// 층의 상대 종. 같은 희귀도 안에서 speciesId 순으로 정렬해 고르므로 종 목록 순서가 바뀌어도 같은 층은 같은 상대다
+// (종이 새로 추가되면 일부 층의 상대가 바뀔 수는 있다).
+export function pickBossSpecies<T extends { speciesId: string; rarity: number }>(
+  floor: BossFloor,
+  speciesList: readonly T[],
+): T {
+  const pool = speciesList
+    .filter((s) => s.rarity === floor.speciesRarity)
+    .sort((a, b) => (a.speciesId < b.speciesId ? -1 : a.speciesId > b.speciesId ? 1 : 0));
+  return pool[Math.min(pool.length - 1, Math.floor(bossFloorSpeciesRandom(floor.floor) * pool.length))];
+}
+
+// 보스전도 내가 먼저 공격하고 번갈아 진행한다. 패턴 효과는 로그의 note로 남겨 화면에서 보여준다.
+// 20턴을 넘기면 남은 체력 "비율"로 판정한다(체력이 큰 보스가 불리하게 판정되지 않도록).
+export function simulateBossBattle(
+  mine: CombatStats,
+  boss: CombatStats,
+  patterns: readonly BossPattern[],
+  random: () => number = Math.random,
+): BattleResult {
+  const has = (p: BossPattern) => patterns.includes(p);
+  let myHp = mine.hp;
+  let bossHp = boss.hp;
+  let enraged = false;
+  const log: BattleTurn[] = [];
+
+  for (let turn = 1; turn <= BATTLE_MAX_TURNS; turn++) {
+    // 내 공격
+    let toBoss = rollDamage(mine.atk, boss.def, random);
+    const myNotes: string[] = [];
+    if (has('guard') && turn % BOSS_GUARD_EVERY === 0) {
+      toBoss = Math.max(1, Math.round(toBoss * BOSS_GUARD_DAMAGE_MULT));
+      myNotes.push('🛡️ 웅크리기! 받는 피해가 줄었어요');
+    }
+    bossHp = Math.max(0, bossHp - toBoss);
+    const myTurn: BattleTurn = { turn, attacker: 'me', damage: toBoss, remainingHp: bossHp };
+    if (bossHp <= 0) {
+      if (myNotes.length) myTurn.note = myNotes.join(' · ');
+      log.push(myTurn);
+      return { winner: 'me', log };
+    }
+    if (has('thorns')) {
+      const reflected = Math.max(1, Math.round(toBoss * BOSS_THORNS_RATIO));
+      myHp = Math.max(0, myHp - reflected);
+      myTurn.myHp = myHp;
+      myNotes.push(`🌵 가시갑옷! ${reflected} 반사`);
+    }
+    if (myNotes.length) myTurn.note = myNotes.join(' · ');
+    log.push(myTurn);
+    if (myHp <= 0) return { winner: 'enemy', log };
+
+    // 보스 공격
+    const bossNotes: string[] = [];
+    let healedHp: number | undefined;
+    if (has('regen') && bossHp < boss.hp) {
+      const heal = Math.max(1, Math.round(boss.hp * BOSS_REGEN_RATIO));
+      bossHp = Math.min(boss.hp, bossHp + heal);
+      healedHp = bossHp;
+      bossNotes.push(`💚 재생! +${heal}`);
+    }
+    if (has('enrage') && !enraged && bossHp <= boss.hp * BOSS_ENRAGE_HP_RATIO) {
+      enraged = true;
+      bossNotes.push('🔥 분노! 공격력이 올라갔어요');
+    }
+    let toMe = rollDamage(enraged ? boss.atk * BOSS_ENRAGE_ATK_MULT : boss.atk, mine.def, random);
+    if (has('heavy') && turn % BOSS_HEAVY_EVERY === 0) {
+      toMe = Math.round(toMe * BOSS_HEAVY_MULT);
+      bossNotes.push('💥 강타!');
+    }
+    myHp = Math.max(0, myHp - toMe);
+    const bossTurn: BattleTurn = { turn, attacker: 'enemy', damage: toMe, remainingHp: myHp };
+    if (healedHp !== undefined) bossTurn.enemyHp = healedHp;
+    if (bossNotes.length) bossTurn.note = bossNotes.join(' · ');
+    log.push(bossTurn);
+    if (myHp <= 0) return { winner: 'enemy', log };
+  }
+  return { winner: myHp / mine.hp >= bossHp / boss.hp ? 'me' : 'enemy', log };
+}
+
 // ---- 업적 진행도 계산 ----
 // 프론트(gameCalc.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
 export interface AchievementProgressInput {
@@ -495,7 +729,9 @@ export interface AchievementProgressInput {
     | 'mythicEquipment'
     | 'equipmentLevel'
     | 'equipmentAwakenings'
-    | 'equipmentSlots';
+    | 'equipmentSlots'
+    | 'highestBossFloor'
+    | 'bossWins';
   target?: number;
   rarity?: number;
 }
@@ -517,6 +753,8 @@ export interface AchievementSubject {
     trainCount: number;
     highestBattleLevel: number;
     equipmentPulls: number;
+    highestBossFloor: number;
+    bossWins: number;
   };
 }
 
@@ -567,6 +805,8 @@ export function getAchievementProgress(
     case 'trainCount':
     case 'highestBattleLevel':
     case 'equipmentPulls':
+    case 'highestBossFloor':
+    case 'bossWins':
       return { progress: subject.stats[achievement.statKey], target };
     default:
       return { progress: 0, target };

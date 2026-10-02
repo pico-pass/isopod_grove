@@ -74,6 +74,20 @@ export class LeaderboardService {
     );
   }
 
+  // 보스 타워에서 깬 최고 층. 같은 층이면 더 먼저 그 층에 닿은 사람을 알 수 없으니 동점으로 두고 순서만 안정적으로 둔다.
+  // 한 번도 안 깬 유저(0층)는 순위에 올리지 않는다.
+  async getBossLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    const states = await this.gameStateModel
+      .find({}, { userId: 1, 'stats.highestBossFloor': 1 })
+      .lean<{ userId: Types.ObjectId; stats?: { highestBossFloor?: number } }[]>();
+
+    const sorted = states
+      .map((s) => ({ userId: s.userId, value: s.stats?.highestBossFloor || 0 }))
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.value - a.value);
+    return this.buildResult(sorted, requesterId);
+  }
+
   async getIncomeLeaderboard(requesterId: string): Promise<LeaderboardResult> {
     const speciesList = await this.speciesService.findAll();
     const rateById = new Map(speciesList.map((s) => [s.speciesId, s.rate]));

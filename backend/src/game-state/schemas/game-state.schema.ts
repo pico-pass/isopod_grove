@@ -20,6 +20,10 @@ export class DailyProgress {
   @Prop({ default: 0 })
   explore: number;
 
+  // 오늘 쓴 보스 타워 도전 횟수(승패 무관). 날짜가 바뀌면 daily 전체가 새로 만들어지며 0으로 돌아간다.
+  @Prop({ default: 0 })
+  bossAttempts: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }
@@ -70,6 +74,14 @@ export class Stats {
   // 장비 뽑기 누적 횟수(10연차는 10회로 센다). 업적 조건으로 쓴다.
   @Prop({ default: 0 })
   equipmentPulls: number;
+
+  // 보스 타워에서 깬 가장 높은 층. 한 번 오르면 내려가지 않는다. 다음 도전 가능 층(= 이 값 + 1)과 업적·랭킹에 쓴다.
+  @Prop({ default: 0 })
+  highestBossFloor: number;
+
+  // 보스 타워 승리 누적 횟수(이미 깬 층을 다시 이긴 것도 센다)
+  @Prop({ default: 0 })
+  bossWins: number;
 }
 export const StatsSchema = SchemaFactory.createForClass(Stats);
 

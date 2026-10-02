@@ -13,6 +13,7 @@ import { AchievementsView } from './components/AchievementsView';
 import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
+import { BossView } from './components/BossView';
 import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
 import { ProfileModal } from './components/ProfileModal';
@@ -37,9 +38,11 @@ function App() {
     quests,
     achievements,
     equipmentCatalog,
+    bossCatalog,
     levelLeaderboard,
     incomeLeaderboard,
     pvpLeaderboard,
+    bossLeaderboard,
     friendsCount,
     leaderboardLoading,
     reloadLeaderboards,
@@ -195,6 +198,7 @@ function App() {
               levelLeaderboard={levelLeaderboard}
               incomeLeaderboard={incomeLeaderboard}
               pvpLeaderboard={pvpLeaderboard}
+              bossLeaderboard={bossLeaderboard}
               loading={leaderboardLoading}
               onRefresh={reloadLeaderboards}
               onOpenProfile={setProfileTarget}
@@ -209,6 +213,16 @@ function App() {
               onTrain={(speciesId, intensity, extreme) =>
                 runAction(() => api.train(speciesId, intensity, extreme))
               }
+            />
+          )}
+          {view === 'boss' && (
+            <BossView
+              gameState={gameState}
+              species={displaySpecies}
+              catalog={bossCatalog}
+              equipmentCatalog={equipmentCatalog}
+              equipmentBonuses={equipmentBonuses}
+              onBattle={(speciesId, floor) => runAction(() => api.bossBattle(speciesId, floor))}
             />
           )}
           {view === 'pvp' && (

@@ -10,6 +10,8 @@ export interface Fighter {
   rarity: number;
   stats: CombatStats;
   level: number;
+  // 있으면 "Lv.N" 대신 이 문구를 쓴다(보스 타워의 "N층" 표시용).
+  levelLabel?: string;
 }
 
 export function FighterCard({
@@ -27,7 +29,7 @@ export function FighterCard({
   return (
     <div className={`fighter-card${acting ? ' acting' : ''}`}>
       <span className="pill" style={{ color: RARITIES[fighter.rarity].color }}>
-        {RARITIES[fighter.rarity].name} · Lv.{fighter.level}
+        {RARITIES[fighter.rarity].name} · {fighter.levelLabel ?? `Lv.${fighter.level}`}
       </span>
       <SpeciesImage species={fighter} style={{ filter: fighter.filter }} />
       <h3>{fighter.name}</h3>

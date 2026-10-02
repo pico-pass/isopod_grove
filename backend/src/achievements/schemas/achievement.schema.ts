@@ -9,6 +9,7 @@ export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
 // friendsCount는 친구 관계 수, nicknames는 지어준 콩벌레 별명 수를 그때그때 조회해서 쓴다.
 // equipment* 중 equipmentPulls만 누적 카운터이고, 나머지는 보유 장비에서 그때그때 계산한다
 // (장비는 사라지지 않고 레벨·각성·슬롯도 줄지 않아서 "한 번이라도 달성" 조건으로 안전하다).
+// highestBossFloor는 보스 타워에서 깬 최고 층, bossWins는 보스 타워 승리 누적(둘 다 줄지 않는다).
 export type AchievementStatKey =
   | 'births'
   | 'sold'
@@ -29,7 +30,9 @@ export type AchievementStatKey =
   | 'mythicEquipment'
   | 'equipmentLevel'
   | 'equipmentAwakenings'
-  | 'equipmentSlots';
+  | 'equipmentSlots'
+  | 'highestBossFloor'
+  | 'bossWins';
 
 @Schema({ collection: 'achievements' })
 export class Achievement {

@@ -9,6 +9,7 @@ export type ViewKey =
   | 'ranking'
   | 'friends'
   | 'battle'
+  | 'boss'
   | 'pvp'
   | 'equipment'
   | 'journal'
@@ -23,6 +24,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'ranking', label: '랭킹', icon: '📊' },
   { key: 'friends', label: '친구', icon: '🤝' },
   { key: 'battle', label: '야생 배틀', icon: '⚔️' },
+  { key: 'boss', label: '보스 타워', icon: '🗼' },
   { key: 'pvp', label: '투기장', icon: '🆚' },
   { key: 'equipment', label: '장비', icon: '🎒' },
   { key: 'journal', label: '사육 일지', icon: '📔' },

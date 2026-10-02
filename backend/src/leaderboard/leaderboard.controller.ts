@@ -19,6 +19,11 @@ export class LeaderboardController {
     return this.leaderboardService.getIncomeLeaderboard(user.userId);
   }
 
+  @Get('boss')
+  boss(@CurrentUser() user: AuthenticatedUser) {
+    return this.leaderboardService.getBossLeaderboard(user.userId);
+  }
+
   @Get('pvp')
   pvp(@CurrentUser() user: AuthenticatedUser) {
     return this.leaderboardService.getPvpLeaderboard(user.userId);

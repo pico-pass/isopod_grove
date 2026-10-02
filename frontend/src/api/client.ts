@@ -15,6 +15,8 @@ import type {
   LeaderboardResult,
   OnlinePlayersResult,
   PublicProfile,
+  BossBattleResponse,
+  BossCatalog,
   PvpBattleResponse,
   PvpOpponentResult,
   Quest,
@@ -73,6 +75,7 @@ export const api = {
   getLevelLeaderboard: () => request<LeaderboardResult>('/leaderboard/level'),
   getIncomeLeaderboard: () => request<LeaderboardResult>('/leaderboard/income'),
   getPvpLeaderboard: () => request<LeaderboardResult>('/leaderboard/pvp'),
+  getBossLeaderboard: () => request<LeaderboardResult>('/leaderboard/boss'),
 
   getGameState: () => request<GameState>('/game-state'),
   getPublicProfile: (userId: string) => request<PublicProfile>(`/game-state/profile/${userId}`),
@@ -87,6 +90,7 @@ export const api = {
   train: (speciesId: string, intensity: number, extreme?: boolean) =>
     post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
   getEquipmentCatalog: () => request<EquipmentCatalogItem[]>('/equipment'),
+  getBossCatalog: () => request<BossCatalog>('/boss'),
   pullEquipment: (count: 1 | 10) =>
     post<EquipmentPullResponse>('/game-state/equipment/pull', { count }),
   levelUpEquipment: (itemId: string) =>
@@ -101,6 +105,8 @@ export const api = {
   getPvpOpponent: () => request<PvpOpponentResult>('/game-state/pvp/opponent'),
   pvpBattle: (speciesId: string, opponentUserId: string) =>
     post<PvpBattleResponse>('/game-state/pvp/battle', { speciesId, opponentUserId }),
+  bossBattle: (speciesId: string, floor: number) =>
+    post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   buyTicket: (quantity = 1) => post<ActionResult>('/game-state/buy-ticket', { quantity }),

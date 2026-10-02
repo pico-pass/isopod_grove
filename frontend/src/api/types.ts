@@ -36,6 +36,8 @@ export interface DailyProgress {
   observe: number;
   births: number;
   explore: number;
+  // 오늘 쓴 보스 타워 도전 횟수. 예전 데이터에는 없을 수 있다.
+  bossAttempts?: number;
   claimed: string[];
 }
 
@@ -53,6 +55,8 @@ export interface Stats {
   peakPvpRating: number;
   highestBattleLevel: number;
   equipmentPulls: number;
+  highestBossFloor: number;
+  bossWins: number;
 }
 
 export interface LogEntry {
@@ -144,7 +148,9 @@ export type AchievementStatKey =
   | 'mythicEquipment'
   | 'equipmentLevel'
   | 'equipmentAwakenings'
-  | 'equipmentSlots';
+  | 'equipmentSlots'
+  | 'highestBossFloor'
+  | 'bossWins';
 
 export interface Achievement {
   achievementId: string;
@@ -280,6 +286,10 @@ export interface BattleTurn {
   attacker: 'me' | 'enemy';
   damage: number;
   remainingHp: number;
+  // 보스 패턴이 있을 때만 붙는다.
+  note?: string; // 이번 턴에 발동한 패턴
+  myHp?: number; // 상대 공격 말고 내 HP가 바뀐 경우(가시갑옷 반사)의 최종 HP
+  enemyHp?: number; // 내 공격 말고 보스 HP가 바뀐 경우(재생)의 최종 HP
 }
 
 export interface BattleFighter {
@@ -359,6 +369,59 @@ export interface PvpBattleResponse {
   enemy: PvpFighter;
   log: BattleTurn[];
   reward: { coins: number; diamonds: number };
+  speciesLevel: SpeciesLevelResult;
+}
+
+export interface BossPatternInfo {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface BossFloorInfo {
+  floor: number;
+  isBoss: boolean;
+  species: {
+    speciesId: string;
+    name: string;
+    image?: string;
+    filter: string;
+    rarity: number;
+  } | null;
+  stats: CombatStats;
+  patterns: BossPatternInfo[];
+  rewards: {
+    firstCoins: number;
+    firstDiamonds: number;
+    firstEquipmentRarity: number | null;
+    repeatCoins: number;
+    repeatCopyChance: number;
+    equipmentIds: string[];
+  };
+}
+
+export interface BossCatalog {
+  dailyAttempts: number;
+  floors: BossFloorInfo[];
+}
+
+export interface BossBattleResponse {
+  gameState: GameState;
+  message: string;
+  result: 'win' | 'lose';
+  floor: number;
+  isBoss: boolean;
+  firstClear: boolean;
+  attemptsLeft: number;
+  patterns: BossPatternInfo[];
+  mine: BattleFighter;
+  enemy: BattleFighter;
+  log: BattleTurn[];
+  reward: {
+    coins: number;
+    diamonds: number;
+    equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number } | null;
+  };
   speciesLevel: SpeciesLevelResult;
 }
 

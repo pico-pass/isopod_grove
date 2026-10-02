@@ -46,6 +46,9 @@ export const PVP_RATING_WIN_DELTA = 18;
 export const PVP_RATING_LOSE_DELTA = 12;
 export const PVP_WIN_COIN_REWARD = 120;
 export const PVP_WIN_DIAMOND_CHANCE = 0.08;
+// 보스 타워. 층 정보(상대·스탯·패턴·보상)는 서버가 GET /boss로 내려준다.
+// 하루 도전 횟수만 화면 표시용으로 같은 값을 둔다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const BOSS_DAILY_ATTEMPTS = 5;
 // 종(콩벌레) 별명. 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const SPECIES_NICKNAME_MAX_LENGTH = 10;
 
@@ -394,8 +397,15 @@ export function getAchievementProgress(
     case 'trainCount':
     case 'highestBattleLevel':
     case 'equipmentPulls':
-      return { progress: gameState.stats[achievement.statKey], target };
+    case 'highestBossFloor':
+    case 'bossWins':
+      return { progress: gameState.stats[achievement.statKey] ?? 0, target };
     default:
       return { progress: 0, target };
   }
+}
+
+// 오늘 남은 보스 타워 도전 횟수. daily는 서버가 날짜가 바뀔 때 새로 만들어 내려주므로 그대로 믿는다.
+export function getBossAttemptsLeft(gameState: GameState): number {
+  return Math.max(0, BOSS_DAILY_ATTEMPTS - (gameState.daily.bossAttempts ?? 0));
 }

@@ -28,6 +28,14 @@ import {
   BATTLE_REWARD_BY_RARITY,
   BATTLE_SPECIES_LOSE_XP_RATIO,
   BATTLE_SPECIES_XP_BY_RARITY,
+  BOSS_ACCOUNT_XP_BASE,
+  BOSS_ACCOUNT_XP_PER_FLOOR,
+  BOSS_COOLDOWN_MS,
+  BOSS_DAILY_ATTEMPTS,
+  BOSS_LOSE_ACCOUNT_XP,
+  BOSS_PATTERNS,
+  BOSS_SPECIES_XP_BASE,
+  BOSS_SPECIES_XP_PER_FLOOR,
   CARE_COOLDOWN_MS,
   DIAMONDS_PER_LEVEL,
   EQUIPMENT_AWAKEN_LEVEL_GAIN,
@@ -80,6 +88,7 @@ import {
   getAwakenSuccessChance,
   getBaseBreedSeconds,
   getBattleLevel,
+  getBossFloor,
   getBattleLevelProgress,
   getBreedInterval,
   getCapacity,
@@ -90,14 +99,17 @@ import {
   getTerrariumCost,
   getTrainCost,
   isComfortable,
+  pickBossSpecies,
   pickEquipmentOfRarity,
   pickRandomOfRarity,
+  rollBossStats,
   rollCombatStats,
   rollEnemyLevel,
   rollEquipmentRarity,
   summarizeEquipment,
   rollRarity,
   simulateBattle,
+  simulateBossBattle,
 } from './game-engine';
 
 interface LegacyGameState {
@@ -128,6 +140,10 @@ export class GameStateService {
     @InjectModel(Friendship.name)
     private friendshipModel: Model<FriendshipDocument>,
   ) {}
+
+  // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
+  // 중복으로 받지 못하게 막는다(서버는 pm2 fork 한 프로세스라 메모리 집합으로 충분하다).
+  private readonly bossInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -921,6 +937,182 @@ export class GameStateService {
     };
   }
 
+  // ---- 보스 타워 ----
+  // 5층마다 보스가 있는 타워. 깬 층의 다음 층(최대 BOSS_FLOOR_COUNT)까지 도전할 수 있고, 이미 깬 층은 다시 도전해
+  // 소량의 보상을 받을 수 있다. 하루 도전 횟수는 승패와 상관없이 BOSS_DAILY_ATTEMPTS번이다.
+  async bossBattle(userId: string, speciesId: string, floorNumber: number) {
+    const floor = getBossFloor(floorNumber);
+    if (!floor) {
+      throw new BadRequestException('존재하지 않는 층이에요.');
+    }
+    if (this.bossInFlight.has(userId)) {
+      throw new BadRequestException('전투가 진행 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.bossInFlight.add(userId);
+    try {
+      return await this.runBossBattle(userId, speciesId, floor);
+    } finally {
+      this.bossInFlight.delete(userId);
+    }
+  }
+
+  private async runBossBattle(
+    userId: string,
+    speciesId: string,
+    floor: NonNullable<ReturnType<typeof getBossFloor>>,
+  ) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    this.resetDailyIfNeeded(gameState);
+    if (!(this.totalOf(gameState, speciesId) > 0)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const now = Date.now();
+    if ((gameState.cooldowns.get('boss') || 0) > now) {
+      throw new BadRequestException('조금만 기다려 주세요.');
+    }
+    const highestBefore = gameState.stats.highestBossFloor || 0;
+    if (floor.floor > highestBefore + 1) {
+      throw new BadRequestException(`아직 열리지 않은 층이에요. ${highestBefore + 1}층부터 도전해 주세요.`);
+    }
+    const attemptsUsed = gameState.daily.bossAttempts || 0;
+    if (attemptsUsed >= BOSS_DAILY_ATTEMPTS) {
+      throw new BadRequestException(
+        `오늘의 보스 도전 ${BOSS_DAILY_ATTEMPTS}회를 모두 썼어요. 내일 다시 도전할 수 있어요.`,
+      );
+    }
+
+    const speciesList = await this.speciesService.findAll();
+    const mySpecies = speciesList.find((s) => s.speciesId === speciesId);
+    const bossSpecies = pickBossSpecies(floor, speciesList);
+    if (!mySpecies || !bossSpecies) {
+      throw new BadRequestException('존재하지 않는 종이에요.');
+    }
+    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
+
+    // 여기서부터는 도전으로 센다(위의 검증에서 거절된 시도는 횟수를 쓰지 않는다).
+    gameState.cooldowns.set('boss', now + BOSS_COOLDOWN_MS);
+    gameState.daily.bossAttempts = attemptsUsed + 1;
+
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const beforeLevel = getBattleLevel(beforeXp);
+    const mine = rollCombatStats(
+      mySpecies.rarity,
+      beforeLevel,
+      Math.random,
+      computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
+    );
+    const bossStats = rollBossStats(floor.stats);
+    const { winner, log } = simulateBossBattle(mine, bossStats, floor.patterns);
+    const won = winner === 'me';
+    const firstClear = won && floor.floor > highestBefore;
+
+    const xpWin = (BOSS_SPECIES_XP_BASE + BOSS_SPECIES_XP_PER_FLOOR * floor.floor) * (floor.isBoss ? 2 : 1);
+    const speciesXpGain = won ? xpWin : Math.round(xpWin * BATTLE_SPECIES_LOSE_XP_RATIO);
+    gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
+    const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
+    const leveledUp = afterLevel > beforeLevel;
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, afterLevel);
+
+    const floorLabel = `${floor.floor}층${floor.isBoss ? ' 보스' : ''} ${bossSpecies.name}`;
+    let reward: {
+      coins: number;
+      diamonds: number;
+      equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number } | null;
+    } = { coins: 0, diamonds: 0, equipment: null };
+    let message: string;
+    if (won) {
+      gameState.stats.bossWins = (gameState.stats.bossWins || 0) + 1;
+      if (firstClear) gameState.stats.highestBossFloor = floor.floor;
+
+      const coins = firstClear ? floor.rewards.firstCoins : floor.rewards.repeatCoins;
+      const diamonds = firstClear ? floor.rewards.firstDiamonds : 0;
+      gameState.coins += coins;
+      gameState.diamonds += diamonds;
+      gameState.stats.earned += coins;
+
+      // 장비: 첫 클리어는 확정, 반복 클리어는 확률. 일반 층은 장비가 없다.
+      let equipmentRarity: number | null = null;
+      if (floor.rewards.firstEquipmentRarity !== null) {
+        if (firstClear || Math.random() < floor.rewards.repeatCopyChance) {
+          equipmentRarity = floor.rewards.firstEquipmentRarity;
+        }
+      }
+      if (equipmentRarity !== null) {
+        const picked = pickEquipmentOfRarity(equipmentRarity, Math.random());
+        const { item, isNew } = this.grantEquipment(gameState, picked.equipmentId);
+        reward.equipment = {
+          itemId: picked.equipmentId,
+          name: picked.name,
+          rarity: picked.rarity,
+          isNew,
+          copies: item.copies,
+        };
+      }
+      reward = { ...reward, coins, diamonds };
+      this.grantXp(gameState, BOSS_ACCOUNT_XP_BASE + BOSS_ACCOUNT_XP_PER_FLOOR * floor.floor);
+
+      const extras =
+        (diamonds ? ` · 💎 ${diamonds}개` : '') +
+        (reward.equipment
+          ? ` · 🎒 ${reward.equipment.name}${reward.equipment.isNew ? '(새 장비!)' : ' 복사본 +1'}`
+          : '');
+      message = firstClear
+        ? `🎉 ${floorLabel} 첫 클리어! +${coins.toLocaleString('ko-KR')} G${extras}`
+        : `승리! ${floorLabel}을(를) 다시 이겼어요. +${coins.toLocaleString('ko-KR')} G${extras}`;
+    } else {
+      this.grantXp(gameState, BOSS_LOSE_ACCOUNT_XP);
+      message = `${floorLabel}에게 패배했어요. 장비나 전투 레벨을 키워 다시 도전해 보세요.`;
+    }
+    const attemptsLeft = BOSS_DAILY_ATTEMPTS - gameState.daily.bossAttempts;
+    message += ` (오늘 남은 도전 ${attemptsLeft}회)`;
+    if (leveledUp) {
+      message += ` 🆙 ${myDisplayName}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
+    }
+    this.pushLog(gameState, won ? 'trophy' : 'leaf', `보스 타워 - ${message}`);
+
+    await gameState.save();
+    const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
+    return {
+      gameState,
+      message,
+      result: won ? ('win' as const) : ('lose' as const),
+      floor: floor.floor,
+      isBoss: floor.isBoss,
+      firstClear,
+      attemptsLeft,
+      patterns: floor.patterns.map((p) => BOSS_PATTERNS[p]),
+      mine: {
+        speciesId: mySpecies.speciesId,
+        name: myDisplayName,
+        image: mySpecies.image,
+        filter: mySpecies.filter,
+        rarity: mySpecies.rarity,
+        stats: mine,
+        level: beforeLevel,
+      },
+      enemy: {
+        speciesId: bossSpecies.speciesId,
+        name: bossSpecies.name,
+        image: bossSpecies.image,
+        filter: bossSpecies.filter,
+        rarity: bossSpecies.rarity,
+        stats: bossStats,
+        level: floor.floor,
+      },
+      log,
+      reward,
+      speciesLevel: {
+        speciesId: mySpecies.speciesId,
+        leveledUp,
+        level: afterLevel,
+        currentXp: afterProgress.currentXp,
+        requiredXp: afterProgress.requiredXp,
+        xpGained: speciesXpGain,
+      },
+    };
+  }
+
   // ---- 장비 ----
   private findEquipment(gameState: GameStateDocument, itemId: string) {
     const item = gameState.equipment.find((e) => e.itemId === itemId);
@@ -928,6 +1120,26 @@ export class GameStateService {
       throw new BadRequestException('보유하지 않은 장비예요.');
     }
     return item;
+  }
+
+  // 장비 1개를 지급한다. 처음 얻으면 새로 만들고, 이미 있으면 복사본(copies)만 1 늘린다.
+  private grantEquipment(gameState: GameStateDocument, equipmentId: string) {
+    let item = gameState.equipment.find((e) => e.itemId === equipmentId);
+    const isNew = !item;
+    if (item) {
+      item.copies += 1;
+    } else {
+      gameState.equipment.push({
+        itemId: equipmentId,
+        copies: 0,
+        level: 1,
+        maxLevel: EQUIPMENT_BASE_MAX_LEVEL,
+        awakenCount: 0,
+        awakenFailures: 0,
+      });
+      item = gameState.equipment[gameState.equipment.length - 1];
+    }
+    return { item, isNew };
   }
 
   // 다이아로 장비를 뽑는다. 10연차는 마지막에 희귀 이상이 하나도 없으면 희귀 이상으로 보장하고,
@@ -955,21 +1167,7 @@ export class GameStateService {
       pity = rarity >= 3 ? 0 : pity + 1;
       if (rarity >= 1) gotRarePlus = true;
 
-      let item = gameState.equipment.find((e) => e.itemId === picked.equipmentId);
-      const isNew = !item;
-      if (item) {
-        item.copies += 1;
-      } else {
-        gameState.equipment.push({
-          itemId: picked.equipmentId,
-          copies: 0,
-          level: 1,
-          maxLevel: EQUIPMENT_BASE_MAX_LEVEL,
-          awakenCount: 0,
-          awakenFailures: 0,
-        });
-        item = gameState.equipment[gameState.equipment.length - 1];
-      }
+      const { item, isNew } = this.grantEquipment(gameState, picked.equipmentId);
       results.push({
         itemId: picked.equipmentId,
         isNew,
@@ -1515,6 +1713,7 @@ export class GameStateService {
         observe: 0,
         births: 0,
         explore: 0,
+        bossAttempts: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.

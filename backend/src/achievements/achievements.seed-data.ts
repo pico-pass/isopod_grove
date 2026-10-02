@@ -228,6 +228,29 @@ const STAT_TIERS: StatTier[] = [
       { target: 5, reward: 3000, diamondReward: 20 },
     ],
   },
+  {
+    statKey: 'highestBossFloor',
+    icon: 'tower',
+    label: '타워 등반가',
+    descriptionOf: (t) => `보스 타워 ${t}층 클리어`,
+    tiers: [
+      { target: 5, reward: 1000, diamondReward: 8 },
+      { target: 15, reward: 4000, diamondReward: 20 },
+      { target: 30, reward: 12000, diamondReward: 40 },
+      { target: 50, reward: 40000, ticketReward: 5, diamondReward: 100 },
+    ],
+  },
+  {
+    statKey: 'bossWins',
+    icon: 'ogre',
+    label: '타워의 정복자',
+    descriptionOf: (t) => `보스 타워 승리 누적 ${t}회`,
+    tiers: [
+      { target: 5, reward: 500, diamondReward: 5 },
+      { target: 30, reward: 3000, diamondReward: 15 },
+      { target: 100, reward: 10000, diamondReward: 40 },
+    ],
+  },
 ];
 
 const statAchievements = STAT_TIERS.flatMap(({ statKey, icon, label, descriptionOf, tiers }) =>

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type {
   Achievement,
   ActionResult,
+  BossCatalog,
   EquipmentCatalogItem,
   GameState,
   LeaderboardResult,
@@ -26,9 +27,11 @@ export function useGameEngine(userKey: string | null) {
   const [quests, setQuests] = useState<Quest[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [equipmentCatalog, setEquipmentCatalog] = useState<EquipmentCatalogItem[]>([]);
+  const [bossCatalog, setBossCatalog] = useState<BossCatalog | null>(null);
   const [levelLeaderboard, setLevelLeaderboard] = useState<LeaderboardResult | null>(null);
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
   const [pvpLeaderboard, setPvpLeaderboard] = useState<LeaderboardResult | null>(null);
+  const [bossLeaderboard, setBossLeaderboard] = useState<LeaderboardResult | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   // 친구 수(업적 진행도 계산용). 랭킹과 같은 주기로 같이 불러온다.
   const [friendsCount, setFriendsCount] = useState(0);
@@ -47,15 +50,17 @@ export function useGameEngine(userKey: string | null) {
   const reloadLeaderboards = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
-      const [lvl, inc, pvp, friendsResult] = await Promise.all([
+      const [lvl, inc, pvp, boss, friendsResult] = await Promise.all([
         api.getLevelLeaderboard(),
         api.getIncomeLeaderboard(),
         api.getPvpLeaderboard(),
+        api.getBossLeaderboard(),
         api.getFriends(),
       ]);
       setLevelLeaderboard(lvl);
       setIncomeLeaderboard(inc);
       setPvpLeaderboard(pvp);
+      setBossLeaderboard(boss);
       setFriendsCount(friendsResult.friends.length);
     } catch (e) {
       showToast(e instanceof Error ? e.message : '랭킹을 불러오지 못했어요.', true);
@@ -77,13 +82,14 @@ export function useGameEngine(userKey: string | null) {
 
     (async () => {
       try {
-        const [gs, sp, up, qu, ach, eq] = await Promise.all([
+        const [gs, sp, up, qu, ach, eq, boss] = await Promise.all([
           api.getGameState(),
           api.getSpecies(),
           api.getUpgrades(),
           api.getQuests(),
           api.getAchievements(),
           api.getEquipmentCatalog(),
+          api.getBossCatalog(),
         ]);
         if (cancelled) return;
         setSpecies(sp);
@@ -91,6 +97,7 @@ export function useGameEngine(userKey: string | null) {
         setQuests(qu);
         setAchievements(ach);
         setEquipmentCatalog(eq);
+        setBossCatalog(boss);
 
         const lastSeenKey = `isopod-grove-last-seen-${userKey}`;
         const lastSeenRaw = localStorage.getItem(lastSeenKey);
@@ -168,9 +175,11 @@ export function useGameEngine(userKey: string | null) {
     quests,
     achievements,
     equipmentCatalog,
+    bossCatalog,
     levelLeaderboard,
     incomeLeaderboard,
     pvpLeaderboard,
+    bossLeaderboard,
     friendsCount,
     leaderboardLoading,
     reloadLeaderboards,

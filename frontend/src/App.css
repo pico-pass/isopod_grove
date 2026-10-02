@@ -2175,3 +2175,69 @@ main {
   padding: 8px 16px;
   font-size: 0.8rem;
 }
+
+/* Boss tower */
+.battle-log-note {
+  font-size: 0.75rem;
+  color: var(--gold);
+  text-align: center;
+}
+.boss-floor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.boss-floor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+}
+.boss-floor small {
+  font-size: 0.7rem;
+}
+.boss-floor.cleared {
+  color: var(--green);
+}
+.boss-floor.boss {
+  border-color: var(--gold);
+}
+.boss-floor.current {
+  color: var(--lime);
+  border-color: var(--lime);
+}
+.boss-floor.selected {
+  background: var(--panel2);
+  box-shadow: 0 0 0 2px var(--lime);
+}
+.boss-floor:disabled {
+  opacity: 0.45;
+}
+.boss-floor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.boss-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 18px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.boss-patterns strong {
+  color: var(--danger);
+}
+.boss-rewards {
+  font-size: 0.85rem;
+  color: var(--gold);
+  font-weight: 700;
+}

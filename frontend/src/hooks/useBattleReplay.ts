@@ -13,6 +13,9 @@ export function hpAfter(
 ): number {
   const damagedBy: 'me' | 'enemy' = side === 'me' ? 'enemy' : 'me';
   for (let i = Math.min(visibleCount, log.length) - 1; i >= 0; i--) {
+    // 보스 패턴(재생·가시갑옷)은 상대 공격 말고도 HP를 바꾼다. 그 값이 있으면 그대로 쓴다.
+    const override = side === 'me' ? log[i].myHp : log[i].enemyHp;
+    if (override !== undefined) return override;
     if (log[i].attacker === damagedBy) return log[i].remainingHp;
   }
   return startHp;

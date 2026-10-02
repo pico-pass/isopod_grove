@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { LeaderboardEntry, LeaderboardResult } from '../api/types';
 import { formatNumber } from '../utils/gameCalc';
 
-type RankingTab = 'level' | 'income' | 'pvp';
+type RankingTab = 'level' | 'income' | 'pvp' | 'boss';
 
 const RANK_MEDAL: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -68,6 +68,7 @@ export function RankingView({
   levelLeaderboard,
   incomeLeaderboard,
   pvpLeaderboard,
+  bossLeaderboard,
   loading,
   onRefresh,
   onOpenProfile,
@@ -75,6 +76,7 @@ export function RankingView({
   levelLeaderboard: LeaderboardResult | null;
   incomeLeaderboard: LeaderboardResult | null;
   pvpLeaderboard: LeaderboardResult | null;
+  bossLeaderboard: LeaderboardResult | null;
   loading: boolean;
   onRefresh: () => void;
   onOpenProfile: (userId: string) => void;
@@ -104,6 +106,9 @@ export function RankingView({
         <button className={`filter${tab === 'pvp' ? ' active' : ''}`} onClick={() => setTab('pvp')}>
           투기장 레이팅
         </button>
+        <button className={`filter${tab === 'boss' ? ' active' : ''}`} onClick={() => setTab('boss')}>
+          보스 타워
+        </button>
       </div>
 
       <section className="panel">
@@ -128,6 +133,14 @@ export function RankingView({
             result={pvpLeaderboard}
             loading={loading}
             valueOf={(v) => `${formatNumber(v)}점`}
+            onOpenProfile={onOpenProfile}
+          />
+        )}
+        {tab === 'boss' && (
+          <RankingList
+            result={bossLeaderboard}
+            loading={loading}
+            valueOf={(v) => `${v}층`}
             onOpenProfile={onOpenProfile}
           />
         )}

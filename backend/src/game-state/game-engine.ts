@@ -19,7 +19,7 @@ export const TERRARIUM_COST_FACTOR = 2.5;
 // 오늘 탐색 횟수(daily.explore)로 세므로 매일 처음 가격으로 돌아간다. 탐색권으로 탐색해도 횟수에는 센다.
 // 프론트(gameCalc.ts)에도 같은 값·함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
 export const EXPLORE_COST_BASE = 500;
-export const EXPLORE_COST_STEP = 50;
+export const EXPLORE_COST_STEP = 25;
 export const getExploreCost = (timesToday: number): number =>
   EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, timesToday);
 // 탐색권은 골드로 살 수 없다. 하루 1장씩 무료로 채워지고(최대 MAX_FREE_EXPLORE_TICKETS장), 업적·일일 목표·우편 보상으로 얻는다.

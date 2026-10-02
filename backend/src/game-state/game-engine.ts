@@ -1,4 +1,10 @@
 import { Species } from '../species/schemas/species.schema';
+import {
+  EQUIPMENT_BY_ID,
+  EQUIPMENT_CATALOG,
+  EquipmentCatalogItem,
+  EquipmentCategory,
+} from '../equipment/equipment.data';
 
 export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
@@ -73,6 +79,28 @@ export const PVP_WIN_ACCOUNT_XP = 20;
 export const PVP_LOSE_ACCOUNT_XP = 3;
 // 종(콩벌레) 별명: 나에게만 보이는 표시용 이름. 무료이며 언제든 바꾸거나 되돌릴 수 있다.
 export const SPECIES_NICKNAME_MAX_LENGTH = 10;
+// ---- 장비 ----
+// 뽑기: 1회 40다이아, 10연차는 10% 할인(희귀 이상 1개 보장). 전설 이상이 50회 연속 안 나오면 50번째는 확정.
+export const EQUIPMENT_PULL_COST = 40;
+export const EQUIPMENT_PULL10_COST = 360;
+export const EQUIPMENT_PULL_ODDS = [55, 28, 12, 4, 1]; // 희귀도 0~4(일반~신화), 합계 100
+export const EQUIPMENT_PITY_LIMIT = 50;
+// 슬롯 1칸이 올려주는 스탯 비율의 기본값(레벨 1, 각성 0). 아래 배율이 곱해진다.
+export const EQUIPMENT_BASE_BONUS_BY_RARITY = [0.02, 0.03, 0.05, 0.07, 0.1];
+export const EQUIPMENT_LEVEL_BONUS = 0.15; // 장비 레벨이 1 오를 때마다 기본값의 +15%
+export const EQUIPMENT_AWAKEN_BONUS = 0.05; // 각성 1회마다 기본값의 +5%
+export const EQUIPMENT_BASE_MAX_LEVEL = 5;
+export const EQUIPMENT_AWAKEN_LEVEL_GAIN = 3; // 각성 성공 시 최대 레벨 +3
+export const EQUIPMENT_MAX_AWAKENINGS = 5; // 무한정 세지지 않게 둔 상한
+export const EQUIPMENT_AWAKEN_BASE_SUCCESS = 0.7;
+export const EQUIPMENT_AWAKEN_FAIL_BONUS = 0.05; // 실패할 때마다 다음 성공 확률 +5%p(성공하면 초기화)
+// 각성 비용(G) = 희귀도별 기본값 × (지금까지 각성한 횟수 + 1)
+export const EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY = [3000, 8000, 20000, 50000, 120000];
+export const EQUIPMENT_BASE_SLOTS = 3;
+export const EQUIPMENT_MAX_SLOTS = 5;
+export const EQUIPMENT_SLOT_EXPAND_COSTS = [500, 1250]; // 4번째, 5번째 슬롯 확장 비용(다이아)
+// 투기장에서 장비 효과를 얼마나 반영할지(1 = 100%). 밸런스가 무너지면 이 값만 낮추면 된다.
+export const PVP_EQUIPMENT_EFFECT_RATE = 1;
 
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
@@ -256,10 +284,106 @@ export function rollCombatStats(
   rarity: number,
   level = 1,
   random: () => number = Math.random,
+  bonuses: StatBonuses = NO_BONUSES,
 ): CombatStats {
   const base = getCombatBaseStats(rarity, level);
+  // 장비 보너스는 편차를 주기 전에 곱한다(반올림은 편차까지 적용한 뒤에 한 번만 한다).
   const vary = (v: number) => Math.max(1, Math.round(v * (1 - BATTLE_STAT_VARIANCE + random() * BATTLE_STAT_VARIANCE * 2)));
-  return { hp: vary(base.hp), atk: vary(base.atk), def: vary(base.def) };
+  return {
+    hp: vary(base.hp * (1 + bonuses.hp)),
+    atk: vary(base.atk * (1 + bonuses.atk)),
+    def: vary(base.def * (1 + bonuses.def)),
+  };
+}
+
+// ---- 장비 계산 ----
+// 프론트(gameCalc.ts)에도 같은 함수가 있다(미리보기용). 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export interface StatBonuses {
+  hp: number;
+  atk: number;
+  def: number;
+}
+export const NO_BONUSES: StatBonuses = { hp: 0, atk: 0, def: 0 };
+
+export interface EquipmentItemLike {
+  itemId: string;
+  level: number;
+  awakenCount: number;
+}
+
+const EQUIPMENT_STAT_BY_CATEGORY: Record<EquipmentCategory, keyof StatBonuses> = {
+  weapon: 'atk',
+  armor: 'def',
+  charm: 'hp',
+};
+
+// 장비 1개가 올려주는 스탯 비율 = 기본값 × (1 + 레벨 보너스 × (레벨-1) + 각성 보너스 × 각성 횟수)
+export function getEquipmentBonus(rarity: number, level: number, awakenCount: number): number {
+  const multiplier =
+    1 + EQUIPMENT_LEVEL_BONUS * (level - 1) + EQUIPMENT_AWAKEN_BONUS * awakenCount;
+  return (EQUIPMENT_BASE_BONUS_BY_RARITY[rarity] ?? 0) * multiplier;
+}
+
+// 장착한 슬롯들(itemId, 빈 칸은 '')과 보유 장비 상태로 스탯별 보너스를 합산한다.
+// 예전에 만든 계정은 장비 필드가 아예 없을 수 있어서(.lean() 조회) undefined도 받는다.
+export function computeEquipmentBonuses(
+  slots: readonly string[] | undefined,
+  items: readonly EquipmentItemLike[] | undefined,
+  rate = 1,
+): StatBonuses {
+  const result: StatBonuses = { hp: 0, atk: 0, def: 0 };
+  const used = new Set<string>();
+  for (const itemId of slots ?? []) {
+    if (!itemId || used.has(itemId)) continue;
+    used.add(itemId);
+    const def = EQUIPMENT_BY_ID.get(itemId);
+    const state = (items ?? []).find((i) => i.itemId === itemId);
+    if (!def || !state) continue;
+    result[EQUIPMENT_STAT_BY_CATEGORY[def.category]] +=
+      getEquipmentBonus(def.rarity, state.level, state.awakenCount) * rate;
+  }
+  return result;
+}
+
+// 미리보기용: 기본 스탯에 보너스를 곱해 반올림한다.
+export function applyStatBonuses(stats: CombatStats, bonuses: StatBonuses): CombatStats {
+  return {
+    hp: Math.round(stats.hp * (1 + bonuses.hp)),
+    atk: Math.round(stats.atk * (1 + bonuses.atk)),
+    def: Math.round(stats.def * (1 + bonuses.def)),
+  };
+}
+
+// 레벨업에 필요한 "중복 획득" 개수 = 지금 레벨 수치.
+export function getEquipmentLevelUpCopies(level: number): number {
+  return level;
+}
+
+export function getAwakenSuccessChance(failures: number): number {
+  return Math.min(1, EQUIPMENT_AWAKEN_BASE_SUCCESS + EQUIPMENT_AWAKEN_FAIL_BONUS * failures);
+}
+
+export function getAwakenCost(rarity: number, awakenCount: number): number {
+  const base = EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY[rarity] ?? EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY[0];
+  return base * (awakenCount + 1);
+}
+
+// minRarity 미만은 제외하고 나머지 확률을 다시 정규화해서 희귀도를 뽑는다(보장/천장 처리용).
+export function rollEquipmentRarity(random: number, minRarity = 0): number {
+  const odds = EQUIPMENT_PULL_ODDS.map((o, i) => (i >= minRarity ? o : 0));
+  const total = odds.reduce((a, b) => a + b, 0);
+  let r = random * total;
+  for (let i = 0; i < odds.length; i++) {
+    if (odds[i] === 0) continue;
+    if (r < odds[i]) return i;
+    r -= odds[i];
+  }
+  return odds.length - 1;
+}
+
+export function pickEquipmentOfRarity(rarity: number, random: number): EquipmentCatalogItem {
+  const pool = EQUIPMENT_CATALOG.filter((e) => e.rarity === rarity);
+  return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
 }
 
 // 야생 개체의 레벨은 내 종 레벨 기준 ±1에서 고른다(각각 1/3 확률). 1레벨 밑으로는 내려가지 않는다.

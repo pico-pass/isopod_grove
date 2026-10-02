@@ -13,13 +13,19 @@ import { AchievementsView } from './components/AchievementsView';
 import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
+import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
 import { ProfileModal } from './components/ProfileModal';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
-import { applySpeciesNicknames, getAchievementProgress, getPopulationCount } from './utils/gameCalc';
+import {
+  applySpeciesNicknames,
+  computeEquipmentBonuses,
+  getAchievementProgress,
+  getPopulationCount,
+} from './utils/gameCalc';
 import './App.css';
 
 function App() {
@@ -30,6 +36,7 @@ function App() {
     upgrades,
     quests,
     achievements,
+    equipmentCatalog,
     levelLeaderboard,
     incomeLeaderboard,
     pvpLeaderboard,
@@ -78,6 +85,12 @@ function App() {
 
   // 내가 지정한 종 별명을 이름에 반영한 목록. 나에게만 보이는 표시용이라 원본 species는 그대로 둔다.
   const displaySpecies = applySpeciesNicknames(species, gameState);
+  // 지금 장착한 장비가 올려주는 스탯 보너스(전투 화면의 미리보기 스탯에 쓴다)
+  const equipmentBonuses = computeEquipmentBonuses(
+    gameState.equipmentSlots,
+    gameState.equipment,
+    equipmentCatalog,
+  );
   const terrarium =
     gameState.terrariums.find((t) => t.terrariumId === selectedTerrariumId) ??
     gameState.terrariums[0];
@@ -190,6 +203,7 @@ function App() {
             <BattleView
               gameState={gameState}
               species={displaySpecies}
+              equipmentBonuses={equipmentBonuses}
               onBattle={(speciesId, difficulty) => runAction(() => api.battle(speciesId, difficulty))}
               onTrain={(speciesId, intensity, extreme) =>
                 runAction(() => api.train(speciesId, intensity, extreme))
@@ -200,6 +214,7 @@ function App() {
             <PvpView
               gameState={gameState}
               species={displaySpecies}
+              equipmentBonuses={equipmentBonuses}
               onSetDefense={(speciesId) => runAction(() => api.setPvpDefense(speciesId))}
               onFindOpponent={async () => {
                 try {
@@ -212,6 +227,18 @@ function App() {
               onPvpBattle={(speciesId, opponentUserId) =>
                 runAction(() => api.pvpBattle(speciesId, opponentUserId))
               }
+            />
+          )}
+          {view === 'equipment' && (
+            <EquipmentView
+              gameState={gameState}
+              catalog={equipmentCatalog}
+              showToast={showToast}
+              onPull={(count) => runAction(() => api.pullEquipment(count))}
+              onLevelUp={(itemId) => runAction(() => api.levelUpEquipment(itemId))}
+              onAwaken={(itemId) => runAction(() => api.awakenEquipment(itemId))}
+              onEquip={(slotIndex, itemId) => runAction(() => api.equipEquipment(slotIndex, itemId))}
+              onExpandSlot={() => runAction(() => api.expandEquipmentSlots())}
             />
           )}
           {view === 'friends' && (

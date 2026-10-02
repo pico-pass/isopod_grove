@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type {
   Achievement,
   ActionResult,
+  EquipmentCatalogItem,
   GameState,
   LeaderboardResult,
   Quest,
@@ -24,6 +25,7 @@ export function useGameEngine(userKey: string | null) {
   const [upgrades, setUpgrades] = useState<Upgrade[]>([]);
   const [quests, setQuests] = useState<Quest[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [equipmentCatalog, setEquipmentCatalog] = useState<EquipmentCatalogItem[]>([]);
   const [levelLeaderboard, setLevelLeaderboard] = useState<LeaderboardResult | null>(null);
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
   const [pvpLeaderboard, setPvpLeaderboard] = useState<LeaderboardResult | null>(null);
@@ -75,18 +77,20 @@ export function useGameEngine(userKey: string | null) {
 
     (async () => {
       try {
-        const [gs, sp, up, qu, ach] = await Promise.all([
+        const [gs, sp, up, qu, ach, eq] = await Promise.all([
           api.getGameState(),
           api.getSpecies(),
           api.getUpgrades(),
           api.getQuests(),
           api.getAchievements(),
+          api.getEquipmentCatalog(),
         ]);
         if (cancelled) return;
         setSpecies(sp);
         setUpgrades(up);
         setQuests(qu);
         setAchievements(ach);
+        setEquipmentCatalog(eq);
 
         const lastSeenKey = `isopod-grove-last-seen-${userKey}`;
         const lastSeenRaw = localStorage.getItem(lastSeenKey);
@@ -163,6 +167,7 @@ export function useGameEngine(userKey: string | null) {
     upgrades,
     quests,
     achievements,
+    equipmentCatalog,
     levelLeaderboard,
     incomeLeaderboard,
     pvpLeaderboard,

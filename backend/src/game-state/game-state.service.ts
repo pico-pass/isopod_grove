@@ -12,6 +12,7 @@ import {
   Terrarium,
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
+import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -29,6 +30,15 @@ import {
   BATTLE_SPECIES_XP_BY_RARITY,
   CARE_COOLDOWN_MS,
   DIAMONDS_PER_LEVEL,
+  EQUIPMENT_AWAKEN_LEVEL_GAIN,
+  EQUIPMENT_BASE_MAX_LEVEL,
+  EQUIPMENT_BASE_SLOTS,
+  EQUIPMENT_MAX_AWAKENINGS,
+  EQUIPMENT_MAX_SLOTS,
+  EQUIPMENT_PITY_LIMIT,
+  EQUIPMENT_PULL10_COST,
+  EQUIPMENT_PULL_COST,
+  EQUIPMENT_SLOT_EXPAND_COSTS,
   EXPLORE_COST,
   EXPLORE_TICKET_PRICE,
   EXPLORE_YIELD,
@@ -44,6 +54,7 @@ import {
   OBSERVE_COOLDOWN_MS,
   OBSERVE_REWARD,
   PVP_COOLDOWN_MS,
+  PVP_EQUIPMENT_EFFECT_RATE,
   PVP_LOSE_ACCOUNT_XP,
   PVP_MATCH_RATING_BANDS,
   PVP_RATING_LOSE_DELTA,
@@ -58,23 +69,31 @@ import {
   TRAIN_EXTREME_DIAMOND_COST,
   TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_XP_BY_INTENSITY,
+  applyStatBonuses,
   canBreedInEnvironment,
   clamp,
+  computeEquipmentBonuses,
   getAchievementProgress,
   getAutoIncomeRate,
+  getAwakenCost,
+  getAwakenSuccessChance,
   getBaseBreedSeconds,
   getBattleLevel,
   getBattleLevelProgress,
   getBreedInterval,
   getCapacity,
+  getCombatBaseStats,
+  getEquipmentLevelUpCopies,
   getLevel,
   getPopulationCount,
   getTerrariumCost,
   getTrainCost,
   isComfortable,
+  pickEquipmentOfRarity,
   pickRandomOfRarity,
   rollCombatStats,
   rollEnemyLevel,
+  rollEquipmentRarity,
   rollRarity,
   simulateBattle,
 } from './game-engine';
@@ -458,7 +477,12 @@ export class GameStateService {
 
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
     const beforeLevel = getBattleLevel(beforeXp);
-    const mine = rollCombatStats(mySpecies.rarity, beforeLevel);
+    const mine = rollCombatStats(
+      mySpecies.rarity,
+      beforeLevel,
+      Math.random,
+      computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
+    );
     // 야생 개체 레벨은 내 종 레벨 기준 ±1. 내가 키울수록 상대도 같이 세진다.
     const enemyLevel = rollEnemyLevel(beforeLevel);
     const enemy = rollCombatStats(enemySpecies.rarity, enemyLevel);
@@ -647,7 +671,15 @@ export class GameStateService {
             pvpDefenseSpeciesId: { $ne: null },
             pvpRating: { $gte: Math.max(0, myRating - band), $lte: myRating + band },
           },
-          { userId: 1, pvpRating: 1, pvpDefenseSpeciesId: 1, terrariums: 1, battleXp: 1 },
+          {
+            userId: 1,
+            pvpRating: 1,
+            pvpDefenseSpeciesId: 1,
+            terrariums: 1,
+            battleXp: 1,
+            equipment: 1,
+            equipmentSlots: 1,
+          },
         )
         .limit(50)
         .lean<
@@ -657,6 +689,9 @@ export class GameStateService {
             pvpDefenseSpeciesId: string;
             terrariums: { population: Record<string, number> }[];
             battleXp: Record<string, number>;
+            // 장비 기능이 생기기 전에 만든 계정은 이 필드가 아예 없다(.lean()은 기본값을 안 채운다)
+            equipment?: { itemId: string; level: number; awakenCount: number }[];
+            equipmentSlots?: string[];
           }[]
         >();
 
@@ -712,6 +747,15 @@ export class GameStateService {
           rarity: species.rarity,
         },
         level,
+        // 장비 보너스까지 반영한 미리보기 스탯(실제 전투에선 ±15% 개체 편차가 더 붙는다)
+        stats: applyStatBonuses(
+          getCombatBaseStats(species.rarity, level),
+          computeEquipmentBonuses(
+            candidate.equipmentSlots,
+            candidate.equipment,
+            PVP_EQUIPMENT_EFFECT_RATE,
+          ),
+        ),
       },
     };
   }
@@ -738,6 +782,8 @@ export class GameStateService {
         pvpDefenseSpeciesId: string | null;
         battleXp: Record<string, number>;
         terrariums: { population: Record<string, number> }[];
+        equipment?: { itemId: string; level: number; awakenCount: number }[];
+        equipmentSlots?: string[];
       }>();
     const opponentSpeciesId = opponentState?.pvpDefenseSpeciesId;
     if (!opponentState || !opponentSpeciesId) {
@@ -767,8 +813,27 @@ export class GameStateService {
     const opponentLevel = getBattleLevel(
       opponentState.battleXp?.[opponentSpeciesId] || 0,
     );
-    const mine = rollCombatStats(mySpecies.rarity, myLevel);
-    const enemy = rollCombatStats(opponentSpecies.rarity, opponentLevel);
+    // 양쪽 모두 각자 장착한 장비가 적용된다. 상대 장비도 클라이언트가 아니라 여기서 DB를 직접 읽어 계산한다.
+    const mine = rollCombatStats(
+      mySpecies.rarity,
+      myLevel,
+      Math.random,
+      computeEquipmentBonuses(
+        gameState.equipmentSlots,
+        gameState.equipment,
+        PVP_EQUIPMENT_EFFECT_RATE,
+      ),
+    );
+    const enemy = rollCombatStats(
+      opponentSpecies.rarity,
+      opponentLevel,
+      Math.random,
+      computeEquipmentBonuses(
+        opponentState.equipmentSlots,
+        opponentState.equipment,
+        PVP_EQUIPMENT_EFFECT_RATE,
+      ),
+    );
     const { winner, log } = simulateBattle(mine, enemy);
     const won = winner === 'me';
 
@@ -852,6 +917,180 @@ export class GameStateService {
         xpGained: speciesXpGain,
       },
     };
+  }
+
+  // ---- 장비 ----
+  private findEquipment(gameState: GameStateDocument, itemId: string) {
+    const item = gameState.equipment.find((e) => e.itemId === itemId);
+    if (!item || !EQUIPMENT_BY_ID.has(itemId)) {
+      throw new BadRequestException('보유하지 않은 장비예요.');
+    }
+    return item;
+  }
+
+  // 다이아로 장비를 뽑는다. 10연차는 마지막에 희귀 이상이 하나도 없으면 희귀 이상으로 보장하고,
+  // 전설 이상이 50회 연속 안 나오면 50번째는 전설 이상을 확정으로 준다.
+  async pullEquipment(userId: string, count: number) {
+    if (count !== 1 && count !== 10) {
+      throw new BadRequestException('1회 또는 10연차만 뽑을 수 있어요.');
+    }
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const cost = count === 10 ? EQUIPMENT_PULL10_COST : EQUIPMENT_PULL_COST;
+    if (gameState.diamonds < cost) {
+      throw new BadRequestException(`장비 뽑기에는 💎 ${cost}개가 필요해요.`);
+    }
+    gameState.diamonds -= cost;
+
+    let pity = gameState.equipmentPity;
+    let gotRarePlus = false;
+    const results: { itemId: string; isNew: boolean; copies: number; level: number }[] = [];
+    for (let i = 0; i < count; i++) {
+      const forceTop = pity + 1 >= EQUIPMENT_PITY_LIMIT;
+      const forceRare = count === 10 && i === count - 1 && !gotRarePlus;
+      const rarity = rollEquipmentRarity(Math.random(), forceTop ? 3 : forceRare ? 1 : 0);
+      const picked = pickEquipmentOfRarity(rarity, Math.random());
+      pity = rarity >= 3 ? 0 : pity + 1;
+      if (rarity >= 1) gotRarePlus = true;
+
+      let item = gameState.equipment.find((e) => e.itemId === picked.equipmentId);
+      const isNew = !item;
+      if (item) {
+        item.copies += 1;
+      } else {
+        gameState.equipment.push({
+          itemId: picked.equipmentId,
+          copies: 0,
+          level: 1,
+          maxLevel: EQUIPMENT_BASE_MAX_LEVEL,
+          awakenCount: 0,
+          awakenFailures: 0,
+        });
+        item = gameState.equipment[gameState.equipment.length - 1];
+      }
+      results.push({
+        itemId: picked.equipmentId,
+        isNew,
+        copies: item.copies,
+        level: item.level,
+      });
+    }
+    gameState.equipmentPity = pity;
+
+    const best = results.reduce((a, b) =>
+      (EQUIPMENT_BY_ID.get(b.itemId)?.rarity ?? 0) > (EQUIPMENT_BY_ID.get(a.itemId)?.rarity ?? 0) ? b : a,
+    );
+    const bestName = EQUIPMENT_BY_ID.get(best.itemId)?.name ?? best.itemId;
+    const message = `장비 뽑기 ${count === 10 ? '10연차' : '1회'} 완료! 가장 좋은 건 ${RARITIES[EQUIPMENT_BY_ID.get(best.itemId)?.rarity ?? 0].name} ${bestName}. -💎 ${cost}`;
+    this.pushLog(gameState, 'diamond', message);
+
+    await gameState.save();
+    return { gameState, message, results, cost };
+  }
+
+  // 같은 장비를 레벨 수치만큼 중복으로 모았으면 레벨업한다(그 개수는 소모된다).
+  async levelUpEquipment(userId: string, itemId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const item = this.findEquipment(gameState, itemId);
+    if (item.level >= item.maxLevel) {
+      throw new BadRequestException('이미 최대 레벨이에요. 각성하면 더 키울 수 있어요.');
+    }
+    const needed = getEquipmentLevelUpCopies(item.level);
+    if (item.copies < needed) {
+      throw new BadRequestException(
+        `레벨업에는 같은 장비를 ${needed}개 더 모아야 해요. (지금 ${item.copies}개)`,
+      );
+    }
+    item.copies -= needed;
+    item.level += 1;
+
+    const name = EQUIPMENT_BY_ID.get(itemId)?.name ?? itemId;
+    const message = `${name}이(가) Lv.${item.level}로 올랐어요!`;
+    this.pushLog(gameState, 'sprout', message);
+    await gameState.save();
+    return { gameState, message };
+  }
+
+  // 최대 레벨 장비를 골드로 각성한다. 성공하면 최대 레벨 +3, 효과 +5%. 실패하면 골드는 사라지고
+  // 다음 성공 확률이 5%p 올라간다(성공하면 확률은 처음으로 돌아간다).
+  async awakenEquipment(userId: string, itemId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const item = this.findEquipment(gameState, itemId);
+    const def = EQUIPMENT_BY_ID.get(itemId)!;
+    if (item.level < item.maxLevel) {
+      throw new BadRequestException('최대 레벨에 도달해야 각성할 수 있어요.');
+    }
+    if (item.awakenCount >= EQUIPMENT_MAX_AWAKENINGS) {
+      throw new BadRequestException('더 이상 각성할 수 없어요.');
+    }
+    const cost = getAwakenCost(def.rarity, item.awakenCount);
+    if (gameState.coins < cost) {
+      throw new BadRequestException(`각성에는 ${cost.toLocaleString('ko-KR')} G가 필요해요.`);
+    }
+    gameState.coins -= cost;
+
+    const chance = getAwakenSuccessChance(item.awakenFailures);
+    const success = Math.random() < chance;
+    let message: string;
+    if (success) {
+      item.maxLevel += EQUIPMENT_AWAKEN_LEVEL_GAIN;
+      item.awakenCount += 1;
+      item.awakenFailures = 0;
+      message = `✨ ${def.name} 각성 성공! 최대 레벨이 ${item.maxLevel}로 늘고 효과가 강해졌어요. -${cost.toLocaleString('ko-KR')} G`;
+    } else {
+      item.awakenFailures += 1;
+      const nextChance = Math.round(getAwakenSuccessChance(item.awakenFailures) * 100);
+      message = `${def.name} 각성에 실패했어요... -${cost.toLocaleString('ko-KR')} G · 다음 성공 확률 ${nextChance}%`;
+    }
+    this.pushLog(gameState, success ? 'trophy' : 'leaf', message);
+    await gameState.save();
+    return { gameState, message, success, chance, cost };
+  }
+
+  // 슬롯에 장비를 장착한다. 이미 다른 슬롯에 끼워져 있으면 그쪽을 비우고 옮긴다. itemId가 ''이면 해제.
+  async equipEquipment(userId: string, slotIndex: number, itemId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const slots = [...gameState.equipmentSlots];
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= slots.length) {
+      throw new BadRequestException('사용할 수 없는 슬롯이에요.');
+    }
+    let message: string;
+    if (itemId) {
+      this.findEquipment(gameState, itemId);
+      const from = slots.indexOf(itemId);
+      if (from >= 0) slots[from] = '';
+      slots[slotIndex] = itemId;
+      message = `${EQUIPMENT_BY_ID.get(itemId)?.name ?? itemId}을(를) 장착했어요.`;
+    } else {
+      slots[slotIndex] = '';
+      message = '장비를 해제했어요.';
+    }
+    gameState.equipmentSlots = slots;
+    await gameState.save();
+    return { gameState, message };
+  }
+
+  // 슬롯을 한 칸 늘린다(4번째 500다이아, 5번째 1250다이아).
+  async expandEquipmentSlots(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const count = gameState.equipmentSlots.length;
+    if (count >= EQUIPMENT_MAX_SLOTS) {
+      throw new BadRequestException('슬롯을 이미 모두 확장했어요.');
+    }
+    const cost = EQUIPMENT_SLOT_EXPAND_COSTS[count - EQUIPMENT_BASE_SLOTS];
+    if (gameState.diamonds < cost) {
+      throw new BadRequestException(`슬롯 확장에는 💎 ${cost}개가 필요해요.`);
+    }
+    gameState.diamonds -= cost;
+    gameState.equipmentSlots = [...gameState.equipmentSlots, ''];
+    const message = `장비 슬롯이 ${count + 1}칸이 됐어요! -💎 ${cost}`;
+    this.pushLog(gameState, 'diamond', message);
+    await gameState.save();
+    return { gameState, message, cost };
   }
 
   async collect(userId: string) {

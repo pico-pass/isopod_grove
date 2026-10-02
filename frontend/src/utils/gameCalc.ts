@@ -1,4 +1,11 @@
-import type { Achievement, CombatStats, GameState, Species } from '../api/types';
+import type {
+  Achievement,
+  CombatStats,
+  EquipmentCatalogItem,
+  EquipmentItemState,
+  GameState,
+  Species,
+} from '../api/types';
 
 export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
@@ -171,6 +178,99 @@ export function getCombatBaseStats(rarity: number, level = 1): CombatStats {
     atk: Math.round(base.atk * levelMultiplier),
     def: Math.round(base.def * levelMultiplier),
   };
+}
+
+// ---- 장비 ----
+// 백엔드(game-engine.ts)와 같은 값·같은 공식이어야 한다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
+export const EQUIPMENT_PULL_COST = 40;
+export const EQUIPMENT_PULL10_COST = 360;
+export const EQUIPMENT_PULL_ODDS = [55, 28, 12, 4, 1];
+export const EQUIPMENT_PITY_LIMIT = 50;
+export const EQUIPMENT_BASE_BONUS_BY_RARITY = [0.02, 0.03, 0.05, 0.07, 0.1];
+export const EQUIPMENT_LEVEL_BONUS = 0.15;
+export const EQUIPMENT_AWAKEN_BONUS = 0.05;
+export const EQUIPMENT_AWAKEN_LEVEL_GAIN = 3;
+export const EQUIPMENT_MAX_AWAKENINGS = 5;
+export const EQUIPMENT_AWAKEN_BASE_SUCCESS = 0.7;
+export const EQUIPMENT_AWAKEN_FAIL_BONUS = 0.05;
+export const EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY = [3000, 8000, 20000, 50000, 120000];
+export const EQUIPMENT_BASE_SLOTS = 3;
+export const EQUIPMENT_MAX_SLOTS = 5;
+export const EQUIPMENT_SLOT_EXPAND_COSTS = [500, 1250];
+export const PVP_EQUIPMENT_EFFECT_RATE = 1;
+
+export interface StatBonuses {
+  hp: number;
+  atk: number;
+  def: number;
+}
+export const NO_BONUSES: StatBonuses = { hp: 0, atk: 0, def: 0 };
+
+export const EQUIPMENT_CATEGORY_INFO = {
+  weapon: { label: '무기', stat: 'atk', statLabel: '공격력', icon: '⚔️' },
+  armor: { label: '방어구', stat: 'def', statLabel: '방어력', icon: '🛡️' },
+  charm: { label: '장신구', stat: 'hp', statLabel: 'HP', icon: '❤️' },
+} as const;
+
+export function getEquipmentBonus(rarity: number, level: number, awakenCount: number): number {
+  const multiplier = 1 + EQUIPMENT_LEVEL_BONUS * (level - 1) + EQUIPMENT_AWAKEN_BONUS * awakenCount;
+  return (EQUIPMENT_BASE_BONUS_BY_RARITY[rarity] ?? 0) * multiplier;
+}
+
+// 장착한 슬롯들의 보너스를 스탯별로 합산한다. rate는 투기장 반영률 같은 배율이다.
+export function computeEquipmentBonuses(
+  slots: readonly string[] | undefined,
+  items: readonly EquipmentItemState[] | undefined,
+  catalog: readonly EquipmentCatalogItem[],
+  rate = 1,
+): StatBonuses {
+  const result: StatBonuses = { hp: 0, atk: 0, def: 0 };
+  const used = new Set<string>();
+  for (const itemId of slots ?? []) {
+    if (!itemId || used.has(itemId)) continue;
+    used.add(itemId);
+    const def = catalog.find((c) => c.equipmentId === itemId);
+    const state = (items ?? []).find((i) => i.itemId === itemId);
+    if (!def || !state) continue;
+    result[EQUIPMENT_CATEGORY_INFO[def.category].stat] +=
+      getEquipmentBonus(def.rarity, state.level, state.awakenCount) * rate;
+  }
+  return result;
+}
+
+export function hasBonuses(b: StatBonuses): boolean {
+  return b.hp > 0 || b.atk > 0 || b.def > 0;
+}
+
+export function scaleBonuses(b: StatBonuses, rate: number): StatBonuses {
+  return { hp: b.hp * rate, atk: b.atk * rate, def: b.def * rate };
+}
+
+// 미리보기용: 기본 스탯에 보너스를 곱해 반올림한다.
+export function applyStatBonuses(stats: CombatStats, b: StatBonuses): CombatStats {
+  return {
+    hp: Math.round(stats.hp * (1 + b.hp)),
+    atk: Math.round(stats.atk * (1 + b.atk)),
+    def: Math.round(stats.def * (1 + b.def)),
+  };
+}
+
+export function formatBonusPercent(value: number): string {
+  const pct = value * 100;
+  return `+${Number.isInteger(pct) ? pct : pct.toFixed(1)}%`;
+}
+
+export function getEquipmentLevelUpCopies(level: number): number {
+  return level;
+}
+
+export function getAwakenSuccessChance(failures: number): number {
+  return Math.min(1, EQUIPMENT_AWAKEN_BASE_SUCCESS + EQUIPMENT_AWAKEN_FAIL_BONUS * failures);
+}
+
+export function getAwakenCost(rarity: number, awakenCount: number): number {
+  const base = EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY[rarity] ?? EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY[0];
+  return base * (awakenCount + 1);
 }
 
 export function getBaseBreedSeconds(rarity: number): number {

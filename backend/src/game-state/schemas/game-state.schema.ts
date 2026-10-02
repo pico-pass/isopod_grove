@@ -118,6 +118,32 @@ export class Terrarium {
 }
 export const TerrariumSchema = SchemaFactory.createForClass(Terrarium);
 
+// 보유한 장비 1종의 상태. 같은 장비를 또 얻으면 새로 만들지 않고 copies(중복 획득 수)만 늘린다.
+@Schema({ _id: false })
+export class EquipmentItem {
+  @Prop({ required: true })
+  itemId: string;
+
+  // 레벨업에 쓰이는 중복 획득 개수(처음 얻은 1개는 포함하지 않는다)
+  @Prop({ default: 0, min: 0 })
+  copies: number;
+
+  @Prop({ default: 1, min: 1 })
+  level: number;
+
+  // 각성에 성공할 때마다 3씩 늘어난다
+  @Prop({ default: 5, min: 1 })
+  maxLevel: number;
+
+  @Prop({ default: 0, min: 0 })
+  awakenCount: number;
+
+  // 각성에 연속으로 실패한 횟수. 성공하면 0으로 돌아간다(다음 각성 확률 계산에 쓴다).
+  @Prop({ default: 0, min: 0 })
+  awakenFailures: number;
+}
+export const EquipmentItemSchema = SchemaFactory.createForClass(EquipmentItem);
+
 @Schema({
   timestamps: true,
   collection: 'game_states',
@@ -163,6 +189,18 @@ export class GameState {
   // 투기장 레이팅. 기본 1000이며, 승패로 공격자인 나만 바뀐다(상대는 영향 없음).
   @Prop({ default: 1000, min: 0 })
   pvpRating: number;
+
+  // 보유 장비. 종류별로 한 줄이며 레벨·각성·중복 획득 수를 가진다.
+  @Prop({ type: [EquipmentItemSchema], default: [] })
+  equipment: EquipmentItem[];
+
+  // 장착 슬롯. 칸마다 장비 itemId가 들어가고 빈 칸은 ''이다. 길이가 곧 슬롯 수(기본 3, 최대 5).
+  @Prop({ type: [String], default: () => ['', '', ''] })
+  equipmentSlots: string[];
+
+  // 전설 이상이 마지막으로 나온 뒤 뽑은 횟수(천장 계산용)
+  @Prop({ default: 0, min: 0 })
+  equipmentPity: number;
 
   // 보유 사육장 목록 (최대 MAX_TERRARIUMS개). 첫 번째가 기본 사육장이다.
   @Prop({ type: [TerrariumSchema], default: [] })

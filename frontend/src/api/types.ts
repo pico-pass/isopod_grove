@@ -71,6 +71,26 @@ export interface Terrarium {
   breeding: Record<string, number>;
 }
 
+export type EquipmentCategory = 'weapon' | 'armor' | 'charm';
+
+export interface EquipmentCatalogItem {
+  equipmentId: string;
+  name: string;
+  icon: string;
+  category: EquipmentCategory;
+  rarity: number;
+  description: string;
+}
+
+export interface EquipmentItemState {
+  itemId: string;
+  copies: number;
+  level: number;
+  maxLevel: number;
+  awakenCount: number;
+  awakenFailures: number;
+}
+
 export interface GameState {
   _id: string;
   userId: string;
@@ -86,6 +106,10 @@ export interface GameState {
   pvpRating: number;
   // 종(콩벌레)에 붙인 내 전용 별명. key: speciesId, value: 별명. 없으면 기본 이름을 쓴다.
   speciesNicknames: Record<string, string>;
+  // 보유 장비(종류별 1줄), 장착 슬롯(칸마다 itemId, 빈 칸은 ''), 전설 이상 천장 카운터
+  equipment: EquipmentItemState[];
+  equipmentSlots: string[];
+  equipmentPity: number;
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;
@@ -304,6 +328,8 @@ export interface PvpOpponent {
   pvpRating: number;
   species: PvpOpponentSpecies;
   level: number;
+  // 상대 장비 보너스까지 반영한 미리보기 스탯
+  stats: CombatStats;
 }
 
 export interface PvpOpponentResult {
@@ -326,6 +352,28 @@ export interface PvpBattleResponse {
   log: BattleTurn[];
   reward: { coins: number; diamonds: number };
   speciesLevel: SpeciesLevelResult;
+}
+
+export interface EquipmentPullResult {
+  itemId: string;
+  isNew: boolean;
+  copies: number;
+  level: number;
+}
+
+export interface EquipmentPullResponse {
+  gameState: GameState;
+  message: string;
+  results: EquipmentPullResult[];
+  cost: number;
+}
+
+export interface EquipmentAwakenResponse {
+  gameState: GameState;
+  message: string;
+  success: boolean;
+  chance: number;
+  cost: number;
 }
 
 export type CareAction = 'feed' | 'mist' | 'climate';

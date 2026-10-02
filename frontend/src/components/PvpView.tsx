@@ -8,14 +8,20 @@ import type {
   Species,
 } from '../api/types';
 import {
+  PVP_EQUIPMENT_EFFECT_RATE,
   PVP_RATING_LOSE_DELTA,
   PVP_RATING_WIN_DELTA,
   PVP_WIN_COIN_REWARD,
   PVP_WIN_DIAMOND_CHANCE,
+  applyStatBonuses,
+  formatBonusPercent,
   formatNumber,
   getBattleLevelProgress,
   getCombatBaseStats,
   getTotalPopulationBySpecies,
+  hasBonuses,
+  scaleBonuses,
+  type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
@@ -26,19 +32,21 @@ function SpeciesPickGrid({
   gameState,
   activeId,
   disabled,
+  bonuses,
   onPick,
 }: {
   species: Species[];
   gameState: GameState;
   activeId: string;
   disabled: boolean;
+  bonuses: StatBonuses;
   onPick: (speciesId: string) => void;
 }) {
   return (
     <div className="battle-picker">
       {species.map((sp) => {
         const progress = getBattleLevelProgress(gameState.battleXp[sp.speciesId] || 0);
-        const stats = getCombatBaseStats(sp.rarity, progress.level);
+        const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), bonuses);
         return (
           <button
             key={sp.speciesId}
@@ -66,12 +74,14 @@ function SpeciesPickGrid({
 export function PvpView({
   gameState,
   species,
+  equipmentBonuses,
   onSetDefense,
   onFindOpponent,
   onPvpBattle,
 }: {
   gameState: GameState;
   species: Species[];
+  equipmentBonuses: StatBonuses;
   onSetDefense: (speciesId: string) => Promise<ActionResult | null>;
   onFindOpponent: () => Promise<PvpOpponentResult | null>;
   onPvpBattle: (speciesId: string, opponentUserId: string) => Promise<PvpBattleResponse | null>;
@@ -95,9 +105,9 @@ export function PvpView({
   const cooldownRemaining = now
     ? Math.max(0, Math.ceil(((gameState.cooldowns.pvp || 0) - now) / 1000))
     : 0;
-  const opponentPreviewStats = opponent
-    ? getCombatBaseStats(opponent.species.rarity, opponent.level)
-    : null;
+  // 투기장에서는 장비 효과를 PVP_EQUIPMENT_EFFECT_RATE만큼만 반영한다(서버와 같은 값).
+  const pvpBonuses = scaleBonuses(equipmentBonuses, PVP_EQUIPMENT_EFFECT_RATE);
+  const opponentPreviewStats = opponent ? opponent.stats : null;
 
   const setDefense = async (speciesId: string) => {
     if (settingDefense) return;
@@ -159,6 +169,7 @@ export function PvpView({
           gameState={gameState}
           activeId={gameState.pvpDefenseSpeciesId ?? ''}
           disabled={settingDefense}
+          bonuses={pvpBonuses}
           onPick={setDefense}
         />
       )}
@@ -215,10 +226,17 @@ export function PvpView({
           gameState={gameState}
           activeId={selected}
           disabled={animating || fighting}
+          bonuses={pvpBonuses}
           onPick={setSelected}
         />
       )}
 
+      {hasBonuses(pvpBonuses) && (
+        <div className="info-banner">
+          🎒 장착 장비 — 공격력 {formatBonusPercent(pvpBonuses.atk)} · 방어력 {formatBonusPercent(pvpBonuses.def)} · HP{' '}
+          {formatBonusPercent(pvpBonuses.hp)}. 상대의 장비도 같은 방식으로 적용돼요(미리보기 스탯에 반영됨).
+        </div>
+      )}
       <div className="info-banner">
         🆚 승리 시 레이팅 +{PVP_RATING_WIN_DELTA}점 · +{formatNumber(PVP_WIN_COIN_REWARD)} G · 💎{' '}
         {Math.round(PVP_WIN_DIAMOND_CHANCE * 100)}% 확률. 패배 시 레이팅 -{PVP_RATING_LOSE_DELTA}점만

@@ -20,6 +20,9 @@ import { TrainDto } from './dto/train.dto';
 import { PvpSetDefenseDto } from './dto/pvp-set-defense.dto';
 import { PvpBattleDto } from './dto/pvp-battle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
+import { EquipmentPullDto } from './dto/equipment-pull.dto';
+import { EquipmentItemDto } from './dto/equipment-item.dto';
+import { EquipmentEquipDto } from './dto/equipment-equip.dto';
 
 @Controller('game-state')
 @UseGuards(JwtAuthGuard)
@@ -164,6 +167,31 @@ export class GameStateController {
       user.userId,
       dto.achievementId,
     );
+  }
+
+  @Post('equipment/pull')
+  pullEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentPullDto) {
+    return this.gameStateService.pullEquipment(user.userId, dto.count);
+  }
+
+  @Post('equipment/level-up')
+  levelUpEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentItemDto) {
+    return this.gameStateService.levelUpEquipment(user.userId, dto.itemId);
+  }
+
+  @Post('equipment/awaken')
+  awakenEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentItemDto) {
+    return this.gameStateService.awakenEquipment(user.userId, dto.itemId);
+  }
+
+  @Post('equipment/equip')
+  equipEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentEquipDto) {
+    return this.gameStateService.equipEquipment(user.userId, dto.slotIndex, dto.itemId);
+  }
+
+  @Post('equipment/expand-slot')
+  expandEquipmentSlots(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.expandEquipmentSlots(user.userId);
   }
 
   @Post('set-nickname')

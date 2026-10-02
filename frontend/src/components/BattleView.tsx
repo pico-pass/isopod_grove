@@ -9,12 +9,16 @@ import {
   TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_INTENSITY_LABELS,
   TRAIN_XP_BY_INTENSITY,
+  applyStatBonuses,
+  formatBonusPercent,
   formatDuration,
   formatNumber,
   getBattleLevelProgress,
   getCombatBaseStats,
   getTotalPopulationBySpecies,
   getTrainCost,
+  hasBonuses,
+  type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
@@ -25,11 +29,13 @@ type Mode = 'wild' | 'train';
 export function BattleView({
   gameState,
   species,
+  equipmentBonuses,
   onBattle,
   onTrain,
 }: {
   gameState: GameState;
   species: Species[];
+  equipmentBonuses: StatBonuses;
   onBattle: (speciesId: string, difficulty: number) => Promise<BattleResponse | null>;
   onTrain: (speciesId: string, intensity: number, extreme: boolean) => Promise<TrainResponse | null>;
 }) {
@@ -142,6 +148,13 @@ export function BattleView({
           </div>
           <div className="info-banner">
             ⚔️ 고른 난이도 등급의 야생 개체와 붙어요. 난이도가 높을수록 상대가 강하지만 이기면 보상도 커요.
+            {hasBonuses(equipmentBonuses) && (
+              <>
+                <br />
+                🎒 장착 장비 — 공격력 {formatBonusPercent(equipmentBonuses.atk)} · 방어력{' '}
+                {formatBonusPercent(equipmentBonuses.def)} · HP {formatBonusPercent(equipmentBonuses.hp)} (아래 카드 스탯에 반영됨)
+              </>
+            )}
           </div>
         </>
       ) : (
@@ -188,7 +201,7 @@ export function BattleView({
         <div className="battle-picker">
           {owned.map((sp) => {
             const progress = getBattleLevelProgress(gameState.battleXp[sp.speciesId] || 0);
-            const stats = getCombatBaseStats(sp.rarity, progress.level);
+            const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), equipmentBonuses);
             return (
               <button
                 key={sp.speciesId}

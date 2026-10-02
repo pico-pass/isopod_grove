@@ -6,6 +6,9 @@ import type {
   CareAction,
   ChatChannel,
   ChatMessage,
+  EquipmentAwakenResponse,
+  EquipmentCatalogItem,
+  EquipmentPullResponse,
   FriendSearchResult,
   FriendsListResult,
   GameState,
@@ -83,6 +86,16 @@ export const api = {
     post<BattleResponse>('/game-state/battle', { speciesId, difficulty }),
   train: (speciesId: string, intensity: number, extreme?: boolean) =>
     post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
+  getEquipmentCatalog: () => request<EquipmentCatalogItem[]>('/equipment'),
+  pullEquipment: (count: 1 | 10) =>
+    post<EquipmentPullResponse>('/game-state/equipment/pull', { count }),
+  levelUpEquipment: (itemId: string) =>
+    post<ActionResult>('/game-state/equipment/level-up', { itemId }),
+  awakenEquipment: (itemId: string) =>
+    post<EquipmentAwakenResponse>('/game-state/equipment/awaken', { itemId }),
+  equipEquipment: (slotIndex: number, itemId: string) =>
+    post<ActionResult>('/game-state/equipment/equip', { slotIndex, itemId }),
+  expandEquipmentSlots: () => post<ActionResult>('/game-state/equipment/expand-slot'),
   setPvpDefense: (speciesId: string) =>
     post<ActionResult>('/game-state/pvp/defense', { speciesId }),
   getPvpOpponent: () => request<PvpOpponentResult>('/game-state/pvp/opponent'),

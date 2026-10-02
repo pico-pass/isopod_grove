@@ -15,6 +15,7 @@ import { AdminModule } from './admin/admin.module';
 import { ChatModule } from './chat/chat.module';
 import { PresenceModule } from './presence/presence.module';
 import { FriendsModule } from './friends/friends.module';
+import { EquipmentModule } from './equipment/equipment.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FriendsModule } from './friends/friends.module';
     ChatModule,
     PresenceModule,
     FriendsModule,
+    EquipmentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

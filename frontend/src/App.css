@@ -1591,6 +1591,114 @@ main {
   color: var(--muted);
 }
 
+/* Equipment */
+.equip-pull-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.equip-pull-row .button small {
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+.equip-odds {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  margin-bottom: 14px;
+}
+.equip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+.equip-card {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  min-width: 0;
+}
+.equip-card strong {
+  font-size: 0.88rem;
+}
+.equip-card small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.equip-card.equipped {
+  background: var(--panel2);
+}
+.equip-icon {
+  font-size: 1.8rem;
+  line-height: 1.1;
+}
+.equip-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 4px;
+}
+.equip-actions .button {
+  padding: 5px 10px;
+  font-size: 0.74rem;
+}
+.equip-badge {
+  font-size: 0.72rem;
+  color: var(--lime);
+  font-weight: 700;
+  padding: 5px 4px;
+}
+.equip-max {
+  color: var(--lime) !important;
+}
+.equip-hint {
+  font-size: 0.64rem !important;
+}
+.equip-slot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.equip-slot {
+  background: var(--panel);
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  min-height: 118px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.equip-slot.filled {
+  border-style: solid;
+  color: var(--text);
+}
+.equip-slot.filled strong {
+  font-size: 0.82rem;
+}
+.equip-slot.locked {
+  opacity: 0.75;
+}
+.equip-slot .button {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+}
+
 /* Upgrades */
 .upgrade-grid {
   display: grid;

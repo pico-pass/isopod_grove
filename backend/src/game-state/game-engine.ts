@@ -16,6 +16,8 @@ export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
 export const EXPLORE_COST = 777;
+// 숲 탐색은 골드/탐색권과 상관없이 계정 전체에서 20분에 한 번만 할 수 있다.
+export const EXPLORE_COOLDOWN_MS = 20 * 60_000;
 // 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
 export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)

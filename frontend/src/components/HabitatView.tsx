@@ -15,6 +15,7 @@ import {
   getPopulationCount,
   getTerrariumCost,
   isComfortable,
+  getExploreRemainingSeconds,
 } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
 
@@ -78,6 +79,8 @@ export function HabitatView({
   const residentIds = Object.keys(terrarium.population).filter(
     (id) => (terrarium.population[id] || 0) > 0,
   );
+
+  const exploreRemaining = getExploreRemainingSeconds(gameState, now);
 
   const cooldownRemaining = (action: string) => {
     if (!now) return 0;
@@ -368,17 +371,23 @@ export function HabitatView({
           <div className="explore-banner">
             <span className="eyebrow">A NEW LITTLE FRIEND</span>
             <h3>낙엽 아래엔 누가 있을까?</h3>
-            <p>숲을 탐색하고 새로운 종을 만나보세요.</p>
+            <p>숲을 탐색하고 새로운 종을 만나보세요. (탐색은 20분에 한 번만 할 수 있어요)</p>
             <button
               className="button primary full"
-              disabled={gameState.paused}
+              disabled={gameState.paused || exploreRemaining > 0}
               onClick={() => onExplore(false)}
             >
-              🔍 숲 탐색하기 <span className="price">{formatNumber(EXPLORE_COST)} G</span>
+              {exploreRemaining > 0 ? (
+                <>⏳ {formatDuration(exploreRemaining)} 후 탐색할 수 있어요</>
+              ) : (
+                <>
+                  🔍 숲 탐색하기 <span className="price">{formatNumber(EXPLORE_COST)} G</span>
+                </>
+              )}
             </button>
             <button
               className="button secondary full ticket-button"
-              disabled={gameState.paused || gameState.explorationTickets < 1}
+              disabled={gameState.paused || gameState.explorationTickets < 1 || exploreRemaining > 0}
               onClick={() => onExplore(true)}
             >
               🎟️ 탐색권으로 탐색하기 <span className="price">보유 {gameState.explorationTickets}장</span>

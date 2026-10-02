@@ -39,6 +39,7 @@ import {
   EQUIPMENT_PULL10_COST,
   EQUIPMENT_PULL_COST,
   EQUIPMENT_SLOT_EXPAND_COSTS,
+  EXPLORE_COOLDOWN_MS,
   EXPLORE_COST,
   EXPLORE_TICKET_PRICE,
   EXPLORE_YIELD,
@@ -1126,6 +1127,15 @@ export class GameStateService {
     this.guardPaused(gameState);
     this.resetDailyIfNeeded(gameState);
 
+    const now = Date.now();
+    const exploreReadyAt = gameState.cooldowns.get('explore') || 0;
+    if (exploreReadyAt > now) {
+      const remain = Math.ceil((exploreReadyAt - now) / 1000);
+      throw new BadRequestException(
+        `숲 탐색은 20분에 한 번만 할 수 있어요. (남은 시간 ${Math.floor(remain / 60)}분 ${remain % 60}초)`,
+      );
+    }
+
     const terrarium = this.getTerrarium(gameState, terrariumId);
     const capacity = getCapacity(terrarium.spaceLevel);
     const count = getPopulationCount(terrarium.population);
@@ -1149,6 +1159,7 @@ export class GameStateService {
       gameState.coins -= EXPLORE_COST;
     }
     gameState.daily.explore++;
+    gameState.cooldowns.set('explore', now + EXPLORE_COOLDOWN_MS);
 
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);

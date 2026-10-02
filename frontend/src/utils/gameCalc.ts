@@ -19,6 +19,8 @@ export const TERRARIUM_COST_FACTOR = 2.5;
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
 export const EXPLORE_COST = 777;
+// 숲 탐색은 골드/탐색권과 상관없이 20분에 한 번만 할 수 있다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+export const EXPLORE_COOLDOWN_MS = 20 * 60_000;
 // 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템.
 export const EXPLORE_TICKET_PRICE = 500; // 마켓에서 구매할 때 가격(G/장)
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(구매/보상으로는 더 가질 수 있음)
@@ -283,6 +285,12 @@ export function getBreedInterval(baseBreedSeconds: number, nurseryLevel: number)
 
 export function upgradeCost(baseCost: number, factor: number, currentLevel: number): number {
   return Math.round(baseCost * Math.pow(factor, currentLevel));
+}
+
+// 숲 탐색까지 남은 초. now가 0(아직 시계가 안 돌기 시작함)이면 0으로 본다.
+export function getExploreRemainingSeconds(gameState: GameState, now: number): number {
+  if (!now) return 0;
+  return Math.max(0, Math.ceil(((gameState.cooldowns.explore || 0) - now) / 1000));
 }
 
 export function formatDuration(totalSeconds: number): string {

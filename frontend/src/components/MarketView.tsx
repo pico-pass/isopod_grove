@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react';
 import type { GameState, Species, Terrarium } from '../api/types';
 import {
   EXPLORE_COST,
   EXPLORE_TICKET_PRICE,
   MAX_FREE_EXPLORE_TICKETS,
   RARITIES,
+  formatDuration,
   formatNumber,
+  getExploreRemainingSeconds,
 } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
 
@@ -24,6 +27,12 @@ export function MarketView({
   onBuyTicket: (quantity: number) => void;
 }) {
   const owned = species.filter((sp) => (terrarium.population[sp.speciesId] || 0) > 0);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const exploreRemaining = getExploreRemainingSeconds(gameState, now);
 
   return (
     <section className="view active">
@@ -91,7 +100,10 @@ export function MarketView({
         <div>
           <p className="eyebrow">FOREST EXPLORATION</p>
           <h2>새로운 식구를 만날 시간</h2>
-          <p>탐색 한 번에 같은 종 2마리를 {terrarium.name}으로 데려와요. 중복 종도 만날 수 있어요.</p>
+          <p>
+            탐색 한 번에 같은 종 2마리를 {terrarium.name}으로 데려와요. 중복 종도 만날 수 있어요. 탐색은 골드·탐색권
+            상관없이 20분에 한 번만 할 수 있어요.
+          </p>
           <div className="odds">
             {RARITIES.map((r) => (
               <span key={r.name}>
@@ -101,12 +113,18 @@ export function MarketView({
           </div>
         </div>
         <div className="explore-buttons">
-          <button className="button primary" disabled={gameState.paused} onClick={() => onExplore(false)}>
-            숲 탐색 · {formatNumber(EXPLORE_COST)} G →
+          <button
+            className="button primary"
+            disabled={gameState.paused || exploreRemaining > 0}
+            onClick={() => onExplore(false)}
+          >
+            {exploreRemaining > 0
+              ? `⏳ ${formatDuration(exploreRemaining)} 후 탐색 가능`
+              : `숲 탐색 · ${formatNumber(EXPLORE_COST)} G →`}
           </button>
           <button
             className="button secondary"
-            disabled={gameState.paused || gameState.explorationTickets < 1}
+            disabled={gameState.paused || gameState.explorationTickets < 1 || exploreRemaining > 0}
             onClick={() => onExplore(true)}
           >
             🎟️ 탐색권으로 탐색 · 보유 {gameState.explorationTickets}장

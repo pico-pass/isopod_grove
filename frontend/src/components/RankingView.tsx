@@ -52,12 +52,12 @@ function RankingList({
   return (
     <div className="ranking-list">
       {result.entries.map((entry) => (
-        <RankRow key={entry.userId} entry={entry} valueLabel={valueOf(entry.value)} onOpenProfile={onOpenProfile} />
+        <RankRow key={entry.userId} entry={entry} valueLabel={entry.label ?? valueOf(entry.value)} onOpenProfile={onOpenProfile} />
       ))}
       {result.me && !result.me.inTop && (
         <>
           <div className="ranking-divider">···</div>
-          <RankRow entry={result.me} valueLabel={valueOf(result.me.value)} onOpenProfile={onOpenProfile} />
+          <RankRow entry={result.me} valueLabel={result.me.label ?? valueOf(result.me.value)} onOpenProfile={onOpenProfile} />
         </>
       )}
     </div>

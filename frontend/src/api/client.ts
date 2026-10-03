@@ -32,6 +32,7 @@ import type {
   PushConfig,
   BossBattleResponse,
   BossCatalog,
+  BossDifficultyId,
   PvpBattleResponse,
   PvpOpponentResult,
   Quest,
@@ -121,8 +122,8 @@ export const api = {
   getPvpOpponent: () => request<PvpOpponentResult>('/game-state/pvp/opponent'),
   pvpBattle: (speciesId: string, opponentUserId: string) =>
     post<PvpBattleResponse>('/game-state/pvp/battle', { speciesId, opponentUserId }),
-  bossBattle: (speciesId: string, floor: number) =>
-    post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor }),
+  bossBattle: (speciesId: string, floor: number, difficulty: BossDifficultyId = 'easy') =>
+    post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor, difficulty }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
   sell: (speciesId: string, quantity: number, terrariumId?: string) =>

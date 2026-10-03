@@ -98,7 +98,7 @@ export class GameStateController {
 
   @Post('boss/battle')
   bossBattle(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossBattleDto) {
-    return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor);
+    return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor, dto.difficulty);
   }
 
   @Post('explore')

@@ -265,7 +265,7 @@ function App() {
               catalog={bossCatalog}
               equipmentCatalog={equipmentCatalog}
               equipmentBonuses={equipmentBonuses}
-              onBattle={(speciesId, floor) => runAction(() => api.bossBattle(speciesId, floor))}
+              onBattle={(speciesId, floor, difficulty) => runAction(() => api.bossBattle(speciesId, floor, difficulty))}
             />
           )}
           {view === 'pvp' && (

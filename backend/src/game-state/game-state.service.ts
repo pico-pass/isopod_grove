@@ -31,9 +31,11 @@ import {
   BOSS_ACCOUNT_XP_BASE,
   BOSS_ACCOUNT_XP_PER_FLOOR,
   BOSS_COOLDOWN_MS,
+  BOSS_DEFAULT_DIFFICULTY,
   BOSS_DAILY_ATTEMPTS,
   BOSS_LOSE_ACCOUNT_XP,
   BOSS_PATTERNS,
+  BOSS_PROGRESS_FIELD,
   BOSS_SPECIES_XP_BASE,
   BOSS_SPECIES_XP_PER_FLOOR,
   CARE_COOLDOWN_MS,
@@ -87,6 +89,7 @@ import {
   getAwakenSuccessChance,
   getBaseBreedSeconds,
   getBattleLevel,
+  getBossDifficulty,
   getBossFloor,
   getBattleLevelProgress,
   getBreedInterval,
@@ -108,6 +111,7 @@ import {
   rollEquipmentRarity,
   summarizeEquipment,
   rollRarity,
+  scaleBossStats,
   simulateBattle,
   simulateBossBattle,
 } from './game-engine';
@@ -974,17 +978,26 @@ export class GameStateService {
   // ---- 보스 타워 ----
   // 5층마다 보스가 있는 타워. 깬 층의 다음 층(최대 BOSS_FLOOR_COUNT)까지 도전할 수 있고, 이미 깬 층은 다시 도전해
   // 소량의 보상을 받을 수 있다. 하루 도전 횟수는 승패와 상관없이 BOSS_DAILY_ATTEMPTS번이다.
-  async bossBattle(userId: string, speciesId: string, floorNumber: number) {
+  async bossBattle(
+    userId: string,
+    speciesId: string,
+    floorNumber: number,
+    difficultyId: string = BOSS_DEFAULT_DIFFICULTY,
+  ) {
     const floor = getBossFloor(floorNumber);
     if (!floor) {
       throw new BadRequestException('존재하지 않는 층이에요.');
+    }
+    const difficulty = getBossDifficulty(difficultyId);
+    if (!difficulty) {
+      throw new BadRequestException('존재하지 않는 난이도예요.');
     }
     if (this.bossInFlight.has(userId)) {
       throw new BadRequestException('전투가 진행 중이에요. 잠시만 기다려 주세요.');
     }
     this.bossInFlight.add(userId);
     try {
-      return await this.runBossBattle(userId, speciesId, floor);
+      return await this.runBossBattle(userId, speciesId, floor, difficulty);
     } finally {
       this.bossInFlight.delete(userId);
     }
@@ -994,6 +1007,7 @@ export class GameStateService {
     userId: string,
     speciesId: string,
     floor: NonNullable<ReturnType<typeof getBossFloor>>,
+    difficulty: NonNullable<ReturnType<typeof getBossDifficulty>>,
   ) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
@@ -1009,9 +1023,13 @@ export class GameStateService {
         `보스 전투 쿨타임이에요. ${Math.floor(remain / 60)}분 ${remain % 60}초 뒤에 다시 도전할 수 있어요.`,
       );
     }
-    const highestBefore = gameState.stats.highestBossFloor || 0;
+    // 깬 층은 난이도마다 따로 센다(쉬움에서 깬 층이 어려움에서 열리지는 않는다).
+    const progressField = BOSS_PROGRESS_FIELD[difficulty.id];
+    const highestBefore = gameState.stats[progressField] || 0;
     if (floor.floor > highestBefore + 1) {
-      throw new BadRequestException(`아직 열리지 않은 층이에요. ${highestBefore + 1}층부터 도전해 주세요.`);
+      throw new BadRequestException(
+        `${difficulty.name} 난이도는 아직 열리지 않은 층이에요. ${highestBefore + 1}층부터 도전해 주세요.`,
+      );
     }
     const attemptsUsed = gameState.daily.bossAttempts || 0;
     if (attemptsUsed >= BOSS_DAILY_ATTEMPTS) {
@@ -1040,19 +1058,24 @@ export class GameStateService {
       Math.random,
       computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
     );
-    const bossStats = rollBossStats(floor.stats);
+    // 난이도 배율은 보스의 기준 능력치에 먼저 곱하고, 개체 편차(±15%)는 그 위에 붙는다.
+    const bossStats = rollBossStats(scaleBossStats(floor.stats, difficulty.multiplier));
     const { winner, log } = simulateBossBattle(mine, bossStats, floor.patterns);
     const won = winner === 'me';
     const firstClear = won && floor.floor > highestBefore;
 
-    const xpWin = (BOSS_SPECIES_XP_BASE + BOSS_SPECIES_XP_PER_FLOOR * floor.floor) * (floor.isBoss ? 2 : 1);
+    // 골드와 경험치 보상은 난이도 배율만큼 늘어난다. 다이아·장비는 난이도별 첫 클리어마다 따로 받는다(배율 없음).
+    const mult = difficulty.multiplier;
+    const xpWin = Math.round(
+      (BOSS_SPECIES_XP_BASE + BOSS_SPECIES_XP_PER_FLOOR * floor.floor) * (floor.isBoss ? 2 : 1) * mult,
+    );
     const speciesXpGain = won ? xpWin : Math.round(xpWin * BATTLE_SPECIES_LOSE_XP_RATIO);
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > beforeLevel;
     gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, afterLevel);
 
-    const floorLabel = `${floor.floor}층${floor.isBoss ? ' 보스' : ''} ${bossSpecies.name}`;
+    const floorLabel = `${difficulty.id === BOSS_DEFAULT_DIFFICULTY ? '' : `[${difficulty.name}] `}${floor.floor}층${floor.isBoss ? ' 보스' : ''} ${bossSpecies.name}`;
     let reward: {
       coins: number;
       diamonds: number;
@@ -1061,9 +1084,9 @@ export class GameStateService {
     let message: string;
     if (won) {
       gameState.stats.bossWins = (gameState.stats.bossWins || 0) + 1;
-      if (firstClear) gameState.stats.highestBossFloor = floor.floor;
+      if (firstClear) gameState.stats[progressField] = floor.floor;
 
-      const coins = firstClear ? floor.rewards.firstCoins : floor.rewards.repeatCoins;
+      const coins = Math.round((firstClear ? floor.rewards.firstCoins : floor.rewards.repeatCoins) * mult);
       // 다이아: 첫 클리어는 확정, 이미 깬 층을 다시 이기면 낮은 확률로만(일반 층은 둘 다 0).
       const diamonds = firstClear
         ? floor.rewards.firstDiamonds
@@ -1093,7 +1116,7 @@ export class GameStateService {
         };
       }
       reward = { ...reward, coins, diamonds };
-      this.grantXp(gameState, BOSS_ACCOUNT_XP_BASE + BOSS_ACCOUNT_XP_PER_FLOOR * floor.floor);
+      this.grantXp(gameState, Math.round((BOSS_ACCOUNT_XP_BASE + BOSS_ACCOUNT_XP_PER_FLOOR * floor.floor) * mult));
 
       const extras =
         (diamonds ? ` · 💎 ${diamonds}개` : '') +
@@ -1122,6 +1145,7 @@ export class GameStateService {
       result: won ? ('win' as const) : ('lose' as const),
       floor: floor.floor,
       isBoss: floor.isBoss,
+      difficulty: { id: difficulty.id, name: difficulty.name, multiplier: difficulty.multiplier },
       firstClear,
       attemptsLeft,
       patterns: floor.patterns.map((p) => BOSS_PATTERNS[p]),

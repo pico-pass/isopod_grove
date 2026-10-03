@@ -75,9 +75,19 @@ export class Stats {
   @Prop({ default: 0 })
   equipmentPulls: number;
 
-  // 보스 타워에서 깬 가장 높은 층. 한 번 오르면 내려가지 않는다. 다음 도전 가능 층(= 이 값 + 1)과 업적·랭킹에 쓴다.
+  // 보스 타워 "쉬움"에서 깬 가장 높은 층. 한 번 오르면 내려가지 않는다. 다음 도전 가능 층(= 이 값 + 1)과 업적·랭킹에 쓴다.
   @Prop({ default: 0 })
   highestBossFloor: number;
+
+  // 보스 타워 난이도별로 깬 최고 층. 쉬움은 위의 highestBossFloor를 그대로 쓴다(난이도가 생기기 전 기록이 쉬움 기록이 된다).
+  @Prop({ default: 0 })
+  bossFloorNormal: number;
+
+  @Prop({ default: 0 })
+  bossFloorHard: number;
+
+  @Prop({ default: 0 })
+  bossFloorExtreme: number;
 
   // 보스 타워 승리 누적 횟수(이미 깬 층을 다시 이긴 것도 센다)
   @Prop({ default: 0 })

@@ -1,10 +1,12 @@
 import type {
   Achievement,
+  BossDifficultyId,
   CombatStats,
   EquipmentCatalogItem,
   EquipmentItemState,
   GameState,
   Species,
+  Stats,
 } from '../api/types';
 
 export const BASE_CAPACITY = 20;
@@ -389,6 +391,9 @@ export function getAchievementProgress(
       } as const;
       return { progress: byKey[achievement.statKey], target };
     }
+    case 'highestBossFloor':
+      // 어느 난이도에서든 깬 가장 높은 층
+      return { progress: getBestBossFloor(gameState.stats), target };
     case 'births':
     case 'sold':
     case 'explored':
@@ -399,13 +404,39 @@ export function getAchievementProgress(
     case 'trainCount':
     case 'highestBattleLevel':
     case 'equipmentPulls':
-    case 'highestBossFloor':
     case 'bossWins':
     case 'bestPvpWinStreak':
       return { progress: gameState.stats[achievement.statKey] ?? 0, target };
     default:
       return { progress: 0, target };
   }
+}
+
+// 보스 타워 난이도별로 깬 최고 층이 저장되는 stats 필드. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+// 난이도 목록과 배율은 서버(GET /boss)가 내려준다.
+export const BOSS_PROGRESS_FIELD = {
+  easy: 'highestBossFloor',
+  normal: 'bossFloorNormal',
+  hard: 'bossFloorHard',
+  extreme: 'bossFloorExtreme',
+} as const;
+
+export function getBossProgress(stats: Stats | undefined, difficulty: BossDifficultyId): number {
+  return stats?.[BOSS_PROGRESS_FIELD[difficulty]] ?? 0;
+}
+
+// 어느 난이도에서든 깬 가장 높은 층(업적 진행도에 쓴다)
+export function getBestBossFloor(stats: Stats | undefined): number {
+  return Math.max(0, ...(Object.keys(BOSS_PROGRESS_FIELD) as BossDifficultyId[]).map((d) => getBossProgress(stats, d)));
+}
+
+// 보스 기준 능력치에 난이도 배율을 곱한다(서버와 같은 반올림). 전투 때는 여기에 ±15% 편차가 더 붙는다.
+export function scaleBossStats(stats: CombatStats, multiplier: number): CombatStats {
+  return {
+    hp: Math.max(1, Math.round(stats.hp * multiplier)),
+    atk: Math.max(1, Math.round(stats.atk * multiplier)),
+    def: Math.max(1, Math.round(stats.def * multiplier)),
+  };
 }
 
 // 오늘 남은 보스 타워 도전 횟수. daily는 서버가 날짜가 바뀔 때 새로 만들어 내려주므로 그대로 믿는다.

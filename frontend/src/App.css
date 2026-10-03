@@ -2887,3 +2887,38 @@ main {
   color: var(--muted);
 }
 
+/* Boss difficulty */
+.boss-difficulty-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.boss-difficulty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.boss-difficulty strong {
+  color: var(--text);
+}
+.boss-difficulty small {
+  font-size: 0.74rem;
+}
+.boss-difficulty.active {
+  border-color: var(--lime);
+  background: var(--panel2);
+}
+.boss-difficulty.active strong {
+  color: var(--lime);
+}
+.boss-difficulty:disabled {
+  opacity: 0.6;
+}
+

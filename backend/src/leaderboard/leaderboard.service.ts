@@ -5,7 +5,11 @@ import { GameState, GameStateDocument } from '../game-state/schemas/game-state.s
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { SpeciesService } from '../species/species.service';
 import {
+  BOSS_DIFFICULTIES,
+  BOSS_PROGRESS_FIELD,
   SOIL_RATE_BONUS_PER_LEVEL,
+  getBossEffectiveFloor,
+  getBossProgress,
   getLevel,
   isComfortable,
 } from '../game-state/game-engine';
@@ -19,6 +23,8 @@ export interface LeaderboardEntry {
   avatarUrl?: string;
   isMe: boolean;
   value: number;
+  // 값 대신 보여줄 문구(보스 타워의 "어려움 12층" 같은 것). 없으면 화면이 value로 만든다.
+  label?: string;
 }
 
 export interface LeaderboardResult {
@@ -74,18 +80,29 @@ export class LeaderboardService {
     );
   }
 
-  // 보스 타워에서 깬 최고 층. 같은 층이면 더 먼저 그 층에 닿은 사람을 알 수 없으니 동점으로 두고 순서만 안정적으로 둔다.
-  // 한 번도 안 깬 유저(0층)는 순위에 올리지 않는다.
+  // 보스 타워 기록. 난이도마다 깬 층이 따로라서, 능력치 배율을 층으로 환산한 "난이도 환산 층"으로 줄을 세우고
+  // 화면에는 그 사람의 가장 높은 기록을 "어려움 12층"처럼 보여준다. 한 번도 안 깬 유저는 순위에 올리지 않는다.
   async getBossLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    const projection: Record<string, 1> = { userId: 1 };
+    for (const field of Object.values(BOSS_PROGRESS_FIELD)) projection[`stats.${field}`] = 1;
     const states = await this.gameStateModel
-      .find({}, { userId: 1, 'stats.highestBossFloor': 1 })
-      .lean<{ userId: Types.ObjectId; stats?: { highestBossFloor?: number } }[]>();
+      .find({}, projection)
+      .lean<{ userId: Types.ObjectId; stats?: Parameters<typeof getBossProgress>[0] }[]>();
 
-    const sorted = states
-      .map((s) => ({ userId: s.userId, value: s.stats?.highestBossFloor || 0 }))
-      .filter((s) => s.value > 0)
+    const ranked = states
+      .map((s) => {
+        let best: { value: number; label: string } | null = null;
+        for (const d of BOSS_DIFFICULTIES) {
+          const floor = getBossProgress(s.stats, d.id);
+          if (floor <= 0) continue;
+          const value = getBossEffectiveFloor(floor, d.id);
+          if (!best || value > best.value) best = { value, label: `${d.name} ${floor}층` };
+        }
+        return best ? { userId: s.userId, ...best } : null;
+      })
+      .filter((r): r is { userId: Types.ObjectId; value: number; label: string } => r !== null)
       .sort((a, b) => b.value - a.value);
-    return this.buildResult(sorted, requesterId);
+    return this.buildResult(ranked, requesterId);
   }
 
   async getIncomeLeaderboard(requesterId: string): Promise<LeaderboardResult> {
@@ -136,7 +153,7 @@ export class LeaderboardService {
   }
 
   private async buildResult(
-    ranked: { userId: Types.ObjectId; value: number }[],
+    ranked: { userId: Types.ObjectId; value: number; label?: string }[],
     requesterId: string,
   ): Promise<LeaderboardResult> {
     const top = ranked.slice(0, LEADERBOARD_LIMIT);
@@ -150,7 +167,7 @@ export class LeaderboardService {
     const userById = new Map(users.map((u) => [u._id.toString(), u]));
 
     const toEntry = (
-      r: { userId: Types.ObjectId; value: number },
+      r: { userId: Types.ObjectId; value: number; label?: string },
       rank: number,
     ): LeaderboardEntry => {
       const id = r.userId.toString();
@@ -162,6 +179,7 @@ export class LeaderboardService {
         avatarUrl: user?.avatarUrl,
         isMe: id === requesterId,
         value: r.value,
+        ...(r.label ? { label: r.label } : {}),
       };
     };
 

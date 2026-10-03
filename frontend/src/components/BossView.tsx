@@ -1,5 +1,12 @@
 import { Fragment, useEffect, useState } from 'react';
-import type { BossBattleResponse, BossCatalog, EquipmentCatalogItem, GameState, Species } from '../api/types';
+import type {
+  BossBattleResponse,
+  BossCatalog,
+  BossDifficultyId,
+  EquipmentCatalogItem,
+  GameState,
+  Species,
+} from '../api/types';
 import {
   BOSS_COOLDOWN_MINUTES,
   BOSS_DAILY_ATTEMPTS,
@@ -8,14 +15,30 @@ import {
   formatDuration,
   formatNumber,
   getBossAttemptsLeft,
+  getBossProgress,
   getTotalPopulationBySpecies,
   hasBonuses,
+  scaleBossStats,
   type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
 import { SpeciesImage } from './SpeciesImage';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
+
+const DIFFICULTY_STORAGE_KEY = 'isopod-boss-difficulty';
+const FALLBACK_DIFFICULTIES: BossCatalog['difficulties'] = [{ id: 'easy', name: '쉬움', multiplier: 1 }];
+
+// 마지막으로 고른 난이도를 기억한다(저장소를 못 쓰는 환경에서는 쉬움으로 시작한다).
+function loadDifficulty(): BossDifficultyId {
+  try {
+    const saved = localStorage.getItem(DIFFICULTY_STORAGE_KEY);
+    if (saved === 'easy' || saved === 'normal' || saved === 'hard' || saved === 'extreme') return saved;
+  } catch {
+    // 저장소를 못 쓰면 기본값을 쓴다.
+  }
+  return 'easy';
+}
 
 export function BossView({
   gameState,
@@ -30,10 +53,11 @@ export function BossView({
   catalog: BossCatalog | null;
   equipmentCatalog: EquipmentCatalogItem[];
   equipmentBonuses: StatBonuses;
-  onBattle: (speciesId: string, floor: number) => Promise<BossBattleResponse | null>;
+  onBattle: (speciesId: string, floor: number, difficulty: BossDifficultyId) => Promise<BossBattleResponse | null>;
 }) {
   const [selected, setSelected] = useState('');
   const [picked, setPicked] = useState<number | null>(null);
+  const [difficultyId, setDifficultyId] = useState<BossDifficultyId>(loadDifficulty);
   const [fighting, setFighting] = useState(false);
   const [result, setResult] = useState<BossBattleResponse | null>(null);
   const [now, setNow] = useState(0);
@@ -45,7 +69,11 @@ export function BossView({
   }, []);
 
   const floors = catalog?.floors ?? [];
-  const highest = gameState.stats.highestBossFloor ?? 0;
+  const difficulties = catalog?.difficulties ?? FALLBACK_DIFFICULTIES;
+  const difficulty = difficulties.find((d) => d.id === difficultyId) ?? difficulties[0];
+  const mult = difficulty.multiplier;
+  // 깬 층은 난이도마다 따로 센다.
+  const highest = getBossProgress(gameState.stats, difficulty.id);
   const nextFloor = Math.min(highest + 1, floors.length);
   // 직접 고르지 않았다면 항상 "다음에 깰 층"을 가리킨다(첫 클리어하면 자동으로 다음 층으로 넘어간다).
   const floorNo = picked ?? nextFloor;
@@ -64,7 +92,7 @@ export function BossView({
   const fight = async () => {
     if (!selected || !info || fighting || animating || cooldownRemaining > 0 || attemptsLeft <= 0) return;
     setFighting(true);
-    const r = await onBattle(selected, info.floor);
+    const r = await onBattle(selected, info.floor, difficulty.id);
     if (r) {
       setResult(r);
       setVisibleTurns(0);
@@ -72,6 +100,20 @@ export function BossView({
     }
     setFighting(false);
   };
+
+  const chooseDifficulty = (id: BossDifficultyId) => {
+    setDifficultyId(id);
+    setPicked(null); // 난이도를 바꾸면 그 난이도에서 다음에 깰 층으로 돌아간다
+    try {
+      localStorage.setItem(DIFFICULTY_STORAGE_KEY, id);
+    } catch {
+      // 저장하지 못해도 화면에는 영향이 없다.
+    }
+  };
+  const scaledStats = info ? scaleBossStats(info.stats, mult) : null;
+  const best = difficulties
+    .map((d) => ({ d, floor: getBossProgress(gameState.stats, d.id) }))
+    .filter((x) => x.floor > 0);
 
   const visibleLog = result ? result.log.slice(0, visibleTurns) : [];
   const lastTurn = visibleLog[visibleLog.length - 1];
@@ -86,7 +128,7 @@ export function BossView({
           <h1>
             보스 타워{' '}
             <span>
-              최고 {highest}층 · 오늘 남은 도전 {attemptsLeft}/{BOSS_DAILY_ATTEMPTS}
+              {difficulty.name} 최고 {highest}층 · 오늘 남은 도전 {attemptsLeft}/{BOSS_DAILY_ATTEMPTS}
             </span>
           </h1>
           <p className="subheading">5층마다 패턴을 가진 보스가 기다리고 있어요. 장비와 전투 레벨을 키워 올라가 보세요.</p>
@@ -96,6 +138,28 @@ export function BossView({
       <div className="info-banner">
         👹 도전은 승패와 상관없이 하루 {BOSS_DAILY_ATTEMPTS}회이고, 전투 사이에는 {BOSS_COOLDOWN_MINUTES}분 쿨타임이 있어요. 깬 층의 바로 다음 층까지만 열리고, 처음 깰 때는 보상이 커요.
         이미 깬 층은 다시 도전해 골드(보스 층은 장비 복사본·다이아 확률)를 받을 수 있어요.
+      </div>
+
+      <p className="nav-caption">난이도</p>
+      <div className="boss-difficulty-row">
+        {difficulties.map((d) => (
+          <button
+            key={d.id}
+            className={`boss-difficulty${d.id === difficulty.id ? ' active' : ''}`}
+            disabled={animating || fighting}
+            onClick={() => chooseDifficulty(d.id)}
+          >
+            <strong>{d.name}</strong>
+            <small>×{d.multiplier}</small>
+            <small>{getBossProgress(gameState.stats, d.id)}층</small>
+          </button>
+        ))}
+      </div>
+      <div className="info-banner">
+        🎚️ 난이도 배율만큼 보스의 HP·공격·방어가 세지고, 골드·경험치 보상도 같은 배율로 늘어나요. 깬 층은 난이도마다
+        따로 기록돼서(다른 난이도에서 깬 층은 인정되지 않아요) 난이도마다 1층부터 올라가요. 다이아·장비 첫 클리어 보상은
+        난이도마다 한 번씩 받아요.
+        {best.length > 1 && <> (기록: {best.map((x) => `${x.d.name} ${x.floor}층`).join(' · ')})</>}
       </div>
 
       <p className="nav-caption">층 선택</p>
@@ -143,7 +207,8 @@ export function BossView({
                 </span>
               </span>
               <small>
-                ❤️{formatNumber(info.stats.hp)} ⚔️{formatNumber(info.stats.atk)} 🛡️{formatNumber(info.stats.def)} (전투마다 ±15% 편차)
+                ❤️{formatNumber(scaledStats?.hp ?? 0)} ⚔️{formatNumber(scaledStats?.atk ?? 0)} 🛡️{formatNumber(scaledStats?.def ?? 0)}{' '}
+                ({difficulty.name} ×{mult} · 전투마다 ±15% 편차)
               </small>
             </div>
           </div>
@@ -159,7 +224,7 @@ export function BossView({
           <p className="boss-rewards">
             {cleared ? (
               <>
-                ✓ 이미 깬 층 · 다시 이기면 +{formatNumber(info.rewards.repeatCoins)} G
+                ✓ 이미 깬 층 · 다시 이기면 +{formatNumber(Math.round(info.rewards.repeatCoins * mult))} G
                 {info.rewards.firstEquipmentRarity !== null && (
                   <>
                     {' · '}
@@ -176,7 +241,7 @@ export function BossView({
               </>
             ) : (
               <>
-                🎁 첫 클리어 보상 +{formatNumber(info.rewards.firstCoins)} G
+                🎁 첫 클리어 보상 +{formatNumber(Math.round(info.rewards.firstCoins * mult))} G
                 {info.rewards.firstDiamonds > 0 && ` · 💎 ${info.rewards.firstDiamonds}개`}
                 {info.rewards.firstEquipmentRarity !== null &&
                   ` · ${RARITIES[info.rewards.firstEquipmentRarity].name} 장비 1개`}
@@ -235,7 +300,7 @@ export function BossView({
               ? '⚔️ 전투 중...'
               : result.result === 'win'
                 ? result.firstClear
-                  ? `🎉 ${result.floor}층 첫 클리어!`
+                  ? `🎉 [${result.difficulty.name}] ${result.floor}층 첫 클리어!`
                   : '🎉 승리!'
                 : '💧 패배...'}
           </div>
@@ -243,7 +308,7 @@ export function BossView({
             <FighterCard fighter={result.mine} label="내 식구" hp={myHp} acting={lastTurn?.attacker === 'me'} />
             <span className="battle-vs-mark">VS</span>
             <FighterCard
-              fighter={{ ...result.enemy, levelLabel: `${result.floor}층` }}
+              fighter={{ ...result.enemy, levelLabel: `${result.floor}층 · ${result.difficulty.name}` }}
               label={result.isBoss ? '👹 보스' : '수문장'}
               hp={enemyHp}
               acting={lastTurn?.attacker === 'enemy'}

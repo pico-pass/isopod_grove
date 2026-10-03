@@ -634,6 +634,57 @@ export function rollBossStats(stats: CombatStats, random: () => number = Math.ra
   return { hp: vary(stats.hp), atk: vary(stats.atk), def: vary(stats.def) };
 }
 
+// ---- 보스 난이도 ----
+// 보스의 능력치(HP·공격·방어)와 골드·경험치 보상에 곱해지는 배율. 난이도마다 깬 층(진행도)이 따로라서
+// 처음 깨는 보상(다이아·장비 포함)을 난이도별로 한 번씩 받는다. 쉬움(1배)은 난이도가 없던 때와 완전히 같다.
+// 프론트(gameCalc.ts)에 진행도 필드 이름(BOSS_PROGRESS_FIELD)과 getBossProgress/getBestBossFloor가 같은 모양으로 있다.
+export const BOSS_DIFFICULTIES = [
+  { id: 'easy', name: '쉬움', multiplier: 1 },
+  { id: 'normal', name: '보통', multiplier: 1.5 },
+  { id: 'hard', name: '어려움', multiplier: 2 },
+  { id: 'extreme', name: '매우 어려움', multiplier: 3 },
+] as const;
+export type BossDifficulty = (typeof BOSS_DIFFICULTIES)[number]['id'];
+export const BOSS_DIFFICULTY_IDS: readonly BossDifficulty[] = BOSS_DIFFICULTIES.map((d) => d.id);
+export const BOSS_DEFAULT_DIFFICULTY: BossDifficulty = 'easy';
+
+export function getBossDifficulty(id: string) {
+  return BOSS_DIFFICULTIES.find((d) => d.id === id) ?? null;
+}
+
+// 난이도별로 깬 최고 층이 저장되는 stats 필드. 쉬움은 난이도가 생기기 전부터 쓰던 highestBossFloor를 그대로 쓴다.
+export const BOSS_PROGRESS_FIELD = {
+  easy: 'highestBossFloor',
+  normal: 'bossFloorNormal',
+  hard: 'bossFloorHard',
+  extreme: 'bossFloorExtreme',
+} as const;
+export type BossProgressStats = Partial<Record<(typeof BOSS_PROGRESS_FIELD)[BossDifficulty], number>>;
+
+export function getBossProgress(stats: BossProgressStats | undefined, difficulty: BossDifficulty): number {
+  return stats?.[BOSS_PROGRESS_FIELD[difficulty]] ?? 0;
+}
+
+// 어느 난이도에서든 깬 가장 높은 층(업적용). 어려운 난이도의 층은 쉬움보다 어려우니 그대로 비교해도 공정하다.
+export function getBestBossFloor(stats: BossProgressStats | undefined): number {
+  return Math.max(0, ...BOSS_DIFFICULTY_IDS.map((d) => getBossProgress(stats, d)));
+}
+
+// 능력치가 m배 세지는 것은 층이 log(m)/log(성장률)층 올라가는 것과 같다. 랭킹에서 난이도가 다른 기록을 한 줄로 세울 때 쓴다.
+export function getBossEffectiveFloor(floor: number, difficulty: BossDifficulty): number {
+  const multiplier = getBossDifficulty(difficulty)?.multiplier ?? 1;
+  return floor + Math.round(Math.log(multiplier) / Math.log(BOSS_FLOOR_GROWTH));
+}
+
+// 보스 기준 스탯에 난이도 배율을 곱한다(반올림한 정수). 편차는 이 값에 다시 붙는다.
+export function scaleBossStats(stats: CombatStats, multiplier: number): CombatStats {
+  return {
+    hp: Math.max(1, Math.round(stats.hp * multiplier)),
+    atk: Math.max(1, Math.round(stats.atk * multiplier)),
+    def: Math.max(1, Math.round(stats.def * multiplier)),
+  };
+}
+
 // 층의 상대 종. 같은 희귀도 안에서 speciesId 순으로 정렬해 고르므로 종 목록 순서가 바뀌어도 같은 층은 같은 상대다
 // (종이 새로 추가되면 일부 층의 상대가 바뀔 수는 있다).
 export function pickBossSpecies<T extends { speciesId: string; rarity: number }>(
@@ -763,6 +814,10 @@ export interface AchievementSubject {
     highestBattleLevel: number;
     equipmentPulls: number;
     highestBossFloor: number;
+    // 보스 타워 난이도별로 깬 최고 층(쉬움은 highestBossFloor). 예전 데이터에는 없을 수 있다.
+    bossFloorNormal?: number;
+    bossFloorHard?: number;
+    bossFloorExtreme?: number;
     bossWins: number;
     bestPvpWinStreak: number;
   };
@@ -805,6 +860,9 @@ export function getAchievementProgress(
       return { progress: subject.equipment.awakenings, target };
     case 'equipmentSlots':
       return { progress: subject.equipment.slots, target };
+    case 'highestBossFloor':
+      // 어느 난이도에서든 깬 가장 높은 층
+      return { progress: getBestBossFloor(subject.stats), target };
     case 'births':
     case 'sold':
     case 'explored':
@@ -815,7 +873,6 @@ export function getAchievementProgress(
     case 'trainCount':
     case 'highestBattleLevel':
     case 'equipmentPulls':
-    case 'highestBossFloor':
     case 'bossWins':
     case 'bestPvpWinStreak':
       return { progress: subject.stats[achievement.statKey], target };

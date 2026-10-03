@@ -55,7 +55,11 @@ export interface Stats {
   peakPvpRating: number;
   highestBattleLevel: number;
   equipmentPulls: number;
-  highestBossFloor: number;
+  highestBossFloor: number; // 보스 타워 쉬움에서 깬 최고 층
+  // 보스 타워 난이도별로 깬 최고 층. 예전 데이터에는 없을 수 있다.
+  bossFloorNormal?: number;
+  bossFloorHard?: number;
+  bossFloorExtreme?: number;
   bossWins: number;
   // 투기장 현재 연승 / 최고 연승. 예전 데이터에는 없을 수 있다.
   pvpWinStreak?: number;
@@ -177,6 +181,8 @@ export interface LeaderboardEntry {
   avatarUrl?: string;
   isMe: boolean;
   value: number;
+  // 값 대신 보여줄 문구(보스 타워의 "어려움 12층" 같은 것)
+  label?: string;
 }
 
 export interface LeaderboardResult {
@@ -553,8 +559,18 @@ export interface BossFloorInfo {
   };
 }
 
+export type BossDifficultyId = 'easy' | 'normal' | 'hard' | 'extreme';
+
+// 보스 능력치와 골드·경험치 보상에 곱해지는 배율
+export interface BossDifficultyInfo {
+  id: BossDifficultyId;
+  name: string;
+  multiplier: number;
+}
+
 export interface BossCatalog {
   dailyAttempts: number;
+  difficulties: BossDifficultyInfo[];
   floors: BossFloorInfo[];
 }
 
@@ -564,6 +580,7 @@ export interface BossBattleResponse {
   result: 'win' | 'lose';
   floor: number;
   isBoss: boolean;
+  difficulty: BossDifficultyInfo;
   firstClear: boolean;
   attemptsLeft: number;
   patterns: BossPatternInfo[];

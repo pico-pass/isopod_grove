@@ -1,0 +1,39 @@
+# ISOPOD GROVE 로컬/서버 실행용 compose.
+#   1) backend/.env 를 준비한다(backend/.env.example 참고). MongoDB는 외부(Atlas 등)를 MONGODB_URI로 가리킨다.
+#      compose로 띄울 때는 아래 두 값을 접속 주소에 맞게 바꿔야 로그인(Google OAuth)이 동작한다.
+#        FRONTEND_URL=http://localhost:8080
+#        GOOGLE_CALLBACK_URL=http://localhost:8080/api/auth/google/callback
+#      (Google Cloud Console의 승인된 리디렉션 URI에도 같은 콜백 주소를 등록해야 한다.)
+#   2) 실행:  docker compose up -d --build
+#   3) 접속:  http://localhost:8080   (포트는 WEB_PORT 환경 변수로 바꾼다: WEB_PORT=80 docker compose up -d)
+name: isopod-grove
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: isopod-grove-backend
+    env_file: ./backend/.env
+    environment:
+      # 프론트엔드 nginx가 backend:3000 으로 프록시하므로 컨테이너 안의 포트는 3000으로 고정한다.
+      PORT: "3000"
+      NODE_ENV: production
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # 빌드할 때 코드에 박힌다. /api 는 같은 주소의 nginx가 백엔드로 프록시한다(CORS 설정 불필요).
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    image: isopod-grove-frontend
+    environment:
+      BACKEND_UPSTREAM: backend:3000
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,0 +1,18 @@
+node_modules
+dist
+coverage
+
+# 로컬 설정 — VITE_API_URL은 .env가 아니라 빌드 인자(--build-arg)로 넣는다
+.env
+.env.*
+!.env.example
+
+README.md
+eslint.config.js
+.gitignore
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
+.idea
+.vscode

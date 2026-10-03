@@ -1,0 +1,30 @@
+# 이미지에 넣지 않을 것들(빌드 컨텍스트가 작아지고, 비밀 정보가 이미지에 섞이지 않는다)
+node_modules
+dist
+dist.root-owned
+coverage
+.nyc_output
+
+# 비밀 정보와 로컬 설정 — 실행할 때 --env-file / environment로 주입한다
+.env
+.env.*
+!.env.example
+
+# 개발·테스트 파일
+test
+**/*.spec.ts
+README.md
+.prettierrc
+eslint.config.mjs
+.gitignore
+
+# 백엔드 코드에서 쓰지 않는 정적 파일(종 이미지는 프론트엔드가 서비스한다)
+assets
+
+# 도커·로그·기타
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
+.idea
+.vscode

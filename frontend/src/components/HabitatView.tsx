@@ -80,9 +80,9 @@ export function HabitatView({
     (id) => (terrarium.population[id] || 0) > 0,
   );
 
-  // 오늘 한 탐색 횟수에 따라 오르는 골드 비용(매일 처음 가격부터 다시 시작)
-  const exploreTimesToday = gameState.daily.explore ?? 0;
-  const exploreCost = getExploreCost(exploreTimesToday);
+  // 탐색을 한 횟수에 따라 오르는 골드 비용(초기화되지 않고 계속 쌓인다)
+  const exploreSteps = gameState.exploreCostSteps ?? 0;
+  const exploreCost = getExploreCost(exploreSteps);
 
   const cooldownRemaining = (action: string) => {
     if (!now) return 0;
@@ -374,8 +374,8 @@ export function HabitatView({
             <span className="eyebrow">A NEW LITTLE FRIEND</span>
             <h3>낙엽 아래엔 누가 있을까?</h3>
             <p>
-              숲을 탐색하고 새로운 종을 만나보세요. (오늘 {exploreTimesToday}번 탐색 · 한 번 할 때마다 비용이{' '}
-              {formatNumber(EXPLORE_COST_STEP)} G씩 올라가고, 매일 처음 가격으로 돌아가요)
+              숲을 탐색하고 새로운 종을 만나보세요. (지금까지 {exploreSteps}번 탐색 · 한 번 할 때마다 비용이{' '}
+              {formatNumber(EXPLORE_COST_STEP)} G씩 계속 올라가요)
             </p>
             <button
               className="button primary full"

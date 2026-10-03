@@ -20,12 +20,12 @@ export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
-// 숲 탐색(골드) 비용: 그날 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
-// 오늘 탐색 횟수(daily.explore)로 세므로 매일 처음 가격으로 돌아간다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
+// 숲 탐색(골드) 비용: 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
+// 계정에 쌓인 탐색 횟수(exploreCostSteps)로 세며 매일 초기화되지 않는다. 백엔드(game-engine.ts)와 같은 값이어야 한다.
 export const EXPLORE_COST_BASE = 500;
 export const EXPLORE_COST_STEP = 25;
-export const getExploreCost = (timesToday: number): number =>
-  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, timesToday);
+export const getExploreCost = (exploreCostSteps: number): number =>
+  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, exploreCostSteps);
 // 숲 탐색권: 골드 대신 1장으로 무료 탐색을 할 수 있는 아이템. 골드로 살 수 없고, 하루 1장 무료 충전·보상으로만 얻는다.
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(보상으로는 더 가질 수 있음)
 // 다이아: 업적/새 종 발견/레벨업으로 얻는다.

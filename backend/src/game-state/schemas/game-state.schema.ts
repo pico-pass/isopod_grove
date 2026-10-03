@@ -198,6 +198,11 @@ export class GameState {
   @Prop({ default: 0, min: 0 })
   explorationTickets: number;
 
+  // 지금까지 숲 탐색을 한 횟수(골드·탐색권 모두). 탐색 비용이 이 횟수만큼 올라간다(초기화 없음).
+  // 업적용 stats.explored와 따로 센다 — 비용 공식이 생긴 시점부터 모두 0에서 시작하기 위해서다.
+  @Prop({ default: 0, min: 0 })
+  exploreCostSteps: number;
+
   // 다이아. 업적·새 종 발견·레벨업으로 얻고, 닉네임 변경 같은 특별한 곳에 쓴다.
   @Prop({ default: 0, min: 0 })
   diamonds: number;

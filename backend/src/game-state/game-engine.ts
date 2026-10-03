@@ -15,13 +15,14 @@ export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
 export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 2500;
 export const TERRARIUM_COST_FACTOR = 2.5;
-// 숲 탐색(골드) 비용: 그날 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
-// 오늘 탐색 횟수(daily.explore)로 세므로 매일 처음 가격으로 돌아간다. 탐색권으로 탐색해도 횟수에는 센다.
+// 숲 탐색(골드) 비용: 첫 탐색은 EXPLORE_COST_BASE, 탐색을 한 번 할 때마다 다음 비용이 EXPLORE_COST_STEP씩 올라간다.
+// 계정에 쌓인 탐색 횟수(exploreCostSteps)로 세며 매일 초기화되지 않는다. 탐색권으로 탐색해도 횟수에 센다.
+// (stats.explored는 업적용 누적 기록이라 쓰지 않는다 — 이미 많이 탐색한 유저의 비용이 처음부터 수만 G가 되어 버린다.)
 // 프론트(gameCalc.ts)에도 같은 값·함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
 export const EXPLORE_COST_BASE = 500;
 export const EXPLORE_COST_STEP = 25;
-export const getExploreCost = (timesToday: number): number =>
-  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, timesToday);
+export const getExploreCost = (exploreCostSteps: number): number =>
+  EXPLORE_COST_BASE + EXPLORE_COST_STEP * Math.max(0, exploreCostSteps);
 // 탐색권은 골드로 살 수 없다. 하루 1장씩 무료로 채워지고(최대 MAX_FREE_EXPLORE_TICKETS장), 업적·일일 목표·우편 보상으로 얻는다.
 export const MAX_FREE_EXPLORE_TICKETS = 5; // 하루 무료 충전이 채워주는 최대 보유 개수(보상으로는 더 가질 수 있음)
 export const EXPLORE_YIELD = 2;

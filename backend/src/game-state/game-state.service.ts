@@ -1401,8 +1401,9 @@ export class GameStateService {
       );
     }
 
-    // 오늘 한 탐색 횟수가 많을수록 골드 비용이 오른다(탐색권으로 하는 탐색은 비용이 없다).
-    const cost = getExploreCost(gameState.daily.explore || 0);
+    // 탐색을 많이 할수록 골드 비용이 오른다(매일 초기화되지 않는다). 탐색권으로 하는 탐색은 골드가 들지 않는다.
+    const exploreSteps = gameState.exploreCostSteps || 0;
+    const cost = getExploreCost(exploreSteps);
     if (useTicket) {
       if (gameState.explorationTickets < 1) {
         throw new BadRequestException('숲 탐색권이 없어요.');
@@ -1411,12 +1412,13 @@ export class GameStateService {
     } else {
       if (gameState.coins < cost) {
         throw new BadRequestException(
-          `오늘 ${(gameState.daily.explore || 0) + 1}번째 탐색에는 ${cost.toLocaleString('ko-KR')} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
+          `${exploreSteps + 1}번째 탐색에는 ${cost.toLocaleString('ko-KR')} G가 필요해요. 수익을 받거나 식구를 분양해 보세요.`,
         );
       }
       gameState.coins -= cost;
     }
-    gameState.daily.explore = (gameState.daily.explore || 0) + 1;
+    gameState.daily.explore = (gameState.daily.explore || 0) + 1; // 일일 퀘스트용(하루마다 초기화)
+    gameState.exploreCostSteps = exploreSteps + 1; // 탐색 비용용(계속 누적)
 
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);

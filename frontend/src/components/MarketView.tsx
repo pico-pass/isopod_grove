@@ -23,9 +23,9 @@ export function MarketView({
   onExplore: (useTicket?: boolean) => void;
 }) {
   const owned = species.filter((sp) => (terrarium.population[sp.speciesId] || 0) > 0);
-  // 오늘 한 탐색 횟수에 따라 오르는 골드 비용(매일 처음 가격부터 다시 시작)
-  const exploreTimesToday = gameState.daily.explore ?? 0;
-  const exploreCost = getExploreCost(exploreTimesToday);
+  // 탐색을 한 횟수에 따라 오르는 골드 비용(초기화되지 않고 계속 쌓인다)
+  const exploreSteps = gameState.exploreCostSteps ?? 0;
+  const exploreCost = getExploreCost(exploreSteps);
 
   return (
     <section className="view active">
@@ -94,9 +94,9 @@ export function MarketView({
           <p className="eyebrow">FOREST EXPLORATION</p>
           <h2>새로운 식구를 만날 시간</h2>
           <p>
-            탐색 한 번에 같은 종 2마리를 {terrarium.name}으로 데려와요. 중복 종도 만날 수 있어요. 골드 탐색은 하루
-            첫 번째가 {formatNumber(EXPLORE_COST_BASE)} G이고, 탐색을 한 번 할 때마다 {formatNumber(EXPLORE_COST_STEP)} G씩
-            비싸져요. 비용은 매일 처음 가격으로 돌아가요.
+            탐색 한 번에 같은 종 2마리를 {terrarium.name}으로 데려와요. 중복 종도 만날 수 있어요. 골드 탐색은 첫
+            번째가 {formatNumber(EXPLORE_COST_BASE)} G이고, 탐색을 한 번 할 때마다 {formatNumber(EXPLORE_COST_STEP)} G씩
+            계속 비싸져요(초기화되지 않아요).
           </p>
           <div className="odds">
             {RARITIES.map((r) => (
@@ -112,7 +112,7 @@ export function MarketView({
             disabled={gameState.paused}
             onClick={() => onExplore(false)}
           >
-            {`오늘 ${exploreTimesToday + 1}번째 탐색 · ${formatNumber(exploreCost)} G →`}
+            {`${exploreSteps + 1}번째 탐색 · ${formatNumber(exploreCost)} G →`}
           </button>
           <button
             className="button secondary"
@@ -131,7 +131,7 @@ export function MarketView({
           <p>
             골드 대신 탐색권 1장으로 무료 탐색을 할 수 있어요. 탐색권은 골드로 살 수 없고, 하루에 1장씩 무료로
             채워지며(최대 {MAX_FREE_EXPLORE_TICKETS}장), 업적·일일 목표·우편 보상으로 얻을 수 있어요. 탐색권으로 한
-            탐색도 오늘 탐색 횟수에는 포함돼요.
+            탐색도 탐색 횟수에는 포함돼요.
           </p>
           <p className="footnote">지금 보유 {gameState.explorationTickets}장</p>
         </div>

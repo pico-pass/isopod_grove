@@ -109,6 +109,8 @@ export interface GameState {
   coins: number;
   pending: number;
   explorationTickets: number;
+  // 지금까지 숲 탐색을 한 횟수. 탐색 비용이 이 횟수만큼 올라간다(초기화 없음). 예전 데이터에는 없을 수 있다.
+  exploreCostSteps?: number;
   diamonds: number;
   xp: number;
   // 야생 배틀 전투 경험치. key: speciesId. 레벨은 getBattleLevelProgress로 계산한다.

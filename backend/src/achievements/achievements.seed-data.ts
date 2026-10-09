@@ -122,6 +122,18 @@ const STAT_TIERS: StatTier[] = [
     ],
   },
   {
+    statKey: 'highestSurvivalStage',
+    icon: 'infinity',
+    label: '끝없는 도전',
+    descriptionOf: (t) => `서바이벌 ${t}스테이지 돌파`,
+    tiers: [
+      { target: 10, reward: 800, diamondReward: 5 },
+      { target: 20, reward: 3000, diamondReward: 12 },
+      { target: 30, reward: 8000, diamondReward: 25 },
+      { target: 40, reward: 20000, diamondReward: 50 },
+    ],
+  },
+  {
     statKey: 'peakPvpRating',
     icon: 'medal',
     label: '레이팅 등반가',

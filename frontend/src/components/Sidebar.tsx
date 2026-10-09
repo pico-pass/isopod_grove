@@ -11,6 +11,7 @@ export type ViewKey =
   | 'mail'
   | 'battle'
   | 'boss'
+  | 'survival'
   | 'pvp'
   | 'equipment'
   | 'journal'
@@ -27,6 +28,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'mail', label: '우편함', icon: '📬' },
   { key: 'battle', label: '야생 배틀', icon: '⚔️' },
   { key: 'boss', label: '보스 타워', icon: '🗼' },
+  { key: 'survival', label: '서바이벌', icon: '♾️' },
   { key: 'pvp', label: '투기장', icon: '🆚' },
   { key: 'equipment', label: '장비', icon: '🎒' },
   { key: 'journal', label: '사육 일지', icon: '📔' },

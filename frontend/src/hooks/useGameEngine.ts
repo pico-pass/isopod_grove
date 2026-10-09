@@ -35,6 +35,7 @@ export function useGameEngine(userKey: string | null) {
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
   const [pvpLeaderboard, setPvpLeaderboard] = useState<LeaderboardResult | null>(null);
   const [bossLeaderboard, setBossLeaderboard] = useState<LeaderboardResult | null>(null);
+  const [survivalLeaderboard, setSurvivalLeaderboard] = useState<LeaderboardResult | null>(null);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   // 친구 수(업적 진행도 계산용). 랭킹과 같은 주기로 같이 불러온다.
   const [friendsCount, setFriendsCount] = useState(0);
@@ -59,17 +60,19 @@ export function useGameEngine(userKey: string | null) {
   const reloadLeaderboards = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
-      const [lvl, inc, pvp, boss, friendsResult] = await Promise.all([
+      const [lvl, inc, pvp, boss, survival, friendsResult] = await Promise.all([
         api.getLevelLeaderboard(),
         api.getIncomeLeaderboard(),
         api.getPvpLeaderboard(),
         api.getBossLeaderboard(),
+        api.getSurvivalLeaderboard(),
         api.getFriends(),
       ]);
       setLevelLeaderboard(lvl);
       setIncomeLeaderboard(inc);
       setPvpLeaderboard(pvp);
       setBossLeaderboard(boss);
+      setSurvivalLeaderboard(survival);
       setFriendsCount(friendsResult.friends.length);
     } catch (e) {
       showToast(e instanceof Error ? e.message : '랭킹을 불러오지 못했어요.', true);
@@ -261,6 +264,7 @@ export function useGameEngine(userKey: string | null) {
     incomeLeaderboard,
     pvpLeaderboard,
     bossLeaderboard,
+    survivalLeaderboard,
     friendsCount,
     mailSummary,
     refreshMailSummary,

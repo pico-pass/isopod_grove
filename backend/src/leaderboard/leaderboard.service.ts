@@ -105,6 +105,18 @@ export class LeaderboardService {
     return this.buildResult(ranked, requesterId);
   }
 
+  // 서바이벌 최고 스테이지. 한 번도 도달하지 못한(0) 유저는 순위에 올리지 않는다.
+  async getSurvivalLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    const states = await this.gameStateModel
+      .find({}, { userId: 1, 'stats.highestSurvivalStage': 1 })
+      .lean<{ userId: Types.ObjectId; stats?: { highestSurvivalStage?: number } }[]>();
+    const ranked = states
+      .map((s) => ({ userId: s.userId, value: s.stats?.highestSurvivalStage || 0 }))
+      .filter((r) => r.value > 0)
+      .sort((a, b) => b.value - a.value);
+    return this.buildResult(ranked, requesterId);
+  }
+
   async getIncomeLeaderboard(requesterId: string): Promise<LeaderboardResult> {
     const speciesList = await this.speciesService.findAll();
     const rateById = new Map(speciesList.map((s) => [s.speciesId, s.rate]));

@@ -24,6 +24,10 @@ export class DailyProgress {
   @Prop({ default: 0 })
   bossAttempts: number;
 
+  // 오늘 서바이벌에 입장한 횟수(입장할 때 센다). 날짜가 바뀌면 daily 전체가 새로 만들어지며 0으로 돌아간다.
+  @Prop({ default: 0 })
+  survivalAttempts: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }
@@ -92,6 +96,14 @@ export class Stats {
   // 보스 타워 승리 누적 횟수(이미 깬 층을 다시 이긴 것도 센다)
   @Prop({ default: 0 })
   bossWins: number;
+
+  // 서바이벌(무한 전투)에서 도달한 가장 높은 스테이지. 한 번 오르면 내려가지 않는다(업적·랭킹·보상 기준).
+  @Prop({ default: 0 })
+  highestSurvivalStage: number;
+
+  // 서바이벌 입장 횟수 누적
+  @Prop({ default: 0 })
+  survivalRuns: number;
 
   // 투기장 현재 연승. 지면 0으로 돌아간다(재도전 제한으로 거절된 시도는 영향이 없다).
   @Prop({ default: 0 })
@@ -178,6 +190,73 @@ export class EquipmentItem {
 }
 export const EquipmentItemSchema = SchemaFactory.createForClass(EquipmentItem);
 
+// 서바이벌에서 고른 버프 횟수(같은 버프를 여러 번 고를 수 있다)
+@Schema({ _id: false })
+export class SurvivalBuffs {
+  @Prop({ default: 0 })
+  atk: number;
+
+  @Prop({ default: 0 })
+  def: number;
+
+  @Prop({ default: 0 })
+  hp: number;
+
+  @Prop({ default: 0 })
+  regen: number;
+}
+export const SurvivalBuffsSchema = SchemaFactory.createForClass(SurvivalBuffs);
+
+// 진행 중인 서바이벌 런(유저당 하나). 입장할 때 굴린 능력치(base*)는 런이 끝날 때까지 고정이고,
+// 레벨·장비를 나중에 바꿔도 이 런에는 반영되지 않는다. 런이 끝나거나 포기하면 null로 돌아간다.
+@Schema({ _id: false })
+export class SurvivalRun {
+  @Prop({ required: true })
+  speciesId: string;
+
+  // 입장할 때의 전투 레벨(화면 표시용)
+  @Prop({ default: 1 })
+  level: number;
+
+  @Prop({ required: true })
+  baseHp: number;
+
+  @Prop({ required: true })
+  baseAtk: number;
+
+  @Prop({ required: true })
+  baseDef: number;
+
+  // 현재 HP
+  @Prop({ required: true })
+  hp: number;
+
+  // 마지막으로 깬 스테이지
+  @Prop({ default: 0 })
+  stage: number;
+
+  @Prop({ type: SurvivalBuffsSchema, default: () => ({}) })
+  buffs: SurvivalBuffs;
+
+  // 고르기를 기다리는 버프 id들. 비어 있으면 선택 대기 중이 아니다(실제로는 항상 선택 대기 상태로만 저장된다).
+  @Prop({ type: [String], default: [] })
+  choices: string[];
+
+  // 이번 런에서 지금까지 받은 보상(화면 표시용)
+  @Prop({ default: 0 })
+  goldEarned: number;
+
+  @Prop({ default: 0 })
+  xpEarned: number;
+
+  @Prop({ default: 0 })
+  diamondsEarned: number;
+
+  @Prop({ required: true })
+  startedAt: number;
+}
+export const SurvivalRunSchema = SchemaFactory.createForClass(SurvivalRun);
+
 @Schema({
   timestamps: true,
   collection: 'game_states',
@@ -236,6 +315,10 @@ export class GameState {
   // 장착 슬롯. 칸마다 장비 itemId가 들어가고 빈 칸은 ''이다. 길이가 곧 슬롯 수(기본 3, 최대 5).
   @Prop({ type: [String], default: () => ['', '', ''] })
   equipmentSlots: string[];
+
+  // 진행 중인 서바이벌 런. 없으면 null.
+  @Prop({ type: SurvivalRunSchema, default: null })
+  survivalRun: SurvivalRun | null;
 
   // 전설 이상이 마지막으로 나온 뒤 뽑은 횟수(천장 계산용)
   @Prop({ default: 0, min: 0 })

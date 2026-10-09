@@ -34,7 +34,8 @@ export type AchievementStatKey =
   | 'equipmentSlots'
   | 'highestBossFloor'
   | 'bossWins'
-  | 'bestPvpWinStreak';
+  | 'bestPvpWinStreak'
+  | 'highestSurvivalStage';
 
 @Schema({ collection: 'achievements' })
 export class Achievement {

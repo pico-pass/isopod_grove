@@ -38,6 +38,9 @@ import type {
   Quest,
   ResolveReportResult,
   Species,
+  SurvivalInfo,
+  SurvivalResponse,
+  SurvivalStatus,
   TrainResponse,
   Upgrade,
 } from './types';
@@ -93,6 +96,7 @@ export const api = {
   getIncomeLeaderboard: () => request<LeaderboardResult>('/leaderboard/income'),
   getPvpLeaderboard: () => request<LeaderboardResult>('/leaderboard/pvp'),
   getBossLeaderboard: () => request<LeaderboardResult>('/leaderboard/boss'),
+  getSurvivalLeaderboard: () => request<LeaderboardResult>('/leaderboard/survival'),
 
   getGameState: () => request<GameState>('/game-state'),
   getPublicProfile: (userId: string) => request<PublicProfile>(`/game-state/profile/${userId}`),
@@ -108,6 +112,7 @@ export const api = {
     post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
   getEquipmentCatalog: () => request<EquipmentCatalogItem[]>('/equipment'),
   getBossCatalog: () => request<BossCatalog>('/boss'),
+  getSurvivalInfo: () => request<SurvivalInfo>('/survival'),
   pullEquipment: (count: 1 | 10) =>
     post<EquipmentPullResponse>('/game-state/equipment/pull', { count }),
   levelUpEquipment: (itemId: string) =>
@@ -122,6 +127,10 @@ export const api = {
   getPvpOpponent: () => request<PvpOpponentResult>('/game-state/pvp/opponent'),
   pvpBattle: (speciesId: string, opponentUserId: string) =>
     post<PvpBattleResponse>('/game-state/pvp/battle', { speciesId, opponentUserId }),
+  getSurvivalStatus: () => request<SurvivalStatus>('/game-state/survival'),
+  survivalStart: (speciesId: string) => post<SurvivalResponse>('/game-state/survival/start', { speciesId }),
+  survivalChoose: (buffId: string) => post<SurvivalResponse>('/game-state/survival/choose', { buffId }),
+  survivalRetire: () => post<SurvivalResponse>('/game-state/survival/retire'),
   bossBattle: (speciesId: string, floor: number, difficulty: BossDifficultyId = 'easy') =>
     post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor, difficulty }),
   explore: (terrariumId?: string, useTicket?: boolean) =>

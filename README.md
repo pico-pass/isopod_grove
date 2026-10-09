@@ -39,8 +39,9 @@
 - **전투 훈련**: 강도 3단계(가벼움·보통·강도 높음)와 극한 훈련(다이아 소모, 경험치 ×12).
 - **투기장(PvP)**: 다른 유저가 정해 둔 방어 식구와 비동기로 싸우고 레이팅을 올려요. 이긴 상대에게는 30분 동안 재도전할 수 없어요.
 - **보스 타워**: 50층, 5층마다 패턴 보스가 있어요. 난이도 4단계(쉬움·보통·어려움·매우 어려움)가 있고 깬 층은 난이도별로 따로 기록돼요.
+- **서바이벌(무한 전투)**: 식구 한 마리로 HP를 이어 가며 스테이지를 끝없이 깨요. 5스테이지마다 엘리트가 나오고, 엘리트를 쓰러뜨릴 때마다 버프를 3개 중 하나 골라요.
 - **장비**: 다이아 뽑기(천장 있음), 레벨업(중복 획득 개수 필요), 각성, 슬롯 확장. 야생 배틀·투기장·보스 타워에 모두 적용돼요.
-- **업적 80종**과 **일일 퀘스트 4종**, **랭킹**(숲 레벨 · 분당 수익 · 투기장 레이팅 · 보스 타워).
+- **업적 84종**과 **일일 퀘스트 4종**, **랭킹**(숲 레벨 · 분당 수익 · 투기장 레이팅 · 보스 타워 · 서바이벌).
 
 ### 소셜
 - **친구**: 요청·수락·삭제, 하루 한 번 서로에게 다이아 선물(시스템이 지급하고 선물한 사람은 잃는 게 없어요), 접속 중 표시.
@@ -79,7 +80,7 @@ isopod_grove/
 │       ├── game-state/      게임 핵심: 상태·돌봄·전투·장비·탐색·보스
 │       │   └── game-engine.ts   순수 계산 로직(상수·공식·전투 시뮬레이션)
 │       ├── species/ upgrades/ quests/ achievements/   콘텐츠 데이터(시드)
-│       ├── equipment/ boss/     장비 카탈로그, 보스 층 정보
+│       ├── equipment/ boss/     장비 카탈로그, 보스 층·서바이벌 규칙 안내
 │       ├── auth/ users/         Google 로그인, JWT, 사용자
 │       ├── friends/ friend-chat/ chat/ presence/   소셜
 │       ├── mail/ push/          우편함, 웹 푸시
@@ -88,7 +89,7 @@ isopod_grove/
 │   ├── public/sw.js         푸시 알림 서비스 워커
 │   ├── nginx/               Docker 이미지용 nginx 설정
 │   └── src/
-│       ├── components/      화면(사육장·마켓·전투·보스·장비·친구·우편함·관리자 …)
+│       ├── components/      화면(사육장·마켓·전투·보스·서바이벌·장비·친구·우편함·관리자 …)
 │       ├── hooks/           useGameEngine(상태 로딩·주기 갱신), useBattleReplay
 │       ├── utils/           gameCalc.ts(서버 계산식의 프론트 사본), push.ts
 │       └── api/             API 클라이언트와 타입
@@ -195,7 +196,7 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 
 - **HTTPS가 필요해요**: Google 로그인 콜백과 웹 푸시(서비스 워커)는 HTTPS에서 동작해요.
 - nginx는 `sw.js`와 `index.html`을 캐시하지 않게 해야 새 배포와 푸시 알림이 바로 반영돼요(Docker용 `frontend/nginx/default.conf.template` 참고).
-- **단일 서버 프로세스를 전제로 해요**: 접속 정보, 채팅 도배 방지, 보스·투기장 동시 요청 잠금이 메모리에 있어요. 서버를 여러 대로 늘리려면 이 상태를 Redis 같은 공유 저장소로 옮겨야 해요.
+- **단일 서버 프로세스를 전제로 해요**: 접속 정보, 채팅 도배 방지, 보스·투기장·서바이벌 동시 요청 잠금이 메모리에 있어요. 서버를 여러 대로 늘리려면 이 상태를 Redis 같은 공유 저장소로 옮겨야 해요.
 - 일일 초기화(일일 퀘스트, 무료 탐색권 충전 등)는 **서버의 로컬 시간** 기준이에요.
 
 ---
@@ -241,6 +242,23 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 - **난이도**: 쉬움 ×1 · 보통 ×1.5 · 어려움 ×2 · 매우 어려움 ×3. 배율은 보스 능력치와 골드·경험치 보상에 곱해져요. 깬 층은 난이도마다 따로 기록되고, 다이아·장비는 난이도별 첫 클리어마다 한 번씩 받아요.
 - 보상: 첫 클리어 골드(200 + 120×층, 보스 층 ×3), 보스 층 첫 클리어 시 💎10과 장비 1개. 다시 이기면 골드 25%, 보스 층은 장비 복사본 40%·💎5(2%) 확률.
 
+### 서바이벌
+- 하루 **3회** 입장(입장할 때 차감, 쓰러지거나 그만둬도 돌려주지 않아요). 식구 한 마리를 골라 들어가면 그 식구의 레벨·장비가 반영된 능력치를 **입장할 때 한 번 굴려 고정**해요. 런 도중 레벨이나 장비를 바꿔도 이번 런에는 영향이 없어요.
+- 1스테이지 적은 45 / 9 / 4(HP / 공격 / 방어)이고 스테이지마다 **8%씩(복리)** 강해져요. **5스테이지마다 엘리트**가 나오고 보스 패턴을 써요(30스테이지부터 두 개가 겹쳐요). 100스테이지를 모두 깨면 완주예요.
+- 스테이지를 깰 때마다 최대 HP의 **15%** 를 회복하고, HP는 다음 스테이지로 이어져요. 쓰러지면 런이 끝나요.
+- 엘리트를 쓰러뜨리면 서버가 버프 후보 **3개**를 보여주고 하나를 골라야 다음 구간(5스테이지)이 진행돼요. 같은 버프는 중첩돼요.
+
+| 버프 | 효과 |
+|---|---|
+| 날카로운 이빨 | 공격력 +25% |
+| 단단한 껍질 | 방어력 +35% |
+| 튼튼한 체력 | 최대 HP +25% (늘어난 만큼 바로 회복) |
+| 숲의 휴식 | HP를 최대의 50% 회복 |
+| 빠른 회복 | 스테이지를 깰 때마다 회복량 +5%p |
+
+- 보상은 스테이지를 깰 때마다 바로 받아요: 골드 `15 + 5×스테이지`, 그 식구의 전투 경험치 `6 + 2×스테이지`. 이전 최고 기록을 넘어 새로 지나간 5스테이지 단위마다 💎2, 10 / 20 / 30 / 40스테이지에 처음 도달하면 희귀 / 에픽 / 전설 / 신화 장비를 1개 받아요.
+- 진행 중인 런은 서버에 저장돼요. 새로고침하거나 다른 기기로 들어와도 같은 선택지가 그대로 보여요.
+
 ### 장비
 - 뽑기 1회 💎40, 10연차 💎360(마지막에 희귀 이상 보장). 등급 확률 55 / 28 / 12 / 4 / 1%, **50회 연속** 전설 이상이 안 나오면 50번째는 확정.
 - 종류: 무기(공격) · 방어구(방어) · 장신구(HP), 총 30종. 효과 = 등급별 기본값(2 / 3 / 5 / 7 / 10%) × (1 + 0.15 × (레벨 − 1) + 0.05 × 각성 횟수).
@@ -261,12 +279,13 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 | 영역 | 경로 |
 |---|---|
 | 인증 | `GET auth/google` · `GET auth/google/callback` · `GET auth/me` · `POST auth/profile-message` |
-| 콘텐츠 | `GET species` · `upgrades` · `quests` · `achievements` · `equipment` · `boss` |
+| 콘텐츠 | `GET species` · `upgrades` · `quests` · `achievements` · `equipment` · `boss` · `survival` |
 | 게임 상태 | `GET game-state` · `POST game-state/{advance, care, observe, collect, explore, sell, upgrade, terrariums, move, claim, claim-achievement, set-nickname, species-nickname}` |
 | 전투 | `POST game-state/{battle, train, pvp/defense, pvp/battle, boss/battle}` · `GET game-state/pvp/opponent` |
+| 서바이벌 | `GET survival`(규칙 안내) · `GET game-state/survival`(진행 상태) · `POST game-state/survival/{start, choose, retire}` |
 | 장비 | `POST game-state/equipment/{pull, level-up, awaken, equip, expand-slot}` |
 | 프로필 | `GET game-state/profile/:userId` |
-| 랭킹 | `GET leaderboard/{level, income, pvp, boss}` |
+| 랭킹 | `GET leaderboard/{level, income, pvp, boss, survival}` |
 | 친구 | `GET friends` · `GET friends/search` · `POST friends/{request, accept, decline, remove, gift}` |
 | 친구 채팅 | `GET friend-chat/unread` · `GET/POST friend-chat/:friendId/messages` · `DELETE friend-chat/:friendId/messages/:messageId` · `POST friend-chat/reports` |
 | 공동 채팅·접속 | `GET/POST chat/messages` · `GET presence/online` |
@@ -287,11 +306,11 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 |---|---|
 | `game-state/game-engine.ts` | `frontend/src/utils/gameCalc.ts` |
 
-예: 탐색 비용(`EXPLORE_COST_*`), 장비 효과, 전투 스탯, 보스 난이도 진행도 필드, 업적 진행도 계산 등. 보스 층의 능력치·보상은 서버가 `GET /boss`로 내려줘서 프론트에 계산식이 없어요.
+예: 탐색 비용(`EXPLORE_COST_*`), 장비 효과, 전투 스탯, 보스 난이도 진행도 필드, 업적 진행도 계산 등. 보스 층의 능력치·보상과 서바이벌의 규칙·버프 목록은 서버가 `GET /boss`, `GET /survival`로 내려줘서 프론트에 계산식이 없어요.
 
 ### 데이터의 기준
 - 종·업그레이드·퀘스트·업적은 **시드 파일이 기준**이에요. 서버가 시작될 때마다 DB에 덮어써요(upsert). 종의 분양가와 분당 수익은 `species.seed-data.ts`의 `RARITIES` 한 곳에서 정해요.
-- 장비 카탈로그(`equipment/equipment.data.ts`)와 보스 층 정보(`getBossFloor`)는 DB에 저장하지 않고 **코드가 기준**이에요.
+- 장비 카탈로그(`equipment/equipment.data.ts`)와 보스 층 정보(`getBossFloor`), 서바이벌 적 공식(`getSurvivalEnemy`)은 DB에 저장하지 않고 **코드가 기준**이에요.
 - 새 업적 통계를 추가하려면 `AchievementStatKey`(백엔드 스키마), `game-engine.ts`의 `getAchievementProgress`, 프론트 `types.ts`·`gameCalc.ts`, 업적 아이콘(`AchievementsView.tsx`)을 함께 고쳐요.
 
 ### Mongoose 주의점

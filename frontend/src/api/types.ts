@@ -38,6 +38,7 @@ export interface DailyProgress {
   explore: number;
   // 오늘 쓴 보스 타워 도전 횟수. 예전 데이터에는 없을 수 있다.
   bossAttempts?: number;
+  survivalAttempts?: number;
   claimed: string[];
 }
 
@@ -64,6 +65,9 @@ export interface Stats {
   // 투기장 현재 연승 / 최고 연승. 예전 데이터에는 없을 수 있다.
   pvpWinStreak?: number;
   bestPvpWinStreak?: number;
+  // 서바이벌 최고 스테이지 / 입장 횟수. 예전 데이터에는 없을 수 있다.
+  highestSurvivalStage?: number;
+  survivalRuns?: number;
 }
 
 export interface LogEntry {
@@ -160,7 +164,8 @@ export type AchievementStatKey =
   | 'equipmentSlots'
   | 'highestBossFloor'
   | 'bossWins'
-  | 'bestPvpWinStreak';
+  | 'bestPvpWinStreak'
+  | 'highestSurvivalStage';
 
 export interface Achievement {
   achievementId: string;
@@ -574,6 +579,102 @@ export interface BossCatalog {
   dailyAttempts: number;
   difficulties: BossDifficultyInfo[];
   floors: BossFloorInfo[];
+}
+
+export type SurvivalBuffId = 'atk' | 'def' | 'hp' | 'heal' | 'regen';
+
+export interface SurvivalBuffInfo {
+  id: SurvivalBuffId;
+  name: string;
+  description: string;
+}
+
+// 서바이벌 규칙 안내(서버가 내려준다)
+export interface SurvivalInfo {
+  dailyAttempts: number;
+  maxStage: number;
+  eliteEvery: number;
+  healRate: number;
+  buffs: SurvivalBuffInfo[];
+  rewards: {
+    goldBase: number;
+    goldPerStage: number;
+    xpBase: number;
+    xpPerStage: number;
+    milestoneEvery: number;
+    milestoneDiamonds: number;
+    firstReach: { stage: number; rarity: number }[];
+  };
+}
+
+// 진행 중인 런(능력치는 버프까지 반영한 값)
+export interface SurvivalRunView {
+  speciesId: string;
+  speciesName: string;
+  level: number;
+  stage: number;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  healRate: number;
+  buffs: { atk: number; def: number; hp: number; regen: number };
+  choices: SurvivalBuffInfo[];
+  goldEarned: number;
+  xpEarned: number;
+  diamondsEarned: number;
+}
+
+export interface SurvivalStatus {
+  run: SurvivalRunView | null;
+  attemptsLeft: number;
+  bestStage: number;
+}
+
+export interface SurvivalStageView {
+  stage: number;
+  isElite: boolean;
+  patterns: BossPatternInfo[];
+  enemy: {
+    speciesId: string;
+    name: string;
+    image?: string;
+    filter: string;
+    rarity: number;
+    stats: CombatStats;
+  };
+  hpBefore: number;
+  hpAfter: number;
+  maxHp: number;
+  won: boolean;
+  log: BattleTurn[]; // 엘리트와 마지막(패배) 전투에만 있다
+}
+
+export interface SurvivalResponse {
+  gameState: GameState;
+  message: string;
+  status: 'choose' | 'dead' | 'cleared' | 'retired';
+  stages: SurvivalStageView[];
+  run: SurvivalRunView | null;
+  mine?: {
+    speciesId: string;
+    name: string;
+    image?: string;
+    filter: string;
+    rarity: number;
+    level: number;
+    stats: CombatStats;
+  };
+  attemptsLeft: number;
+  summary: {
+    finalStage: number;
+    bestStage: number;
+    newBest: boolean;
+    gold: number;
+    xp: number;
+    diamonds: number;
+    equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number }[];
+  };
 }
 
 export interface BossBattleResponse {

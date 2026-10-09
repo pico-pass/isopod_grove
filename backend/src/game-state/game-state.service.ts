@@ -9,10 +9,12 @@ import { Model, Types } from 'mongoose';
 import {
   GameState,
   GameStateDocument,
+  SurvivalRun,
   Terrarium,
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
+import type { SurvivalBuffId, SurvivalState } from './game-engine';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -75,10 +77,21 @@ import {
   PVP_WIN_SPECIES_XP,
   SPECIES_NICKNAME_MAX_LENGTH,
   STEP_SECONDS,
+  SURVIVAL_BUFFS,
+  SURVIVAL_DAILY_ATTEMPTS,
+  SURVIVAL_FIRST_REACH_EQUIPMENT,
+  SURVIVAL_GOLD_BASE,
+  SURVIVAL_GOLD_PER_STAGE,
+  SURVIVAL_MAX_STAGE,
+  SURVIVAL_MILESTONE_DIAMONDS,
+  SURVIVAL_MILESTONE_EVERY,
+  SURVIVAL_SPECIES_XP_BASE,
+  SURVIVAL_SPECIES_XP_PER_STAGE,
   TRAIN_COOLDOWN_MS_BY_INTENSITY,
   TRAIN_EXTREME_DIAMOND_COST,
   TRAIN_EXTREME_XP_MULTIPLIER,
   TRAIN_XP_BY_INTENSITY,
+  applySurvivalBuff,
   applyStatBonuses,
   canBreedInEnvironment,
   clamp,
@@ -100,9 +113,11 @@ import {
   getLevel,
   getPopulationCount,
   getTerrariumCost,
+  getSurvivalStats,
   getTrainCost,
   isComfortable,
   pickBossSpecies,
+  playSurvivalSegment,
   pickEquipmentOfRarity,
   pickRandomOfRarity,
   rollBossStats,
@@ -111,6 +126,7 @@ import {
   rollEquipmentRarity,
   summarizeEquipment,
   rollRarity,
+  rollSurvivalChoices,
   scaleBossStats,
   simulateBattle,
   simulateBossBattle,
@@ -150,6 +166,8 @@ export class GameStateService {
   private readonly bossInFlight = new Set<string>();
   // 투기장도 같은 이유로 막는다(연타로 같은 상대를 두 번 이기는 것 방지).
   private readonly pvpInFlight = new Set<string>();
+  // 서바이벌도 같은 이유로 막는다(진행 상태를 읽고 쓰는 중에 같은 유저의 요청이 겹치면 보상이 두 번 지급될 수 있다).
+  private readonly survivalInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -1180,6 +1198,286 @@ export class GameStateService {
     };
   }
 
+  // ---- 서바이벌(무한 전투) ----
+  // 진행 중인 런을 서버가 들고 있다가, 입장·버프 선택 때마다 "다음 선택이 필요하거나 쓰러질 때까지"를 한 번에 진행한다.
+  private async withSurvivalLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.survivalInFlight.has(userId)) {
+      throw new BadRequestException('서바이벌을 진행하는 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.survivalInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.survivalInFlight.delete(userId);
+    }
+  }
+
+  private toSurvivalState(run: SurvivalRun): SurvivalState {
+    return {
+      stage: run.stage,
+      hp: run.hp,
+      baseHp: run.baseHp,
+      baseAtk: run.baseAtk,
+      baseDef: run.baseDef,
+      buffs: { atk: run.buffs.atk, def: run.buffs.def, hp: run.buffs.hp, regen: run.buffs.regen },
+    };
+  }
+
+  // 화면에 보여줄 현재 런 상태(능력치는 버프까지 반영한 값)
+  private toSurvivalRunView(run: SurvivalRun, speciesName: string) {
+    const stats = getSurvivalStats(this.toSurvivalState(run));
+    return {
+      speciesId: run.speciesId,
+      speciesName,
+      level: run.level,
+      stage: run.stage,
+      hp: run.hp,
+      maxHp: stats.maxHp,
+      atk: stats.atk,
+      def: stats.def,
+      healRate: stats.healRate,
+      buffs: { atk: run.buffs.atk, def: run.buffs.def, hp: run.buffs.hp, regen: run.buffs.regen },
+      choices: run.choices
+        .map((id) => SURVIVAL_BUFFS.find((b) => b.id === id))
+        .filter((b): b is (typeof SURVIVAL_BUFFS)[number] => !!b),
+      goldEarned: run.goldEarned,
+      xpEarned: run.xpEarned,
+      diamondsEarned: run.diamondsEarned,
+    };
+  }
+
+  async getSurvivalStatus(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.resetDailyIfNeeded(gameState);
+    const run = gameState.survivalRun;
+    const species = run ? await this.speciesService.findOne(run.speciesId) : null;
+    return {
+      run: run ? this.toSurvivalRunView(run, this.displayNameFor(gameState, run.speciesId, species?.name ?? run.speciesId)) : null,
+      attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+      bestStage: gameState.stats.highestSurvivalStage || 0,
+    };
+  }
+
+  // 식구 한 마리로 입장해서 첫 구간(첫 엘리트를 쓰러뜨리거나 쓰러질 때까지)을 진행한다. 입장 횟수는 여기서 센다.
+  async survivalStart(userId: string, speciesId: string) {
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+      if (!(this.totalOf(gameState, speciesId) > 0)) {
+        throw new BadRequestException('아직 만나지 못한 식구예요.');
+      }
+      if (gameState.survivalRun) {
+        throw new BadRequestException('진행 중인 서바이벌이 있어요. 이어서 하거나 포기해 주세요.');
+      }
+      const used = gameState.daily.survivalAttempts || 0;
+      if (used >= SURVIVAL_DAILY_ATTEMPTS) {
+        throw new BadRequestException(
+          `오늘의 서바이벌 입장 ${SURVIVAL_DAILY_ATTEMPTS}회를 모두 썼어요. 내일 다시 도전할 수 있어요.`,
+        );
+      }
+      const species = await this.speciesService.findOne(speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+      // 입장할 때의 능력치(레벨·장비 반영, 개체 편차 포함)를 한 번만 굴려서 런이 끝날 때까지 쓴다.
+      const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
+      const rolled = rollCombatStats(
+        species.rarity,
+        level,
+        Math.random,
+        computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
+      );
+      gameState.daily.survivalAttempts = used + 1;
+      gameState.stats.survivalRuns = (gameState.stats.survivalRuns || 0) + 1;
+      gameState.survivalRun = {
+        speciesId,
+        level,
+        baseHp: rolled.hp,
+        baseAtk: rolled.atk,
+        baseDef: rolled.def,
+        hp: rolled.hp,
+        stage: 0,
+        buffs: { atk: 0, def: 0, hp: 0, regen: 0 },
+        choices: [],
+        goldEarned: 0,
+        xpEarned: 0,
+        diamondsEarned: 0,
+        startedAt: Date.now(),
+      };
+      return this.advanceSurvival(gameState, species, '입장');
+    });
+  }
+
+  // 대기 중인 버프 중 하나를 골라 적용하고 다음 구간을 진행한다.
+  async survivalChoose(userId: string, buffId: string) {
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.survivalRun;
+      if (!run) throw new BadRequestException('진행 중인 서바이벌이 없어요.');
+      if (run.choices.length === 0) throw new BadRequestException('지금은 고를 버프가 없어요.');
+      if (!run.choices.includes(buffId)) throw new BadRequestException('제시된 버프 중에서 골라 주세요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+      const applied = applySurvivalBuff(this.toSurvivalState(run), buffId as SurvivalBuffId);
+      run.hp = applied.hp;
+      run.buffs = applied.buffs;
+      run.choices = [];
+      const buffName = SURVIVAL_BUFFS.find((b) => b.id === buffId)?.name ?? buffId;
+      return this.advanceSurvival(gameState, species, `${buffName} 선택`);
+    });
+  }
+
+  // 서바이벌을 그만둔다. 지금까지 깬 스테이지의 보상은 이미 지급됐으니 잃는 것은 없다.
+  async survivalRetire(userId: string) {
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const run = gameState.survivalRun;
+      if (!run) throw new BadRequestException('진행 중인 서바이벌이 없어요.');
+      const stage = run.stage;
+      gameState.survivalRun = null;
+      const message = `서바이벌을 ${stage}스테이지에서 마쳤어요. 지금까지의 보상은 이미 받았어요.`;
+      this.pushLog(gameState, 'leaf', `서바이벌 - ${message}`);
+      await gameState.save();
+      return {
+        gameState,
+        message,
+        status: 'retired' as const,
+        stages: [],
+        run: null,
+        attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+        summary: { finalStage: stage, bestStage: gameState.stats.highestSurvivalStage || 0, newBest: false, gold: 0, xp: 0, diamonds: 0, equipment: [] },
+      };
+    });
+  }
+
+  // 저장된 런을 다음 구간까지 진행하고, 이번에 깬 스테이지의 보상을 지급한 뒤 상태를 저장한다.
+  private async advanceSurvival(
+    gameState: GameStateDocument,
+    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    reason: string,
+  ) {
+    const run = gameState.survivalRun as SurvivalRun;
+    const segment = playSurvivalSegment(this.toSurvivalState(run));
+
+    // 보상: 깬 스테이지마다 골드·종 경험치, 이전 최고 기록을 넘은 구간에는 5스테이지 단위 다이아와 첫 도달 장비
+    const bestBefore = gameState.stats.highestSurvivalStage || 0;
+    let best = bestBefore;
+    let gold = 0;
+    let xp = 0;
+    let diamonds = 0;
+    const equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number }[] = [];
+    for (const st of segment.stages) {
+      if (!st.won) continue;
+      gold += SURVIVAL_GOLD_BASE + SURVIVAL_GOLD_PER_STAGE * st.stage;
+      xp += SURVIVAL_SPECIES_XP_BASE + SURVIVAL_SPECIES_XP_PER_STAGE * st.stage;
+      if (st.stage > best) {
+        best = st.stage;
+        if (st.stage % SURVIVAL_MILESTONE_EVERY === 0) diamonds += SURVIVAL_MILESTONE_DIAMONDS;
+        const rarity = SURVIVAL_FIRST_REACH_EQUIPMENT[st.stage];
+        if (rarity !== undefined) {
+          const picked = pickEquipmentOfRarity(rarity, Math.random());
+          const { item, isNew } = this.grantEquipment(gameState, picked.equipmentId);
+          equipment.push({ itemId: picked.equipmentId, name: picked.name, rarity: picked.rarity, isNew, copies: item.copies });
+        }
+      }
+    }
+    gameState.coins += gold;
+    gameState.stats.earned += gold;
+    gameState.diamonds += diamonds;
+    gameState.stats.highestSurvivalStage = best;
+    const beforeXp = gameState.battleXp.get(species.speciesId) || 0;
+    const levelBefore = getBattleLevel(beforeXp);
+    gameState.battleXp.set(species.speciesId, beforeXp + xp);
+    const levelAfter = getBattleLevel(beforeXp + xp);
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, levelAfter);
+
+    const displayName = this.displayNameFor(gameState, species.speciesId, species.name);
+    const finalStage = segment.state.stage;
+    run.stage = segment.state.stage;
+    run.hp = segment.state.hp;
+    run.goldEarned += gold;
+    run.xpEarned += xp;
+    run.diamondsEarned += diamonds;
+
+    const status = segment.status;
+    let message: string;
+    let runView: ReturnType<GameStateService['toSurvivalRunView']> | null = null;
+    if (status === 'choose') {
+      run.choices = rollSurvivalChoices();
+      runView = this.toSurvivalRunView(run, displayName);
+      message = `엘리트를 쓰러뜨렸어요! ${finalStage}스테이지 돌파 — 버프를 하나 골라 주세요.`;
+    } else {
+      const totals = { gold: run.goldEarned, xp: run.xpEarned, diamonds: run.diamondsEarned };
+      gameState.survivalRun = null;
+      message =
+        status === 'cleared'
+          ? `🏆 ${SURVIVAL_MAX_STAGE}스테이지를 모두 돌파했어요! (이번 런 +${totals.gold.toLocaleString('ko-KR')} G)`
+          : `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. 이번 런 +${totals.gold.toLocaleString('ko-KR')} G · 경험치 +${totals.xp}${totals.diamonds ? ` · 💎 ${totals.diamonds}개` : ''}`;
+    }
+    if (best > bestBefore) message += ` 🆕 최고 기록 ${best}스테이지!`;
+    if (equipment.length) message += ` · 🎒 ${equipment.map((e) => e.name).join(', ')} 획득`;
+    if (levelAfter > levelBefore) message += ` 🆙 ${displayName}이(가) 전투 Lv.${levelAfter}로 성장했어요!`;
+    this.pushLog(gameState, status === 'dead' ? 'leaf' : 'trophy', `서바이벌(${reason}) - ${message}`);
+
+    // 화면용 스테이지 요약. 전투 로그는 엘리트와 마지막(패배) 전투에만 담아 응답을 가볍게 한다.
+    const speciesList = await this.speciesService.findAll();
+    const mineStats = getSurvivalStats(this.toSurvivalState(run));
+    const maxHp = mineStats.maxHp;
+    const stages = segment.stages.map((st, i) => {
+      const enemySpecies = pickRandomOfRarity(speciesList, st.speciesRarity, Math.random());
+      const keepLog = st.isElite || i === segment.stages.length - 1;
+      return {
+        stage: st.stage,
+        isElite: st.isElite,
+        patterns: st.patterns.map((p) => BOSS_PATTERNS[p]),
+        enemy: {
+          speciesId: enemySpecies.speciesId,
+          name: enemySpecies.name,
+          image: enemySpecies.image,
+          filter: enemySpecies.filter,
+          rarity: enemySpecies.rarity,
+          stats: st.enemyStats,
+        },
+        hpBefore: st.hpBefore,
+        hpAfter: st.hpAfter,
+        maxHp,
+        won: st.won,
+        log: keepLog ? st.log : [],
+      };
+    });
+
+    await gameState.save();
+    return {
+      gameState,
+      message,
+      status,
+      stages,
+      run: runView,
+      // 전투 재생 화면에 쓰는 내 정보(능력치는 이번 구간에 적용된 값 = 버프 반영, HP는 최대 HP)
+      mine: {
+        speciesId: species.speciesId,
+        name: displayName,
+        image: species.image,
+        filter: species.filter,
+        rarity: species.rarity,
+        level: run.level,
+        stats: { hp: maxHp, atk: mineStats.atk, def: mineStats.def },
+      },
+      attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+      summary: {
+        finalStage,
+        bestStage: best,
+        newBest: best > bestBefore,
+        gold,
+        xp,
+        diamonds,
+        equipment,
+      },
+    };
+  }
+
   // ---- 장비 ----
   private findEquipment(gameState: GameStateDocument, itemId: string) {
     const item = gameState.equipment.find((e) => e.itemId === itemId);
@@ -1771,6 +2069,7 @@ export class GameStateService {
         births: 0,
         explore: 0,
         bossAttempts: 0,
+        survivalAttempts: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.

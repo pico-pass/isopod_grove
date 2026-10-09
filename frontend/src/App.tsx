@@ -15,6 +15,7 @@ import { RankingView } from './components/RankingView';
 import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
 import { BossView } from './components/BossView';
+import { SurvivalView } from './components/SurvivalView';
 import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
 import { MailView } from './components/MailView';
@@ -56,6 +57,7 @@ function App() {
     incomeLeaderboard,
     pvpLeaderboard,
     bossLeaderboard,
+    survivalLeaderboard,
     friendsCount,
     mailSummary,
     refreshMailSummary,
@@ -242,6 +244,7 @@ function App() {
               incomeLeaderboard={incomeLeaderboard}
               pvpLeaderboard={pvpLeaderboard}
               bossLeaderboard={bossLeaderboard}
+              survivalLeaderboard={survivalLeaderboard}
               loading={leaderboardLoading}
               onRefresh={reloadLeaderboards}
               onOpenProfile={setProfileTarget}
@@ -266,6 +269,17 @@ function App() {
               equipmentCatalog={equipmentCatalog}
               equipmentBonuses={equipmentBonuses}
               onBattle={(speciesId, floor, difficulty) => runAction(() => api.bossBattle(speciesId, floor, difficulty))}
+            />
+          )}
+          {view === 'survival' && (
+            <SurvivalView
+              gameState={gameState}
+              species={displaySpecies}
+              equipmentBonuses={equipmentBonuses}
+              onStart={(speciesId) => runAction(() => api.survivalStart(speciesId))}
+              onChoose={(buffId) => runAction(() => api.survivalChoose(buffId))}
+              onRetire={() => runAction(() => api.survivalRetire())}
+              showToast={showToast}
             />
           )}
           {view === 'pvp' && (

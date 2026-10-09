@@ -765,6 +765,199 @@ export function simulateBossBattle(
   return { winner: myHp / mine.hp >= bossHp / boss.hp ? 'me' : 'enemy', log };
 }
 
+// ---- 서바이벌(무한 전투) ----
+// 식구 한 마리로 HP를 이어가며 적을 계속 쓰러뜨린다. 5스테이지마다 엘리트(보스 패턴)가 나오고, 엘리트를 쓰러뜨리면
+// 버프 3개 중 하나를 골라 이어간다. 내 HP가 0이 되면 끝이고, 깬 스테이지 수가 기록이다.
+// 진행 중인 런은 서버(GameState.survivalRun)에 저장돼서, 입장할 때 굴린 내 능력치는 런이 끝날 때까지 고정이다.
+export const SURVIVAL_DAILY_ATTEMPTS = 3; // 하루 입장 횟수(입장할 때 센다)
+export const SURVIVAL_MAX_STAGE = 100; // 안전 상한(도달할 수 없는 값). 넘으면 완주로 끝난다.
+export const SURVIVAL_ELITE_EVERY = 5;
+export const SURVIVAL_STAGE_GROWTH = 1.08; // 스테이지마다 적 능력치가 8%씩(복리) 늘어난다
+export const SURVIVAL_CLEAR_HEAL_RATE = 0.15; // 스테이지를 깰 때마다 최대 HP의 15% 회복
+export const SURVIVAL_GOLD_BASE = 15;
+export const SURVIVAL_GOLD_PER_STAGE = 5;
+export const SURVIVAL_SPECIES_XP_BASE = 6;
+export const SURVIVAL_SPECIES_XP_PER_STAGE = 2;
+export const SURVIVAL_MILESTONE_EVERY = 5; // 이전 최고 기록을 넘어 새로 지나간 5스테이지 단위마다
+export const SURVIVAL_MILESTONE_DIAMONDS = 2; // 다이아를 받는다
+// 평생 처음 도달하는 스테이지에서 받는 장비 복사본(스테이지 → 장비 희귀도 0~4)
+export const SURVIVAL_FIRST_REACH_EQUIPMENT: Record<number, number> = { 10: 1, 20: 2, 30: 3, 40: 4 };
+export const SURVIVAL_CHOICE_COUNT = 3;
+
+export type SurvivalBuffId = 'atk' | 'def' | 'hp' | 'heal' | 'regen';
+export const SURVIVAL_ATK_BUFF = 0.25; // 공격력 +25%(기본값 기준, 중첩하면 더해진다)
+export const SURVIVAL_DEF_BUFF = 0.35; // 방어는 피해 계산에서 절반만 반영돼서 크게 준다
+export const SURVIVAL_HP_BUFF = 0.25;
+export const SURVIVAL_HEAL_BUFF = 0.5; // 최대 HP의 50% 즉시 회복
+export const SURVIVAL_REGEN_BUFF = 0.05; // 스테이지를 깰 때의 회복량 +5%p
+
+export interface SurvivalBuffInfo {
+  id: SurvivalBuffId;
+  name: string;
+  description: string;
+}
+export const SURVIVAL_BUFFS: readonly SurvivalBuffInfo[] = [
+  { id: 'atk', name: '날카로운 이빨', description: `공격력 +${Math.round(SURVIVAL_ATK_BUFF * 100)}%` },
+  { id: 'def', name: '단단한 껍질', description: `방어력 +${Math.round(SURVIVAL_DEF_BUFF * 100)}%` },
+  {
+    id: 'hp',
+    name: '튼튼한 체력',
+    description: `최대 HP +${Math.round(SURVIVAL_HP_BUFF * 100)}% (늘어난 만큼 바로 회복)`,
+  },
+  { id: 'heal', name: '숲의 휴식', description: `HP를 최대의 ${Math.round(SURVIVAL_HEAL_BUFF * 100)}% 회복` },
+  {
+    id: 'regen',
+    name: '빠른 회복',
+    description: `스테이지를 깰 때마다 회복량 +${Math.round(SURVIVAL_REGEN_BUFF * 100)}%p`,
+  },
+];
+export const SURVIVAL_BUFF_IDS: readonly SurvivalBuffId[] = SURVIVAL_BUFFS.map((b) => b.id);
+
+export interface SurvivalBuffCounts {
+  atk: number;
+  def: number;
+  hp: number;
+  regen: number;
+}
+
+// 서버에 저장되는 진행 상태(순수 계산용). base*는 입장할 때 굴린 능력치이고, 현재 능력치는 버프 횟수로 계산한다.
+export interface SurvivalState {
+  stage: number; // 마지막으로 깬 스테이지(처음엔 0)
+  hp: number;
+  baseHp: number;
+  baseAtk: number;
+  baseDef: number;
+  buffs: SurvivalBuffCounts;
+}
+
+export function getSurvivalStats(state: Pick<SurvivalState, 'baseHp' | 'baseAtk' | 'baseDef' | 'buffs'>) {
+  return {
+    maxHp: Math.max(1, Math.round(state.baseHp * (1 + SURVIVAL_HP_BUFF * state.buffs.hp))),
+    atk: Math.max(1, Math.round(state.baseAtk * (1 + SURVIVAL_ATK_BUFF * state.buffs.atk))),
+    def: Math.max(1, Math.round(state.baseDef * (1 + SURVIVAL_DEF_BUFF * state.buffs.def))),
+    healRate: SURVIVAL_CLEAR_HEAL_RATE + SURVIVAL_REGEN_BUFF * state.buffs.regen,
+  };
+}
+
+// 스테이지의 적. 5의 배수는 엘리트(능력치가 더 높고 보스 패턴이 붙는다). 30스테이지부터는 패턴이 두 개 겹친다.
+const SURVIVAL_PATTERN_ORDER: readonly BossPattern[] = ['guard', 'regen', 'heavy', 'enrage', 'thorns'];
+export function getSurvivalEnemy(stage: number) {
+  const isElite = stage % SURVIVAL_ELITE_EVERY === 0;
+  const growth = Math.pow(SURVIVAL_STAGE_GROWTH, stage - 1);
+  const stat = (k: keyof CombatStats) =>
+    Math.max(1, Math.round(BOSS_BASE_STATS[k] * growth * (isElite ? BOSS_STAT_MULTIPLIER[k] : 1)));
+  const patterns: BossPattern[] = [];
+  if (isElite) {
+    const index = stage / SURVIVAL_ELITE_EVERY - 1;
+    patterns.push(SURVIVAL_PATTERN_ORDER[index % SURVIVAL_PATTERN_ORDER.length]);
+    if (stage >= 30) patterns.push(SURVIVAL_PATTERN_ORDER[(index + 2) % SURVIVAL_PATTERN_ORDER.length]);
+  }
+  const tier = Math.min(4, Math.floor((stage - 1) / 10));
+  return {
+    stage,
+    isElite,
+    stats: { hp: stat('hp'), atk: stat('atk'), def: stat('def') } as CombatStats,
+    patterns,
+    // 화면에 보일 종의 희귀도(능력치와는 별개). 엘리트는 한 단계 위로 보여준다.
+    speciesRarity: Math.min(4, tier + (isElite ? 1 : 0)),
+  };
+}
+
+// 엘리트를 쓰러뜨린 뒤 보여줄 버프 후보 3개(서로 다르게)
+export function rollSurvivalChoices(random: () => number = Math.random): SurvivalBuffId[] {
+  const pool = [...SURVIVAL_BUFF_IDS];
+  const picked: SurvivalBuffId[] = [];
+  while (picked.length < SURVIVAL_CHOICE_COUNT && pool.length > 0) {
+    picked.push(pool.splice(Math.min(pool.length - 1, Math.floor(random() * pool.length)), 1)[0]);
+  }
+  return picked;
+}
+
+// 버프를 적용한 새 상태를 돌려준다(원본은 바꾸지 않는다).
+export function applySurvivalBuff(state: SurvivalState, buff: SurvivalBuffId): SurvivalState {
+  const next: SurvivalState = { ...state, buffs: { ...state.buffs } };
+  const before = getSurvivalStats(state);
+  if (buff === 'heal') {
+    next.hp = Math.min(before.maxHp, state.hp + Math.round(before.maxHp * SURVIVAL_HEAL_BUFF));
+  } else {
+    next.buffs[buff] += 1;
+    if (buff === 'hp') {
+      // 최대 HP가 늘어난 만큼 현재 HP도 함께 늘어난다.
+      next.hp = state.hp + (getSurvivalStats(next).maxHp - before.maxHp);
+    }
+  }
+  return next;
+}
+
+// 싸움이 끝난 뒤 내 남은 HP. 로그에서 내 HP가 마지막으로 바뀐 값을 찾는다(내가 먼저 쓰러뜨리면 상대 공격이 없어 그대로다).
+function myHpAfterBattle(log: BattleTurn[], startHp: number): number {
+  for (let i = log.length - 1; i >= 0; i--) {
+    const t = log[i];
+    if (t.myHp !== undefined) return t.myHp;
+    if (t.attacker === 'enemy') return t.remainingHp;
+  }
+  return startHp;
+}
+
+export interface SurvivalStageResult {
+  stage: number;
+  isElite: boolean;
+  patterns: BossPattern[];
+  enemyStats: CombatStats;
+  speciesRarity: number;
+  hpBefore: number;
+  hpAfter: number; // 이긴 경우 스테이지 회복까지 반영한 값
+  won: boolean;
+  log: BattleTurn[];
+}
+
+export type SurvivalSegmentStatus = 'choose' | 'dead' | 'cleared';
+
+// 마지막으로 깬 스테이지 다음부터 시작해서 "엘리트를 쓰러뜨려 선택이 필요해질 때", "내가 쓰러질 때", "상한에 도달할 때" 중
+// 먼저 오는 곳까지 자동으로 진행한다.
+export function playSurvivalSegment(
+  start: SurvivalState,
+  random: () => number = Math.random,
+): { state: SurvivalState; stages: SurvivalStageResult[]; status: SurvivalSegmentStatus } {
+  const state: SurvivalState = { ...start, buffs: { ...start.buffs } };
+  const stages: SurvivalStageResult[] = [];
+  const mine = getSurvivalStats(state);
+
+  for (let stage = state.stage + 1; stage <= SURVIVAL_MAX_STAGE; stage++) {
+    const enemy = getSurvivalEnemy(stage);
+    const enemyStats = rollBossStats(enemy.stats, random);
+    const hpBefore = state.hp;
+    const { winner, log } = simulateBossBattle(
+      { hp: hpBefore, atk: mine.atk, def: mine.def },
+      enemyStats,
+      enemy.patterns,
+      random,
+    );
+    const base = {
+      stage,
+      isElite: enemy.isElite,
+      patterns: enemy.patterns,
+      enemyStats,
+      speciesRarity: enemy.speciesRarity,
+      hpBefore,
+      log,
+    };
+    if (winner !== 'me') {
+      stages.push({ ...base, hpAfter: Math.max(0, myHpAfterBattle(log, hpBefore)), won: false });
+      return { state, stages, status: 'dead' };
+    }
+    const healed = Math.min(
+      mine.maxHp,
+      myHpAfterBattle(log, hpBefore) + Math.round(mine.maxHp * mine.healRate),
+    );
+    state.hp = healed;
+    state.stage = stage;
+    stages.push({ ...base, hpAfter: healed, won: true });
+    if (enemy.isElite && stage < SURVIVAL_MAX_STAGE) return { state, stages, status: 'choose' };
+  }
+  return { state, stages, status: 'cleared' };
+}
+
 // ---- 업적 진행도 계산 ----
 // 프론트(gameCalc.ts)에도 같은 함수가 있다. 값을 바꿀 땐 두 곳을 함께 고쳐야 한다.
 export interface AchievementProgressInput {
@@ -792,7 +985,8 @@ export interface AchievementProgressInput {
     | 'equipmentSlots'
     | 'highestBossFloor'
     | 'bossWins'
-    | 'bestPvpWinStreak';
+    | 'bestPvpWinStreak'
+    | 'highestSurvivalStage';
   target?: number;
   rarity?: number;
 }
@@ -821,6 +1015,7 @@ export interface AchievementSubject {
     bossFloorExtreme?: number;
     bossWins: number;
     bestPvpWinStreak: number;
+    highestSurvivalStage?: number; // 서바이벌 최고 스테이지(예전 데이터에는 없을 수 있다)
   };
 }
 
@@ -877,6 +1072,8 @@ export function getAchievementProgress(
     case 'bossWins':
     case 'bestPvpWinStreak':
       return { progress: subject.stats[achievement.statKey], target };
+    case 'highestSurvivalStage':
+      return { progress: subject.stats.highestSurvivalStage ?? 0, target };
     default:
       return { progress: 0, target };
   }

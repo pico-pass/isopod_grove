@@ -19,6 +19,7 @@ import { TrainDto } from './dto/train.dto';
 import { PvpSetDefenseDto } from './dto/pvp-set-defense.dto';
 import { PvpBattleDto } from './dto/pvp-battle.dto';
 import { BossBattleDto } from './dto/boss-battle.dto';
+import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
 import { EquipmentItemDto } from './dto/equipment-item.dto';
@@ -99,6 +100,26 @@ export class GameStateController {
   @Post('boss/battle')
   bossBattle(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossBattleDto) {
     return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor, dto.difficulty);
+  }
+
+  @Get('survival')
+  survivalStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getSurvivalStatus(user.userId);
+  }
+
+  @Post('survival/start')
+  survivalStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: SurvivalStartDto) {
+    return this.gameStateService.survivalStart(user.userId, dto.speciesId);
+  }
+
+  @Post('survival/choose')
+  survivalChoose(@CurrentUser() user: AuthenticatedUser, @Body() dto: SurvivalChooseDto) {
+    return this.gameStateService.survivalChoose(user.userId, dto.buffId);
+  }
+
+  @Post('survival/retire')
+  survivalRetire(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.survivalRetire(user.userId);
   }
 
   @Post('explore')

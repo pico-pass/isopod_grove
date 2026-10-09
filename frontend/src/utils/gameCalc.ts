@@ -406,6 +406,7 @@ export function getAchievementProgress(
     case 'equipmentPulls':
     case 'bossWins':
     case 'bestPvpWinStreak':
+    case 'highestSurvivalStage':
       return { progress: gameState.stats[achievement.statKey] ?? 0, target };
     default:
       return { progress: 0, target };

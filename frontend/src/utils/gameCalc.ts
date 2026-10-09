@@ -13,10 +13,10 @@ export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
 export const SOIL_RATE_BONUS_PER_LEVEL = 0.25;
 export const NURSERY_TIME_REDUCTION_PER_LEVEL = 0.12;
-// 희귀도(일반~신화)별 번식 주기(초): 5분 / 20분 / 60분 / 4시간 / 10시간마다 +1마리
-export const BREED_SECONDS_BY_RARITY = [300, 1200, 3600, 14400, 36000];
+// 희귀도(일반~신화)별 번식 주기(초): 15분 / 60분 / 3시간 / 12시간 / 30시간마다 +1마리
+export const BREED_SECONDS_BY_RARITY = [900, 3600, 10800, 43200, 108000];
 export const MAX_TERRARIUMS = 10;
-export const TERRARIUM_BASE_COST = 2500;
+export const TERRARIUM_BASE_COST = 8750;
 export const TERRARIUM_COST_FACTOR = 2.5;
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치
 export const LEVEL_XP_GROWTH = 1.15; // 레벨이 오를 때마다 필요 경험치가 1.15배씩 늘어난다
@@ -130,7 +130,7 @@ export function getCapacity(spaceLevel: number): number {
   return BASE_CAPACITY + spaceLevel * CAPACITY_PER_LEVEL;
 }
 
-// 사육장을 하나 더 추가하는 비용. ownedCount는 현재 보유한 사육장 수(2번째 = 2,500 G, 이후 2.5배씩).
+// 사육장을 하나 더 추가하는 비용. ownedCount는 현재 보유한 사육장 수(2번째 = 8,750 G, 이후 2.5배씩).
 export function getTerrariumCost(ownedCount: number): number {
   return Math.round(TERRARIUM_BASE_COST * Math.pow(TERRARIUM_COST_FACTOR, ownedCount - 1));
 }

@@ -1008,12 +1008,11 @@ export function playSurvivalSegment(
 
 // ---- 고급 탐색(원정) ----
 // 숲 탐색 비용의 몇십 배를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만난다. 신화는 연속으로 못 만나면 확정이고,
-// 아직 도감에 없는 종이 그 등급에 남아 있으면 그중에서 먼저 나온다. 가격은 지금의 숲 탐색 비용에 비례하되 최소 가격이 있다.
+// 아직 도감에 없는 종이 그 등급에 남아 있으면 그중에서 먼저 나온다. 가격은 지금의 숲 탐색 비용에 정확히 배수만큼 곱한 값이다.
 export interface ExpeditionTier {
   tier: number;
   name: string;
-  multiplier: number; // 숲 탐색 비용에 곱한다
-  minPrice: number;
+  multiplier: number; // 지금의 숲 탐색 비용에 곱한다
   odds: { rarity: number; percent: number }[]; // 합계 100
 }
 export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
@@ -1021,7 +1020,6 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
     tier: 1,
     name: '원정',
     multiplier: 40,
-    minPrice: 100_000,
     odds: [
       { rarity: 2, percent: 80 },
       { rarity: 3, percent: 17 },
@@ -1032,7 +1030,6 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
     tier: 2,
     name: '대원정',
     multiplier: 150,
-    minPrice: 500_000,
     odds: [
       { rarity: 3, percent: 80 },
       { rarity: 4, percent: 20 },
@@ -1046,7 +1043,7 @@ export function getExpeditionTier(tier: number): ExpeditionTier | undefined {
 }
 
 export function getExpeditionPrice(tier: ExpeditionTier, exploreCostSteps: number): number {
-  return Math.max(tier.minPrice, tier.multiplier * getExploreCost(exploreCostSteps));
+  return tier.multiplier * getExploreCost(exploreCostSteps);
 }
 
 // 확률표대로 희귀도를 뽑는다. random은 0 이상 1 미만.

@@ -489,6 +489,14 @@ export const BOSS_DAILY_ATTEMPTS = 5;
 export const BOSS_FLOOR_COUNT = 50;
 export const BOSS_FLOOR_INTERVAL = 5; // 5층마다 보스(패턴이 붙는다)
 export const BOSS_COOLDOWN_MS = 15 * 60_000; // 보스 전투 쿨타임(하루 횟수 제한과 별개로 적용된다)
+// 다이아로 사는 편의 기능. 오늘 N번째 추가 도전의 가격(💎)이고, 배열 길이가 하루에 살 수 있는 최대 횟수다.
+export const BOSS_EXTRA_ATTEMPT_COSTS: readonly number[] = [20, 40, 60];
+export const BOSS_COOLDOWN_SKIP_SECONDS_PER_DIAMOND = 180; // 남은 쿨타임 3분마다 💎1(올림), 꽉 찬 15분이면 💎5
+
+// 쿨타임 건너뛰기 가격: 남은 시간이 길수록 비싸고, 아무리 조금 남았어도 최소 💎1이다.
+export function getBossCooldownSkipCost(remainingMs: number): number {
+  return Math.max(1, Math.ceil(remainingMs / 1000 / BOSS_COOLDOWN_SKIP_SECONDS_PER_DIAMOND));
+}
 
 // 1층 기준 스탯과 층마다 곱해지는 성장률. 보스 층은 체력/공격/방어를 따로 한 번 더 곱한다.
 export const BOSS_BASE_STATS: CombatStats = { hp: 45, atk: 9, def: 4 };
@@ -783,6 +791,10 @@ export const SURVIVAL_MILESTONE_DIAMONDS = 2; // 다이아를 받는다
 // 평생 처음 도달하는 스테이지에서 받는 장비 복사본(스테이지 → 장비 희귀도 0~4)
 export const SURVIVAL_FIRST_REACH_EQUIPMENT: Record<number, number> = { 10: 1, 20: 2, 30: 3, 40: 4 };
 export const SURVIVAL_CHOICE_COUNT = 3;
+// 다이아로 사는 편의 기능
+export const SURVIVAL_EXTRA_ATTEMPT_COSTS: readonly number[] = [30, 60, 90]; // 오늘 N번째 추가 입장 가격(💎)
+export const SURVIVAL_REVIVE_COSTS: readonly number[] = [30, 60, 120]; // 한 런에서 N번째 부활 가격(💎), 길이 = 런당 최대 부활 횟수
+export const SURVIVAL_REVIVE_HP_RATE = 0.6; // 부활하면 최대 HP의 60%로 되살아난다
 
 export type SurvivalBuffId = 'atk' | 'def' | 'hp' | 'heal' | 'regen';
 export const SURVIVAL_ATK_BUFF = 0.25; // 공격력 +25%(기본값 기준, 중첩하면 더해진다)
@@ -956,6 +968,54 @@ export function playSurvivalSegment(
     if (enemy.isElite && stage < SURVIVAL_MAX_STAGE) return { state, stages, status: 'choose' };
   }
   return { state, stages, status: 'cleared' };
+}
+
+// ---- 부스트 상점 ----
+// 골드로 일정 시간 동안 수익·번식·전투 경험치를 2배로 만든다. 부스트는 {kind, from, until} 시간대로 저장하고,
+// 시간이 흐르는 계산(advance)은 처리하는 구간과 겹친 부분에만 배율을 적용한다.
+export type BoostKind = 'income' | 'breed' | 'battleXp';
+export const BOOST_KINDS: readonly BoostKind[] = ['income', 'breed', 'battleXp'];
+export const BOOST_MULTIPLIER = 2;
+// 살 수 있는 길이. 4시간짜리는 1시간짜리 4개보다 10% 싸다.
+export const BOOST_OFFERS: readonly { hours: number; discount: number }[] = [
+  { hours: 1, discount: 1 },
+  { hours: 4, discount: 0.9 },
+];
+export const BOOST_MAX_STACK_HOURS = 24; // 남은 시간이 이만큼 넘게는 쌓을 수 없다
+// 1시간 가격 = (계정의 시간당 최대 수익) × 이 비율. 번식·경험치는 수익과 같은 값, 수익 부스트는 15% 싸다(손익은 거의 같다).
+export const BOOST_PRICE_RATE: Record<BoostKind, number> = { income: 0.85, breed: 1, battleXp: 1 };
+export const BOOST_MIN_PRICE_PER_HOUR = 1000;
+
+export interface BoostWindow {
+  kind: string;
+  from: number;
+  until: number;
+}
+
+export const BOOST_INFO: readonly { kind: BoostKind; name: string; description: string }[] = [
+  { kind: 'income', name: '수익 부스트', description: `자동 수익이 ${BOOST_MULTIPLIER}배가 돼요.` },
+  { kind: 'breed', name: '번식 촉진', description: `번식 진행이 ${BOOST_MULTIPLIER}배 빨라져요.` },
+  { kind: 'battleXp', name: '전투 경험치 부스트', description: `전투·훈련·보스·서바이벌 경험치가 ${BOOST_MULTIPLIER}배가 돼요.` },
+];
+
+// 시간당 가격. 계정의 시간당 최대 수익(쾌적한 환경 기준)에 비례하고, 아무리 작아도 1시간에 1,000 G는 받는다.
+export function getBoostPrice(kind: BoostKind, hours: number, hourlyIncome: number): number {
+  const offer = BOOST_OFFERS.find((o) => o.hours === hours);
+  if (!offer) return NaN;
+  const perHour = Math.max(BOOST_MIN_PRICE_PER_HOUR, hourlyIncome * BOOST_PRICE_RATE[kind]);
+  return Math.round((perHour * hours * offer.discount) / 10) * 10;
+}
+
+// [startMs, endMs] 구간에서 부스트가 켜져 있던 비율만큼 평균 배율을 돌려준다(전부 켜져 있으면 2, 없으면 1).
+export function getBoostFactor(boosts: readonly BoostWindow[], kind: BoostKind, startMs: number, endMs: number): number {
+  const span = endMs - startMs;
+  if (span <= 0) return 1;
+  let covered = 0;
+  for (const b of boosts) {
+    if (b.kind !== kind) continue;
+    covered += Math.max(0, Math.min(endMs, b.until) - Math.max(startMs, b.from));
+  }
+  return 1 + (BOOST_MULTIPLIER - 1) * Math.min(1, covered / span);
 }
 
 // ---- 업적 진행도 계산 ----

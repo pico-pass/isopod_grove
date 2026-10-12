@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type {
+  BuyAttemptResponse,
+  ExtraAttemptInfo,
   GameState,
   Species,
   SurvivalBuffInfo,
@@ -23,6 +25,7 @@ import { FighterCard } from './FighterCard';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
 
 const BUFF_ICONS: Record<string, string> = { atk: '⚔️', def: '🛡️', hp: '❤️', heal: '🌿', regen: '💧' };
+const NO_EXTRA: ExtraAttemptInfo = { bought: 0, max: 0, nextCost: null };
 
 function HpBar({ hp, maxHp }: { hp: number; maxHp: number }) {
   const ratio = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
@@ -45,6 +48,8 @@ export function SurvivalView({
   onStart,
   onChoose,
   onRetire,
+  onRevive,
+  onBuyAttempt,
   showToast,
 }: {
   gameState: GameState;
@@ -53,6 +58,8 @@ export function SurvivalView({
   onStart: (speciesId: string) => Promise<SurvivalResponse | null>;
   onChoose: (buffId: string) => Promise<SurvivalResponse | null>;
   onRetire: () => Promise<SurvivalResponse | null>;
+  onRevive: () => Promise<SurvivalResponse | null>;
+  onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
   showToast: (message: string, isError?: boolean) => void;
 }) {
   const [info, setInfo] = useState<SurvivalInfo | null>(null);
@@ -86,6 +93,7 @@ export function SurvivalView({
 
   const run: SurvivalRunView | null = segment ? segment.run : (status?.run ?? null);
   const attemptsLeft = segment ? segment.attemptsLeft : (status?.attemptsLeft ?? 0);
+  const extra = status?.extra ?? NO_EXTRA;
   const bestStage = Math.max(status?.bestStage ?? 0, segment?.summary.bestStage ?? 0, gameState.stats.highestSurvivalStage ?? 0);
 
   const totals = getTotalPopulationBySpecies(gameState);
@@ -98,7 +106,36 @@ export function SurvivalView({
     const last = [...r.stages].reverse().find((s) => s.log.length > 0) ?? null;
     setFocus(last);
     setVisibleTurns(0);
-    setStatus((prev) => ({ run: r.run, attemptsLeft: r.attemptsLeft, bestStage: r.summary.bestStage || prev?.bestStage || 0 }));
+    setStatus((prev) => ({
+      run: r.run,
+      attemptsLeft: r.attemptsLeft,
+      bestStage: r.summary.bestStage || prev?.bestStage || 0,
+      extra: prev?.extra ?? NO_EXTRA,
+    }));
+  };
+
+  // 다이아로 추가 입장을 사면 남은 입장 횟수와 다음 가격을 바로 갱신한다.
+  const buyAttempt = async () => {
+    if (busy) return;
+    setBusy(true);
+    const r = await onBuyAttempt();
+    if (r) {
+      setSegment((prev) => (prev ? { ...prev, attemptsLeft: r.attemptsLeft } : prev));
+      setStatus((prev) => ({
+        run: prev?.run ?? null,
+        attemptsLeft: r.attemptsLeft,
+        bestStage: prev?.bestStage ?? 0,
+        extra: r.extra,
+      }));
+    }
+    setBusy(false);
+  };
+
+  const revive = async () => {
+    if (busy || !run?.dead) return;
+    setBusy(true);
+    apply(await onRevive());
+    setBusy(false);
   };
 
   const start = async () => {
@@ -153,7 +190,8 @@ export function SurvivalView({
       <div className="info-banner">
         ♾️ 식구 한 마리로 입장해서 {info?.eliteEvery ?? 5}스테이지마다 나오는 엘리트(보스 패턴)를 쓰러뜨리면 버프 3개 중 하나를 골라요.
         스테이지를 깰 때마다 최대 HP의 {Math.round((info?.healRate ?? 0.15) * 100)}%가 회복되고, 내 HP가 0이 되면 끝나요. 입장할 때의
-        능력치는 그 런이 끝날 때까지 고정이에요. 스테이지마다 골드·경험치를 받고, 최고 기록을 넘으면 {info?.rewards.milestoneEvery ?? 5}스테이지
+        능력치는 그 런이 끝날 때까지 고정이에요. 쓰러져도 💎로 부활해 이어갈 수 있고(한 번의 도전에 {info?.reviveCosts.length ?? 3}번까지, 살수록 비싸져요),
+        오늘 입장을 모두 쓰면 💎로 추가 입장도 살 수 있어요. 스테이지마다 골드·경험치를 받고, 최고 기록을 넘으면 {info?.rewards.milestoneEvery ?? 5}스테이지
         단위로 💎{info?.rewards.milestoneDiamonds ?? 2}, 10·20·30·40스테이지를 처음 돌파하면 장비 복사본을 받아요.
       </div>
 
@@ -183,6 +221,27 @@ export function SurvivalView({
               {run.buffs.regen > 0 && <span className="mail-chip">💧 빠른 회복 ×{run.buffs.regen}</span>}
             </div>
           )}
+          {run.dead && (
+            <>
+              <p className="nav-caption">
+                💧 {run.speciesName}이(가) 쓰러졌어요
+                {run.revives > 0 ? ` (이번 도전에서 ${run.revives}번 부활했어요)` : ''}
+              </p>
+              {run.reviveCost !== null ? (
+                <button
+                  className="button primary full"
+                  disabled={busy || gameState.diamonds < run.reviveCost}
+                  onClick={() => void revive()}
+                >
+                  💎 {run.reviveCost}개로 부활해서 {run.stage + 1}스테이지부터 이어가기
+                  {gameState.diamonds < run.reviveCost && ' · 다이아가 부족해요'}
+                  <small> (최대 HP의 {Math.round((info?.reviveHpRate ?? 0.6) * 100)}%로 되살아나요)</small>
+                </button>
+              ) : (
+                <p className="empty">더 이상 부활할 수 없어요.</p>
+              )}
+            </>
+          )}
           {run.choices.length > 0 && (
             <>
               <p className="nav-caption">🎁 엘리트를 쓰러뜨렸어요! 버프를 하나 골라 주세요</p>
@@ -198,7 +257,7 @@ export function SurvivalView({
             </>
           )}
           <button className="button secondary full" onClick={() => void retire()} disabled={busy}>
-            여기서 마치기
+            {run.dead ? '부활하지 않고 마치기' : '여기서 마치기'}
           </button>
         </section>
       ) : (
@@ -231,6 +290,16 @@ export function SurvivalView({
                   ? '진행 중...'
                   : '♾️ 서바이벌 입장'}
           </button>
+          {attemptsLeft <= 0 && extra.nextCost !== null && (
+            <button
+              className="button secondary full"
+              disabled={busy || gameState.diamonds < extra.nextCost}
+              onClick={() => void buyAttempt()}
+            >
+              💎 {extra.nextCost}개로 추가 입장 1회 구매 (오늘 {extra.bought}/{extra.max}회 구매)
+              {gameState.diamonds < extra.nextCost && ' · 다이아가 부족해요'}
+            </button>
+          )}
         </>
       )}
 

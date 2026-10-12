@@ -20,6 +20,7 @@ import { PvpSetDefenseDto } from './dto/pvp-set-defense.dto';
 import { PvpBattleDto } from './dto/pvp-battle.dto';
 import { BossBattleDto } from './dto/boss-battle.dto';
 import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
+import { BuyBoostDto } from './dto/boost.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
 import { EquipmentItemDto } from './dto/equipment-item.dto';
@@ -102,6 +103,26 @@ export class GameStateController {
     return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor, dto.difficulty);
   }
 
+  @Get('boosts')
+  boostShop(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getBoostShop(user.userId);
+  }
+
+  @Post('boosts/buy')
+  buyBoost(@CurrentUser() user: AuthenticatedUser, @Body() dto: BuyBoostDto) {
+    return this.gameStateService.buyBoost(user.userId, dto.kind, dto.hours);
+  }
+
+  @Post('boss/buy-attempt')
+  buyBossAttempt(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.buyBossAttempt(user.userId);
+  }
+
+  @Post('boss/skip-cooldown')
+  skipBossCooldown(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.skipBossCooldown(user.userId);
+  }
+
   @Get('survival')
   survivalStatus(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.getSurvivalStatus(user.userId);
@@ -120,6 +141,16 @@ export class GameStateController {
   @Post('survival/retire')
   survivalRetire(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.survivalRetire(user.userId);
+  }
+
+  @Post('survival/buy-attempt')
+  buySurvivalAttempt(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.buySurvivalAttempt(user.userId);
+  }
+
+  @Post('survival/revive')
+  survivalRevive(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.survivalRevive(user.userId);
   }
 
   @Post('explore')

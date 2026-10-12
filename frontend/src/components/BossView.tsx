@@ -3,8 +3,10 @@ import type {
   BossBattleResponse,
   BossCatalog,
   BossDifficultyId,
+  BuyAttemptResponse,
   EquipmentCatalogItem,
   GameState,
+  SkipCooldownResponse,
   Species,
 } from '../api/types';
 import {
@@ -14,7 +16,9 @@ import {
   formatBonusPercent,
   formatDuration,
   formatNumber,
+  getBossAttemptLimit,
   getBossAttemptsLeft,
+  getBossCooldownSkipCost,
   getBossProgress,
   getTotalPopulationBySpecies,
   hasBonuses,
@@ -47,6 +51,8 @@ export function BossView({
   equipmentCatalog,
   equipmentBonuses,
   onBattle,
+  onBuyAttempt,
+  onSkipCooldown,
 }: {
   gameState: GameState;
   species: Species[];
@@ -54,11 +60,14 @@ export function BossView({
   equipmentCatalog: EquipmentCatalogItem[];
   equipmentBonuses: StatBonuses;
   onBattle: (speciesId: string, floor: number, difficulty: BossDifficultyId) => Promise<BossBattleResponse | null>;
+  onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
+  onSkipCooldown: () => Promise<SkipCooldownResponse | null>;
 }) {
   const [selected, setSelected] = useState('');
   const [picked, setPicked] = useState<number | null>(null);
   const [difficultyId, setDifficultyId] = useState<BossDifficultyId>(loadDifficulty);
   const [fighting, setFighting] = useState(false);
+  const [buying, setBuying] = useState(false);
   const [result, setResult] = useState<BossBattleResponse | null>(null);
   const [now, setNow] = useState(0);
   const { visibleTurns, setVisibleTurns, animating, logRef } = useBattleReplay(result?.log);
@@ -79,9 +88,15 @@ export function BossView({
   const floorNo = picked ?? nextFloor;
   const info = floors.find((f) => f.floor === floorNo) ?? null;
   const attemptsLeft = getBossAttemptsLeft(gameState);
+  const attemptLimit = getBossAttemptLimit(gameState);
   const cooldownRemaining = now
     ? Math.max(0, Math.ceil(((gameState.cooldowns.boss || 0) - now) / 1000))
     : 0;
+  // 다이아로 사는 편의 기능: 오늘 도전을 모두 쓰면 추가 도전, 쿨타임 중이면 건너뛰기
+  const extraBought = gameState.daily.bossExtraAttempts ?? 0;
+  const nextExtraCost = catalog?.extraAttemptCosts[extraBought] ?? null;
+  const skipCost =
+    catalog && cooldownRemaining > 0 ? getBossCooldownSkipCost(cooldownRemaining, catalog.cooldownSkipSecondsPerDiamond) : 0;
 
   const totals = getTotalPopulationBySpecies(gameState);
   const owned = species.filter((sp) => (totals[sp.speciesId] || 0) > 0);
@@ -99,6 +114,20 @@ export function BossView({
       if (r.firstClear) setPicked(null);
     }
     setFighting(false);
+  };
+
+  const buyAttempt = async () => {
+    if (buying) return;
+    setBuying(true);
+    await onBuyAttempt();
+    setBuying(false);
+  };
+
+  const skipCooldown = async () => {
+    if (buying) return;
+    setBuying(true);
+    await onSkipCooldown();
+    setBuying(false);
   };
 
   const chooseDifficulty = (id: BossDifficultyId) => {
@@ -128,7 +157,7 @@ export function BossView({
           <h1>
             보스 타워{' '}
             <span>
-              {difficulty.name} 최고 {highest}층 · 오늘 남은 도전 {attemptsLeft}/{BOSS_DAILY_ATTEMPTS}
+              {difficulty.name} 최고 {highest}층 · 오늘 남은 도전 {attemptsLeft}/{attemptLimit}
             </span>
           </h1>
           <p className="subheading">5층마다 패턴을 가진 보스가 기다리고 있어요. 장비와 전투 레벨을 키워 올라가 보세요.</p>
@@ -137,6 +166,7 @@ export function BossView({
 
       <div className="info-banner">
         👹 도전은 승패와 상관없이 하루 {BOSS_DAILY_ATTEMPTS}회이고, 전투 사이에는 {BOSS_COOLDOWN_MINUTES}분 쿨타임이 있어요. 깬 층의 바로 다음 층까지만 열리고, 처음 깰 때는 보상이 커요.
+        도전을 모두 쓰면 💎로 추가 도전을 살 수 있고(하루 최대 {catalog?.extraAttemptCosts.length ?? 3}회, 살수록 비싸져요), 쿨타임은 💎로 건너뛸 수 있어요.
         이미 깬 층은 다시 도전해 골드(보스 층은 장비 복사본·다이아 확률)를 받을 수 있어요.
       </div>
 
@@ -292,6 +322,27 @@ export function BossView({
                     ? '전투가 진행 중이에요...'
                     : `⚔️ ${info.floor}층${info.isBoss ? ' 보스' : ''}에 도전`}
       </button>
+
+      {attemptsLeft <= 0 && nextExtraCost !== null && (
+        <button
+          className="button secondary full"
+          disabled={buying || fighting || animating || gameState.diamonds < nextExtraCost}
+          onClick={() => void buyAttempt()}
+        >
+          💎 {nextExtraCost}개로 추가 도전 1회 구매 (오늘 {extraBought}/{catalog?.extraAttemptCosts.length}회 구매)
+          {gameState.diamonds < nextExtraCost && ' · 다이아가 부족해요'}
+        </button>
+      )}
+      {cooldownRemaining > 0 && attemptsLeft > 0 && skipCost > 0 && (
+        <button
+          className="button secondary full"
+          disabled={buying || fighting || animating || gameState.diamonds < skipCost}
+          onClick={() => void skipCooldown()}
+        >
+          ⏩ 💎 {skipCost}개로 쿨타임 건너뛰기
+          {gameState.diamonds < skipCost && ' · 다이아가 부족해요'}
+        </button>
+      )}
 
       {result && (
         <section className="panel battle-result">

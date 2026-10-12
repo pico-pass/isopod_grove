@@ -28,6 +28,13 @@ export class DailyProgress {
   @Prop({ default: 0 })
   survivalAttempts: number;
 
+  // 오늘 다이아로 산 추가 도전/입장 횟수. 하루 한도는 기본 횟수에 이 값을 더한 것이다.
+  @Prop({ default: 0 })
+  bossExtraAttempts: number;
+
+  @Prop({ default: 0 })
+  survivalExtraAttempts: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }
@@ -252,10 +259,31 @@ export class SurvivalRun {
   @Prop({ default: 0 })
   diamondsEarned: number;
 
+  // 쓰러진 상태로 부활을 기다리는 중인지, 이번 런에서 몇 번 부활했는지
+  @Prop({ default: false })
+  dead: boolean;
+
+  @Prop({ default: 0 })
+  revives: number;
+
   @Prop({ required: true })
   startedAt: number;
 }
 export const SurvivalRunSchema = SchemaFactory.createForClass(SurvivalRun);
+
+// 골드로 산 부스트 한 종류의 유효 시간대(ms). 같은 종류를 다시 사면 until이 늘어난다.
+@Schema({ _id: false })
+export class ActiveBoost {
+  @Prop({ required: true })
+  kind: string;
+
+  @Prop({ required: true })
+  from: number;
+
+  @Prop({ required: true })
+  until: number;
+}
+export const ActiveBoostSchema = SchemaFactory.createForClass(ActiveBoost);
 
 @Schema({
   timestamps: true,
@@ -319,6 +347,10 @@ export class GameState {
   // 진행 중인 서바이벌 런. 없으면 null.
   @Prop({ type: SurvivalRunSchema, default: null })
   survivalRun: SurvivalRun | null;
+
+  // 골드로 산 부스트(종류별 하나). 만료된 항목은 다음에 살 때 정리된다.
+  @Prop({ type: [ActiveBoostSchema], default: [] })
+  boosts: ActiveBoost[];
 
   // 전설 이상이 마지막으로 나온 뒤 뽑은 횟수(천장 계산용)
   @Prop({ default: 0, min: 0 })

@@ -14,7 +14,8 @@ import {
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
-import type { SurvivalBuffId, SurvivalState } from './game-engine';
+import type { BoostKind, SurvivalBuffId, SurvivalState } from './game-engine';
+import type { Species } from '../species/schemas/species.schema';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -34,6 +35,12 @@ import {
   BOSS_ACCOUNT_XP_PER_FLOOR,
   BOSS_COOLDOWN_MS,
   BOSS_DEFAULT_DIFFICULTY,
+  BOOST_INFO,
+  BOOST_KINDS,
+  BOOST_MAX_STACK_HOURS,
+  BOOST_MULTIPLIER,
+  BOOST_OFFERS,
+  BOSS_EXTRA_ATTEMPT_COSTS,
   BOSS_DAILY_ATTEMPTS,
   BOSS_LOSE_ACCOUNT_XP,
   BOSS_PATTERNS,
@@ -118,6 +125,12 @@ import {
   isComfortable,
   pickBossSpecies,
   playSurvivalSegment,
+  SURVIVAL_EXTRA_ATTEMPT_COSTS,
+  SURVIVAL_REVIVE_COSTS,
+  SURVIVAL_REVIVE_HP_RATE,
+  getBossCooldownSkipCost,
+  getBoostFactor,
+  getBoostPrice,
   pickEquipmentOfRarity,
   pickRandomOfRarity,
   rollBossStats,
@@ -168,6 +181,7 @@ export class GameStateService {
   private readonly pvpInFlight = new Set<string>();
   // 서바이벌도 같은 이유로 막는다(진행 상태를 읽고 쓰는 중에 같은 유저의 요청이 겹치면 보상이 두 번 지급될 수 있다).
   private readonly survivalInFlight = new Set<string>();
+  private readonly shopInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -243,13 +257,20 @@ export class GameStateService {
     const hasFeeder = (gameState.upgrades.get('feeder') || 0) > 0;
     const hasMister = (gameState.upgrades.get('mister') || 0) > 0;
 
-    let remaining = clamp(seconds, 0, MAX_ADVANCE_SECONDS);
+    const totalSeconds = clamp(seconds, 0, MAX_ADVANCE_SECONDS);
+    let remaining = totalSeconds;
+    // 부스트는 시간대로 저장돼 있어서, 이번에 처리하는 구간([지금 - 처리 시간, 지금])과 겹친 부분에만 배율을 적용한다.
+    const windowStartMs = Date.now() - totalSeconds * 1000;
+    const activeBoosts = gameState.boosts ?? [];
     let earned = 0;
     const babies = new Map<string, number>();
 
     while (remaining > 0) {
       const step = Math.min(remaining, STEP_SECONDS);
+      const stepStartMs = windowStartMs + (totalSeconds - remaining) * 1000;
       remaining -= step;
+      const incomeFactor = getBoostFactor(activeBoosts, 'income', stepStartMs, stepStartMs + step * 1000);
+      const breedFactor = getBoostFactor(activeBoosts, 'breed', stepStartMs, stepStartMs + step * 1000);
 
       gameState.stats.played += step;
       const ambient = 24 + Math.sin(gameState.stats.played / 700) * 2.7;
@@ -284,7 +305,7 @@ export class GameStateService {
           soilLevel,
           comfortable,
         );
-        const income = rate * step;
+        const income = rate * step * incomeFactor;
         gameState.pending += income;
         earned += income;
 
@@ -308,7 +329,7 @@ export class GameStateService {
           );
           const progressed = Math.min(
             limit,
-            (terrarium.breeding.get(species.speciesId) || 0) + step,
+            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor,
           );
           terrarium.breeding.set(species.speciesId, progressed);
           if (progressed >= limit && capacityLeft > 0) {
@@ -531,9 +552,12 @@ export class GameStateService {
     const { winner, log } = simulateBattle(mine, enemy);
 
     const won = winner === 'me';
-    const speciesXpGain = won
-      ? BATTLE_SPECIES_XP_BY_RARITY[difficulty]
-      : Math.round(BATTLE_SPECIES_XP_BY_RARITY[difficulty] * BATTLE_SPECIES_LOSE_XP_RATIO);
+    const speciesXpGain = this.boostXp(
+      gameState,
+      won
+        ? BATTLE_SPECIES_XP_BY_RARITY[difficulty]
+        : Math.round(BATTLE_SPECIES_XP_BY_RARITY[difficulty] * BATTLE_SPECIES_LOSE_XP_RATIO),
+    );
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > beforeLevel;
@@ -650,9 +674,10 @@ export class GameStateService {
     gameState.coins -= cost;
     gameState.diamonds -= diamondCost;
 
-    const xpGain =
-      TRAIN_XP_BY_INTENSITY[intensity] *
-      (extreme ? TRAIN_EXTREME_XP_MULTIPLIER : 1);
+    const xpGain = this.boostXp(
+      gameState,
+      TRAIN_XP_BY_INTENSITY[intensity] * (extreme ? TRAIN_EXTREME_XP_MULTIPLIER : 1),
+    );
     gameState.battleXp.set(speciesId, beforeXp + xpGain);
     const afterLevel = getBattleLevel(beforeXp + xpGain);
     const leveledUp = afterLevel > beforeLevel;
@@ -908,9 +933,10 @@ export class GameStateService {
     gameState.stats.peakPvpRating = Math.max(gameState.stats.peakPvpRating, gameState.pvpRating);
 
     const beforeXp = gameState.battleXp.get(speciesId) || 0;
-    const speciesXpGain = won
-      ? PVP_WIN_SPECIES_XP
-      : Math.round(PVP_WIN_SPECIES_XP * BATTLE_SPECIES_LOSE_XP_RATIO);
+    const speciesXpGain = this.boostXp(
+      gameState,
+      won ? PVP_WIN_SPECIES_XP : Math.round(PVP_WIN_SPECIES_XP * BATTLE_SPECIES_LOSE_XP_RATIO),
+    );
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > myLevel;
@@ -1050,9 +1076,10 @@ export class GameStateService {
       );
     }
     const attemptsUsed = gameState.daily.bossAttempts || 0;
-    if (attemptsUsed >= BOSS_DAILY_ATTEMPTS) {
+    const attemptLimit = this.bossAttemptLimit(gameState);
+    if (attemptsUsed >= attemptLimit) {
       throw new BadRequestException(
-        `오늘의 보스 도전 ${BOSS_DAILY_ATTEMPTS}회를 모두 썼어요. 내일 다시 도전할 수 있어요.`,
+        `오늘의 보스 도전 ${attemptLimit}회를 모두 썼어요. 내일 다시 도전하거나 다이아로 추가 도전을 살 수 있어요.`,
       );
     }
 
@@ -1087,7 +1114,7 @@ export class GameStateService {
     const xpWin = Math.round(
       (BOSS_SPECIES_XP_BASE + BOSS_SPECIES_XP_PER_FLOOR * floor.floor) * (floor.isBoss ? 2 : 1) * mult,
     );
-    const speciesXpGain = won ? xpWin : Math.round(xpWin * BATTLE_SPECIES_LOSE_XP_RATIO);
+    const speciesXpGain = this.boostXp(gameState, won ? xpWin : Math.round(xpWin * BATTLE_SPECIES_LOSE_XP_RATIO));
     gameState.battleXp.set(speciesId, beforeXp + speciesXpGain);
     const afterLevel = getBattleLevel(beforeXp + speciesXpGain);
     const leveledUp = afterLevel > beforeLevel;
@@ -1148,7 +1175,7 @@ export class GameStateService {
       this.grantXp(gameState, BOSS_LOSE_ACCOUNT_XP);
       message = `${floorLabel}에게 패배했어요. 장비나 전투 레벨을 키워 다시 도전해 보세요.`;
     }
-    const attemptsLeft = BOSS_DAILY_ATTEMPTS - gameState.daily.bossAttempts;
+    const attemptsLeft = attemptLimit - gameState.daily.bossAttempts;
     message += ` (오늘 남은 도전 ${attemptsLeft}회)`;
     if (leveledUp) {
       message += ` 🆙 ${myDisplayName}이(가) 전투 Lv.${afterLevel}로 성장했어요!`;
@@ -1198,6 +1225,168 @@ export class GameStateService {
     };
   }
 
+  // ---- 부스트 상점 ----
+  // 켜져 있는 부스트의 끝나는 시각(ms). 꺼져 있으면 0.
+  private activeBoostUntil(gameState: GameStateDocument, kind: BoostKind, now = Date.now()): number {
+    const found = (gameState.boosts ?? []).find((b) => b.kind === kind);
+    return found && found.until > now ? found.until : 0;
+  }
+
+  // 전투 경험치 부스트가 켜져 있으면 경험치를 배율만큼 늘린다.
+  private boostXp(gameState: GameStateDocument, xp: number): number {
+    return this.activeBoostUntil(gameState, 'battleXp') > 0 ? Math.round(xp * BOOST_MULTIPLIER) : xp;
+  }
+
+  // 지금 사육 중인 식구로 쾌적한 환경에서 1시간 동안 버는 최대 수익. 부스트 가격의 기준이 된다.
+  private hourlyIncomePotential(gameState: GameStateDocument, speciesList: Species[]): number {
+    const soilLevel = gameState.upgrades.get('soil') || 0;
+    let perSecond = 0;
+    for (const terrarium of gameState.terrariums) {
+      perSecond += getAutoIncomeRate(terrarium.population, speciesList, soilLevel, true);
+    }
+    return perSecond * 3600;
+  }
+
+  async getBoostShop(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const speciesList = await this.speciesService.findAll();
+    const hourlyIncome = this.hourlyIncomePotential(gameState, speciesList);
+    const now = Date.now();
+    return {
+      hourlyIncome: Math.round(hourlyIncome),
+      multiplier: BOOST_MULTIPLIER,
+      maxStackHours: BOOST_MAX_STACK_HOURS,
+      boosts: BOOST_INFO.map((info) => ({
+        ...info,
+        activeUntil: this.activeBoostUntil(gameState, info.kind, now),
+        offers: BOOST_OFFERS.map((o) => ({ hours: o.hours, price: getBoostPrice(info.kind, o.hours, hourlyIncome) })),
+      })),
+    };
+  }
+
+  // 부스트를 산다. 이미 켜져 있으면 끝나는 시각이 늘어나고(최대 BOOST_MAX_STACK_HOURS), 꺼져 있으면 지금부터 시작한다.
+  async buyBoost(userId: string, kind: string, hours: number) {
+    if (!BOOST_KINDS.includes(kind as BoostKind)) {
+      throw new BadRequestException('존재하지 않는 부스트예요.');
+    }
+    if (!BOOST_OFFERS.some((o) => o.hours === hours)) {
+      throw new BadRequestException('살 수 없는 시간이에요.');
+    }
+    if (this.shopInFlight.has(userId)) {
+      throw new BadRequestException('구매를 처리하는 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.shopInFlight.add(userId);
+    try {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const speciesList = await this.speciesService.findAll();
+      const price = getBoostPrice(kind as BoostKind, hours, this.hourlyIncomePotential(gameState, speciesList));
+      if (gameState.coins < price) {
+        throw new BadRequestException(`골드가 부족해요. ${price.toLocaleString('ko-KR')} G가 필요해요.`);
+      }
+      const now = Date.now();
+      const current = (gameState.boosts ?? []).find((b) => b.kind === kind && b.until > now);
+      const remainingMs = current ? current.until - now : 0;
+      if (remainingMs + hours * 3_600_000 > BOOST_MAX_STACK_HOURS * 3_600_000) {
+        throw new BadRequestException(`부스트는 최대 ${BOOST_MAX_STACK_HOURS}시간까지 쌓을 수 있어요.`);
+      }
+      const bought = current
+        ? { kind, from: current.from, until: current.until + hours * 3_600_000 }
+        : { kind, from: now, until: now + hours * 3_600_000 };
+      // 다른 종류는 그대로 두고(만료된 것은 정리), 이 종류만 새 시간대로 바꾼다.
+      const others = (gameState.boosts ?? [])
+        .filter((b) => b.kind !== kind && b.until > now)
+        .map((b) => ({ kind: b.kind, from: b.from, until: b.until }));
+      gameState.boosts = [...others, bought];
+      gameState.coins -= price;
+      const name = BOOST_INFO.find((b) => b.kind === kind)?.name ?? kind;
+      const message = `${name} ${hours}시간을 샀어요. (-${price.toLocaleString('ko-KR')} G)`;
+      this.pushLog(gameState, 'coins', message);
+      await gameState.save();
+      return { gameState, message, price, activeUntil: bought.until };
+    } finally {
+      this.shopInFlight.delete(userId);
+    }
+  }
+
+  private bossAttemptLimit(gameState: GameStateDocument) {
+    return BOSS_DAILY_ATTEMPTS + (gameState.daily.bossExtraAttempts || 0);
+  }
+
+  private bossExtraInfo(gameState: GameStateDocument) {
+    const bought = gameState.daily.bossExtraAttempts || 0;
+    const max = BOSS_EXTRA_ATTEMPT_COSTS.length;
+    return { bought, max, nextCost: bought < max ? BOSS_EXTRA_ATTEMPT_COSTS[bought] : null };
+  }
+
+  private async withBossLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.bossInFlight.has(userId)) {
+      throw new BadRequestException('전투가 진행 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.bossInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.bossInFlight.delete(userId);
+    }
+  }
+
+  // 오늘의 보스 도전을 모두 쓴 뒤에 다이아로 추가 도전을 산다(가격은 살 때마다 오르고 하루 최대 횟수가 있다).
+  // 횟수가 남아 있을 때는 팔지 않는다 — 날짜가 바뀌면 사라지는 횟수를 미리 사서 낭비하지 않게 하려는 것이다.
+  async buyBossAttempt(userId: string) {
+    return this.withBossLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+      const limit = this.bossAttemptLimit(gameState);
+      const used = gameState.daily.bossAttempts || 0;
+      if (used < limit) {
+        throw new BadRequestException(`아직 오늘 도전이 ${limit - used}회 남아 있어요. 모두 쓴 뒤에 살 수 있어요.`);
+      }
+      const bought = gameState.daily.bossExtraAttempts || 0;
+      if (bought >= BOSS_EXTRA_ATTEMPT_COSTS.length) {
+        throw new BadRequestException(`오늘 살 수 있는 추가 도전은 ${BOSS_EXTRA_ATTEMPT_COSTS.length}회까지예요.`);
+      }
+      const cost = BOSS_EXTRA_ATTEMPT_COSTS[bought];
+      if (gameState.diamonds < cost) {
+        throw new BadRequestException(`다이아가 부족해요. 💎 ${cost}개가 필요해요.`);
+      }
+      gameState.diamonds -= cost;
+      gameState.daily.bossExtraAttempts = bought + 1;
+      const message = `보스 타워 추가 도전 1회를 샀어요. (💎 ${cost}개)`;
+      this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+      return { gameState, message, attemptsLeft: this.bossAttemptLimit(gameState) - used, extra: this.bossExtraInfo(gameState) };
+    });
+  }
+
+  // 보스 전투 쿨타임을 다이아로 건너뛴다. 남은 시간이 길수록 비싸다. 오늘 도전 횟수가 없으면 건너뛸 이유가 없어서 막는다.
+  async skipBossCooldown(userId: string) {
+    return this.withBossLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+      const now = Date.now();
+      const readyAt = gameState.cooldowns.get('boss') || 0;
+      if (readyAt <= now) {
+        throw new BadRequestException('보스 전투 쿨타임이 이미 끝났어요.');
+      }
+      if ((gameState.daily.bossAttempts || 0) >= this.bossAttemptLimit(gameState)) {
+        throw new BadRequestException('오늘 보스 도전 횟수를 모두 썼어요. 쿨타임을 건너뛰어도 도전할 수 없어요.');
+      }
+      const cost = getBossCooldownSkipCost(readyAt - now);
+      if (gameState.diamonds < cost) {
+        throw new BadRequestException(`다이아가 부족해요. 💎 ${cost}개가 필요해요.`);
+      }
+      gameState.diamonds -= cost;
+      gameState.cooldowns.set('boss', 0);
+      const message = `보스 전투 쿨타임을 건너뛰었어요. (💎 ${cost}개)`;
+      this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+      return { gameState, message, cost };
+    });
+  }
+
   // ---- 서바이벌(무한 전투) ----
   // 진행 중인 런을 서버가 들고 있다가, 입장·버프 선택 때마다 "다음 선택이 필요하거나 쓰러질 때까지"를 한 번에 진행한다.
   private async withSurvivalLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
@@ -1210,6 +1399,20 @@ export class GameStateService {
     } finally {
       this.survivalInFlight.delete(userId);
     }
+  }
+
+  private survivalAttemptLimit(gameState: GameStateDocument) {
+    return SURVIVAL_DAILY_ATTEMPTS + (gameState.daily.survivalExtraAttempts || 0);
+  }
+
+  private survivalAttemptsLeft(gameState: GameStateDocument) {
+    return Math.max(0, this.survivalAttemptLimit(gameState) - (gameState.daily.survivalAttempts || 0));
+  }
+
+  private survivalExtraInfo(gameState: GameStateDocument) {
+    const bought = gameState.daily.survivalExtraAttempts || 0;
+    const max = SURVIVAL_EXTRA_ATTEMPT_COSTS.length;
+    return { bought, max, nextCost: bought < max ? SURVIVAL_EXTRA_ATTEMPT_COSTS[bought] : null };
   }
 
   private toSurvivalState(run: SurvivalRun): SurvivalState {
@@ -1243,6 +1446,10 @@ export class GameStateService {
       goldEarned: run.goldEarned,
       xpEarned: run.xpEarned,
       diamondsEarned: run.diamondsEarned,
+      // 쓰러진 채 부활을 기다리는 중이면 dead이고, 부활할 수 있으면 reviveCost에 가격(💎)이 들어 있다.
+      dead: !!run.dead,
+      revives: run.revives || 0,
+      reviveCost: run.dead ? (SURVIVAL_REVIVE_COSTS[run.revives || 0] ?? null) : null,
     };
   }
 
@@ -1253,8 +1460,9 @@ export class GameStateService {
     const species = run ? await this.speciesService.findOne(run.speciesId) : null;
     return {
       run: run ? this.toSurvivalRunView(run, this.displayNameFor(gameState, run.speciesId, species?.name ?? run.speciesId)) : null,
-      attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+      attemptsLeft: this.survivalAttemptsLeft(gameState),
       bestStage: gameState.stats.highestSurvivalStage || 0,
+      extra: this.survivalExtraInfo(gameState),
     };
   }
 
@@ -1267,13 +1475,15 @@ export class GameStateService {
       if (!(this.totalOf(gameState, speciesId) > 0)) {
         throw new BadRequestException('아직 만나지 못한 식구예요.');
       }
-      if (gameState.survivalRun) {
+      // 쓰러져서 부활을 기다리던 런은 새로 입장하면 끝난 것으로 본다(이미 받은 보상은 그대로).
+      if (gameState.survivalRun && !gameState.survivalRun.dead) {
         throw new BadRequestException('진행 중인 서바이벌이 있어요. 이어서 하거나 포기해 주세요.');
       }
       const used = gameState.daily.survivalAttempts || 0;
-      if (used >= SURVIVAL_DAILY_ATTEMPTS) {
+      const attemptLimit = this.survivalAttemptLimit(gameState);
+      if (used >= attemptLimit) {
         throw new BadRequestException(
-          `오늘의 서바이벌 입장 ${SURVIVAL_DAILY_ATTEMPTS}회를 모두 썼어요. 내일 다시 도전할 수 있어요.`,
+          `오늘의 서바이벌 입장 ${attemptLimit}회를 모두 썼어요. 내일 다시 도전하거나 다이아로 추가 입장을 살 수 있어요.`,
         );
       }
       const species = await this.speciesService.findOne(speciesId);
@@ -1302,6 +1512,8 @@ export class GameStateService {
         goldEarned: 0,
         xpEarned: 0,
         diamondsEarned: 0,
+        dead: false,
+        revives: 0,
         startedAt: Date.now(),
       };
       return this.advanceSurvival(gameState, species, '입장');
@@ -1315,6 +1527,7 @@ export class GameStateService {
       this.guardPaused(gameState);
       const run = gameState.survivalRun;
       if (!run) throw new BadRequestException('진행 중인 서바이벌이 없어요.');
+      if (run.dead) throw new BadRequestException('쓰러진 상태예요. 부활하거나 포기해 주세요.');
       if (run.choices.length === 0) throw new BadRequestException('지금은 고를 버프가 없어요.');
       if (!run.choices.includes(buffId)) throw new BadRequestException('제시된 버프 중에서 골라 주세요.');
       const species = await this.speciesService.findOne(run.speciesId);
@@ -1326,6 +1539,65 @@ export class GameStateService {
       run.choices = [];
       const buffName = SURVIVAL_BUFFS.find((b) => b.id === buffId)?.name ?? buffId;
       return this.advanceSurvival(gameState, species, `${buffName} 선택`);
+    });
+  }
+
+  // 오늘 입장을 모두 쓴 뒤에 다이아로 추가 입장을 산다(가격은 살 때마다 오른다).
+  async buySurvivalAttempt(userId: string) {
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+      const left = this.survivalAttemptsLeft(gameState);
+      if (left > 0) {
+        throw new BadRequestException(`아직 오늘 입장이 ${left}회 남아 있어요. 모두 쓴 뒤에 살 수 있어요.`);
+      }
+      const bought = gameState.daily.survivalExtraAttempts || 0;
+      if (bought >= SURVIVAL_EXTRA_ATTEMPT_COSTS.length) {
+        throw new BadRequestException(`오늘 살 수 있는 추가 입장은 ${SURVIVAL_EXTRA_ATTEMPT_COSTS.length}회까지예요.`);
+      }
+      const cost = SURVIVAL_EXTRA_ATTEMPT_COSTS[bought];
+      if (gameState.diamonds < cost) {
+        throw new BadRequestException(`다이아가 부족해요. 💎 ${cost}개가 필요해요.`);
+      }
+      gameState.diamonds -= cost;
+      gameState.daily.survivalExtraAttempts = bought + 1;
+      const message = `서바이벌 추가 입장 1회를 샀어요. (💎 ${cost}개)`;
+      this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+      return {
+        gameState,
+        message,
+        attemptsLeft: this.survivalAttemptsLeft(gameState),
+        extra: this.survivalExtraInfo(gameState),
+      };
+    });
+  }
+
+  // 쓰러진 런을 다이아로 되살려 같은 스테이지부터 이어간다. 최대 HP의 일부로 돌아오고, 가격은 부활할 때마다 오른다.
+  async survivalRevive(userId: string) {
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.survivalRun;
+      if (!run) throw new BadRequestException('진행 중인 서바이벌이 없어요.');
+      if (!run.dead) throw new BadRequestException('쓰러진 상태에서만 부활할 수 있어요.');
+      const revives = run.revives || 0;
+      const cost = SURVIVAL_REVIVE_COSTS[revives];
+      if (cost === undefined) {
+        throw new BadRequestException(`한 번의 도전에서는 ${SURVIVAL_REVIVE_COSTS.length}번까지만 부활할 수 있어요.`);
+      }
+      if (gameState.diamonds < cost) {
+        throw new BadRequestException(`다이아가 부족해요. 💎 ${cost}개가 필요해요.`);
+      }
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+      gameState.diamonds -= cost;
+      run.dead = false;
+      run.revives = revives + 1;
+      run.hp = Math.max(1, Math.round(getSurvivalStats(this.toSurvivalState(run)).maxHp * SURVIVAL_REVIVE_HP_RATE));
+      return this.advanceSurvival(gameState, species, `부활(💎 ${cost}개)`);
     });
   }
 
@@ -1346,7 +1618,7 @@ export class GameStateService {
         status: 'retired' as const,
         stages: [],
         run: null,
-        attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+        attemptsLeft: this.survivalAttemptsLeft(gameState),
         summary: { finalStage: stage, bestStage: gameState.stats.highestSurvivalStage || 0, newBest: false, gold: 0, xp: 0, diamonds: 0, equipment: [] },
       };
     });
@@ -1383,6 +1655,7 @@ export class GameStateService {
         }
       }
     }
+    xp = this.boostXp(gameState, xp);
     gameState.coins += gold;
     gameState.stats.earned += gold;
     gameState.diamonds += diamonds;
@@ -1410,11 +1683,22 @@ export class GameStateService {
       message = `엘리트를 쓰러뜨렸어요! ${finalStage}스테이지 돌파 — 버프를 하나 골라 주세요.`;
     } else {
       const totals = { gold: run.goldEarned, xp: run.xpEarned, diamonds: run.diamondsEarned };
-      gameState.survivalRun = null;
-      message =
-        status === 'cleared'
-          ? `🏆 ${SURVIVAL_MAX_STAGE}스테이지를 모두 돌파했어요! (이번 런 +${totals.gold.toLocaleString('ko-KR')} G)`
-          : `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. 이번 런 +${totals.gold.toLocaleString('ko-KR')} G · 경험치 +${totals.xp}${totals.diamonds ? ` · 💎 ${totals.diamonds}개` : ''}`;
+      const summaryText = `이번 런 +${totals.gold.toLocaleString('ko-KR')} G · 경험치 +${totals.xp}${totals.diamonds ? ` · 💎 ${totals.diamonds}개` : ''}`;
+      const reviveCost = SURVIVAL_REVIVE_COSTS[run.revives || 0];
+      if (status === 'dead' && reviveCost !== undefined) {
+        // 부활할 수 있으면 런을 지우지 않고 쓰러진 채로 남겨 둔다(포기하거나 새로 입장하면 끝난다).
+        run.dead = true;
+        run.hp = 0;
+        run.choices = [];
+        runView = this.toSurvivalRunView(run, displayName);
+        message = `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. 💎 ${reviveCost}개로 부활하면 이어갈 수 있어요. (${summaryText})`;
+      } else {
+        gameState.survivalRun = null;
+        message =
+          status === 'cleared'
+            ? `🏆 ${SURVIVAL_MAX_STAGE}스테이지를 모두 돌파했어요! (${summaryText})`
+            : `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. ${summaryText}`;
+      }
     }
     if (best > bestBefore) message += ` 🆕 최고 기록 ${best}스테이지!`;
     if (equipment.length) message += ` · 🎒 ${equipment.map((e) => e.name).join(', ')} 획득`;
@@ -1465,7 +1749,7 @@ export class GameStateService {
         level: run.level,
         stats: { hp: maxHp, atk: mineStats.atk, def: mineStats.def },
       },
-      attemptsLeft: Math.max(0, SURVIVAL_DAILY_ATTEMPTS - (gameState.daily.survivalAttempts || 0)),
+      attemptsLeft: this.survivalAttemptsLeft(gameState),
       summary: {
         finalStage,
         bestStage: best,
@@ -2070,6 +2354,8 @@ export class GameStateService {
         explore: 0,
         bossAttempts: 0,
         survivalAttempts: 0,
+        bossExtraAttempts: 0,
+        survivalExtraAttempts: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.

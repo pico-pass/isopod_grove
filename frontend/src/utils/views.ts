@@ -7,6 +7,7 @@ export const NAVIGABLE_VIEWS: readonly ViewKey[] = [
   'collection',
   'market',
   'upgrades',
+  'shop',
   'achievements',
   'ranking',
   'friends',

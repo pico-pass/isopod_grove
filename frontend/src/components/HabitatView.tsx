@@ -9,6 +9,7 @@ import {
   formatDuration,
   formatNumber,
   getAutoIncomeRate,
+  getBoostMultiplier,
   getBaseBreedSeconds,
   getBreedInterval,
   getCapacity,
@@ -61,7 +62,9 @@ export function HabitatView({
   const comfortable = isComfortable(terrarium.food, terrarium.humidity, terrarium.temperature);
   const canBreed = canBreedInEnvironment(terrarium.food, terrarium.humidity, terrarium.temperature);
   // 수익은 모든 사육장이 함께 모으므로 전체 합계를 보여준다.
-  const rate = gameState.terrariums.reduce(
+  const incomeBoost = getBoostMultiplier(gameState, 'income', now);
+  const breedBoost = getBoostMultiplier(gameState, 'breed', now);
+  const rate = incomeBoost * gameState.terrariums.reduce(
     (sum, t) =>
       sum +
       getAutoIncomeRate(
@@ -149,6 +152,7 @@ export function HabitatView({
                 <span className="stat-label">분당 예상 수익{gameState.terrariums.length > 1 ? ' (전체)' : ''}</span>
                 <strong>
                   {Math.round(rate * 60)} <small>G</small>
+                  {incomeBoost > 1 && <small> ⚡×{incomeBoost}</small>}
                 </strong>
               </div>
             </div>
@@ -278,7 +282,7 @@ export function HabitatView({
                     ? '환경이 좋지 않아 번식이 멈췄어요'
                     : count >= capacity
                       ? '공간이 가득 차서 기다리는 중이에요'
-                      : `다음 새끼까지 ${formatDuration(interval - progress)}`;
+                      : `다음 새끼까지 ${formatDuration((interval - progress) / breedBoost)}${breedBoost > 1 ? ` ⚡×${breedBoost}` : ''}`;
               const breedActive = residents >= 2 && canBreed && count < capacity;
               return (
                 <div key={id} className="resident">

@@ -16,6 +16,7 @@ import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
 import { BossView } from './components/BossView';
 import { SurvivalView } from './components/SurvivalView';
+import { BoostShopView } from './components/BoostShopView';
 import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
 import { MailView } from './components/MailView';
@@ -228,6 +229,9 @@ function App() {
               onUpgrade={(upgradeId) => runAction(() => api.upgrade(upgradeId, terrarium.terrariumId))}
             />
           )}
+          {view === 'shop' && (
+            <BoostShopView gameState={gameState} onBuy={(kind, hours) => runAction(() => api.buyBoost(kind, hours))} />
+          )}
           {view === 'achievements' && (
             <AchievementsView
               gameState={gameState}
@@ -269,6 +273,8 @@ function App() {
               equipmentCatalog={equipmentCatalog}
               equipmentBonuses={equipmentBonuses}
               onBattle={(speciesId, floor, difficulty) => runAction(() => api.bossBattle(speciesId, floor, difficulty))}
+              onBuyAttempt={() => runAction(() => api.buyBossAttempt())}
+              onSkipCooldown={() => runAction(() => api.skipBossCooldown())}
             />
           )}
           {view === 'survival' && (
@@ -279,6 +285,8 @@ function App() {
               onStart={(speciesId) => runAction(() => api.survivalStart(speciesId))}
               onChoose={(buffId) => runAction(() => api.survivalChoose(buffId))}
               onRetire={() => runAction(() => api.survivalRetire())}
+              onRevive={() => runAction(() => api.survivalRevive())}
+              onBuyAttempt={() => runAction(() => api.buySurvivalAttempt())}
               showToast={showToast}
             />
           )}

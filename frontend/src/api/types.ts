@@ -39,6 +39,9 @@ export interface DailyProgress {
   // 오늘 쓴 보스 타워 도전 횟수. 예전 데이터에는 없을 수 있다.
   bossAttempts?: number;
   survivalAttempts?: number;
+  // 오늘 다이아로 산 추가 도전/입장 횟수. 하루 한도 = 기본 횟수 + 이 값. 예전 데이터에는 없을 수 있다.
+  bossExtraAttempts?: number;
+  survivalExtraAttempts?: number;
   claimed: string[];
 }
 
@@ -128,6 +131,8 @@ export interface GameState {
   equipment: EquipmentItemState[];
   equipmentSlots: string[];
   equipmentPity: number;
+  // 골드로 산 부스트(종류별 하나). 예전 데이터에는 없을 수 있다.
+  boosts?: ActiveBoost[];
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;
@@ -577,6 +582,10 @@ export interface BossDifficultyInfo {
 
 export interface BossCatalog {
   dailyAttempts: number;
+  // 다이아로 사는 추가 도전: 오늘 N번째 가격(배열 길이 = 하루 최대 횟수)
+  extraAttemptCosts: number[];
+  // 쿨타임을 건너뛸 때 남은 이 초마다 💎1(올림)
+  cooldownSkipSecondsPerDiamond: number;
   difficulties: BossDifficultyInfo[];
   floors: BossFloorInfo[];
 }
@@ -596,6 +605,9 @@ export interface SurvivalInfo {
   eliteEvery: number;
   healRate: number;
   buffs: SurvivalBuffInfo[];
+  extraAttemptCosts: number[];
+  reviveCosts: number[];
+  reviveHpRate: number;
   rewards: {
     goldBase: number;
     goldPerStage: number;
@@ -623,12 +635,74 @@ export interface SurvivalRunView {
   goldEarned: number;
   xpEarned: number;
   diamondsEarned: number;
+  // 쓰러진 채 부활을 기다리는 중이면 dead. 부활할 수 있으면 reviveCost에 가격(💎)이 있다.
+  dead: boolean;
+  revives: number;
+  reviveCost: number | null;
+}
+
+// 오늘 다이아로 산 추가 횟수: 지금까지 산 횟수 / 하루 최대 / 다음 가격(더 못 사면 null)
+export interface ExtraAttemptInfo {
+  bought: number;
+  max: number;
+  nextCost: number | null;
 }
 
 export interface SurvivalStatus {
   run: SurvivalRunView | null;
   attemptsLeft: number;
   bestStage: number;
+  extra: ExtraAttemptInfo;
+}
+
+// ---- 부스트 상점 ----
+export type BoostKind = 'income' | 'breed' | 'battleXp';
+
+// 켜져 있는 부스트의 시간대(ms). GameState.boosts에 들어 있다.
+export interface ActiveBoost {
+  kind: BoostKind;
+  from: number;
+  until: number;
+}
+
+export interface BoostOffer {
+  hours: number;
+  price: number;
+}
+
+export interface BoostInfo {
+  kind: BoostKind;
+  name: string;
+  description: string;
+  activeUntil: number; // 켜져 있으면 끝나는 시각(ms), 아니면 0
+  offers: BoostOffer[];
+}
+
+export interface BoostShop {
+  hourlyIncome: number; // 가격의 기준이 되는 시간당 최대 수익
+  multiplier: number;
+  maxStackHours: number;
+  boosts: BoostInfo[];
+}
+
+export interface BuyBoostResponse {
+  gameState: GameState;
+  message: string;
+  price: number;
+  activeUntil: number;
+}
+
+export interface BuyAttemptResponse {
+  gameState: GameState;
+  message: string;
+  attemptsLeft: number;
+  extra: ExtraAttemptInfo;
+}
+
+export interface SkipCooldownResponse {
+  gameState: GameState;
+  message: string;
+  cost: number;
 }
 
 export interface SurvivalStageView {

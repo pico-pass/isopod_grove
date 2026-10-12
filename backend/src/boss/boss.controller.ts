@@ -2,8 +2,10 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SpeciesService } from '../species/species.service';
 import {
+  BOSS_COOLDOWN_SKIP_SECONDS_PER_DIAMOND,
   BOSS_DAILY_ATTEMPTS,
   BOSS_DIFFICULTIES,
+  BOSS_EXTRA_ATTEMPT_COSTS,
   BOSS_FLOOR_COUNT,
   BOSS_PATTERNS,
   getBossFloor,
@@ -51,6 +53,13 @@ export class BossController {
         };
       });
     // floors의 능력치·골드 보상은 쉬움(1배) 기준이다. 난이도 배율은 difficulties로 따로 내려준다.
-    return { dailyAttempts: BOSS_DAILY_ATTEMPTS, difficulties: BOSS_DIFFICULTIES, floors };
+    return {
+      dailyAttempts: BOSS_DAILY_ATTEMPTS,
+      // 다이아 편의 기능: 오늘 N번째 추가 도전의 가격과, 쿨타임을 건너뛸 때 남은 초당 가격 단위
+      extraAttemptCosts: BOSS_EXTRA_ATTEMPT_COSTS,
+      cooldownSkipSecondsPerDiamond: BOSS_COOLDOWN_SKIP_SECONDS_PER_DIAMOND,
+      difficulties: BOSS_DIFFICULTIES,
+      floors,
+    };
   }
 }

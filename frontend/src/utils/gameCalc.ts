@@ -1,5 +1,6 @@
 import type {
   Achievement,
+  BoostKind,
   BossDifficultyId,
   CombatStats,
   EquipmentCatalogItem,
@@ -440,7 +441,32 @@ export function scaleBossStats(stats: CombatStats, multiplier: number): CombatSt
   };
 }
 
-// 오늘 남은 보스 타워 도전 횟수. daily는 서버가 날짜가 바뀔 때 새로 만들어 내려주므로 그대로 믿는다.
+// ---- 부스트 상점 ----
+// 켜져 있는 동안 수익·번식·전투 경험치가 몇 배가 되는지(서버 BOOST_MULTIPLIER와 같은 값).
+export const BOOST_MULTIPLIER = 2;
+
+// 켜져 있는 부스트의 끝나는 시각(ms). 꺼져 있거나 now가 0(아직 시계를 읽기 전)이면 0이다.
+export function getBoostUntil(gameState: GameState, kind: BoostKind, now: number): number {
+  if (!now) return 0;
+  const found = gameState.boosts?.find((b) => b.kind === kind);
+  return found && found.until > now ? found.until : 0;
+}
+
+export function getBoostMultiplier(gameState: GameState, kind: BoostKind, now: number): number {
+  return getBoostUntil(gameState, kind, now) > 0 ? BOOST_MULTIPLIER : 1;
+}
+
+// 오늘 보스 타워 도전 한도(기본 횟수 + 다이아로 산 추가 횟수)와 남은 횟수.
+// daily는 서버가 날짜가 바뀔 때 새로 만들어 내려주므로 그대로 믿는다.
+export function getBossAttemptLimit(gameState: GameState): number {
+  return BOSS_DAILY_ATTEMPTS + (gameState.daily.bossExtraAttempts ?? 0);
+}
+
 export function getBossAttemptsLeft(gameState: GameState): number {
-  return Math.max(0, BOSS_DAILY_ATTEMPTS - (gameState.daily.bossAttempts ?? 0));
+  return Math.max(0, getBossAttemptLimit(gameState) - (gameState.daily.bossAttempts ?? 0));
+}
+
+// 보스 쿨타임 건너뛰기 가격(서버 getBossCooldownSkipCost와 같은 식). secondsPerDiamond는 GET /boss가 내려준다.
+export function getBossCooldownSkipCost(remainingSeconds: number, secondsPerDiamond: number): number {
+  return Math.max(1, Math.ceil(remainingSeconds / secondsPerDiamond));
 }

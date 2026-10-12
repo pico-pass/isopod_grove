@@ -3028,3 +3028,14 @@ main {
   color: var(--gold);
 }
 
+
+/* ---- 부스트 상점 ---- */
+.boost-card .boost-offers {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+}
+.boost-card .upgrade-level.boost-on {
+  color: var(--green);
+  font-weight: 700;
+}

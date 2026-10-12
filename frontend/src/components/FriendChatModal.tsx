@@ -148,6 +148,16 @@ export function FriendChatModal({
     setSelectedId(null);
   };
 
+  // 상대가 보낸 가장 최근 메시지(삭제되지 않은 것)를 신고 대상으로 연다. 앞뒤 대화는 운영자에게 함께 전달된다.
+  const reportLatest = () => {
+    const latest = [...messages].reverse().find((m) => m.userId !== currentUserId && !m.deleted && !deletedIds.has(m.id));
+    if (!latest) {
+      showToast('신고할 메시지가 아직 없어요.', true);
+      return;
+    }
+    openReport(latest);
+  };
+
   const submitReport = async () => {
     if (!reportTarget || reporting) return;
     setReporting(true);
@@ -168,6 +178,9 @@ export function FriendChatModal({
       <div className="modal-card friend-chat-card" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} aria-label="채팅 닫기">
           ×
+        </button>
+        <button className="friend-chat-report-top" onClick={reportLatest} title="상대의 가장 최근 메시지를 신고해요">
+          🚩 신고
         </button>
         <button className="friend-chat-header" onClick={() => onOpenProfile(friend.userId)} title="프로필 보기">
           <span className="presence-wrap">
@@ -201,7 +214,7 @@ export function FriendChatModal({
                       <div className="chat-bubble deleted">
                         <p>삭제된 메시지입니다.</p>
                       </div>
-                    ) : (
+                    ) : mine ? (
                       <button
                         className="chat-bubble chat-bubble-button"
                         onClick={() => setSelectedId((cur) => (cur === m.id ? null : m.id))}
@@ -209,18 +222,24 @@ export function FriendChatModal({
                       >
                         <p>{m.text}</p>
                       </button>
+                    ) : (
+                      <div className="chat-bubble">
+                        <p>{m.text}</p>
+                      </div>
                     )}
                     <div className="chat-meta">
                       {mine && !deleted && !unreadIds.has(m.id) && <span className="chat-read">읽음</span>}
                       <span className="chat-time">{formatTime(m.createdAt)}</span>
+                      {/* 상대가 보낸 메시지에는 신고 버튼이 항상 보인다(눌러서 고를 필요 없음). */}
+                      {!mine && !deleted && (
+                        <button className="chat-report-link" onClick={() => openReport(m)} aria-label="이 메시지 신고">
+                          🚩 신고
+                        </button>
+                      )}
                     </div>
-                    {selected && (
+                    {selected && mine && (
                       <div className="chat-actions">
-                        {mine ? (
-                          <button onClick={() => void remove(m)}>🗑 삭제</button>
-                        ) : (
-                          <button onClick={() => openReport(m)}>🚩 신고</button>
-                        )}
+                        <button onClick={() => void remove(m)}>🗑 삭제</button>
                       </div>
                     )}
                   </div>

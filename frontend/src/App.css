@@ -3116,3 +3116,37 @@ main {
   flex: 1 1 260px;
   color: var(--muted);
 }
+
+/* 친구 채팅: 항상 보이는 신고 버튼 */
+.friend-chat-report-top {
+  position: absolute;
+  top: 12px;
+  right: 46px;
+  font-size: 0.78rem;
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  padding: 3px 10px;
+  line-height: 1.2;
+}
+.friend-chat-report-top:hover {
+  background: var(--danger);
+  color: #fff;
+}
+.friend-chat-card .friend-chat-header {
+  padding-right: 120px;
+}
+.chat-report-link {
+  font-size: 0.68rem;
+  color: var(--danger);
+  background: transparent;
+  border: 0;
+  padding: 2px 4px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.chat-report-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}

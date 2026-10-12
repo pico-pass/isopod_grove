@@ -1006,6 +1006,32 @@ export function playSurvivalSegment(
   return { state, stages, status: 'cleared' };
 }
 
+// ---- 전설·신화 번식의 긴 오프라인 인정 ----
+// 시간 진행은 한 번에 MAX_ADVANCE_SECONDS(8시간)까지만 인정하지만, 번식 주기가 긴 전설·신화는 그보다 오래 자리를 비워도
+// 계속 진행된다. 넘는 시간은 클라이언트가 보낸 값이 아니라 서버 시계로 잰 경과 시간(= 지금 - 마지막 틱)만 인정한다.
+export const LONG_OFFLINE_BREED_MIN_RARITY = 3; // 전설(3) 이상만 해당
+
+// 평소 상한을 넘는 자리 비움 시간 중 전설·신화 번식에만 더 인정하는 시간(초). 평소 틱(몇 초 간격)에서는 0이다.
+// realElapsedSeconds: 서버 시계로 잰, 지난 틱 이후 흐른 시간. grantedSeconds: 이번에 평소대로 처리한 시간.
+export function getLongOfflineBreedSeconds(realElapsedSeconds: number, grantedSeconds: number): number {
+  if (!(realElapsedSeconds > MAX_ADVANCE_SECONDS)) return 0;
+  return Math.max(0, realElapsedSeconds - grantedSeconds);
+}
+
+// 한 사육장의 한 종 번식을 seconds만큼 한꺼번에 진행한다. 태어난 수와 남은 진행도를 돌려준다.
+// 자리가 모자라 다 낳지 못하면 진행도는 주기에서 멈춘다(자리가 나면 바로 태어난다 — 평소 계산과 같다).
+export function advanceBreeding(
+  currentProgress: number,
+  seconds: number,
+  limit: number,
+  capacityLeft: number,
+): { births: number; progress: number } {
+  const progress = currentProgress + seconds;
+  const possible = Math.floor(progress / limit);
+  const births = Math.max(0, Math.min(possible, capacityLeft));
+  return { births, progress: births < possible ? limit : progress - births * limit };
+}
+
 // ---- 고급 탐색(원정) ----
 // 숲 탐색 비용의 몇십 배를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만난다. 신화는 연속으로 못 만나면 확정이고,
 // 아직 도감에 없는 종이 그 등급에 남아 있으면 그중에서 먼저 나온다. 가격은 지금의 숲 탐색 비용에 정확히 배수만큼 곱한 값이다.

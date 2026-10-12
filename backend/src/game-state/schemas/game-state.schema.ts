@@ -348,6 +348,11 @@ export class GameState {
   @Prop({ type: SurvivalRunSchema, default: null })
   survivalRun: SurvivalRun | null;
 
+  // 서버가 마지막으로 시간 진행(advance)을 받은 시각(ms). 전설·신화 번식의 긴 오프라인 시간을 서버 시계로 재는 기준이다.
+  // 이 필드가 생기기 전의 계정은 비어 있고(null) 마지막 저장 시각(updatedAt)을 대신 쓴다.
+  @Prop({ type: Number, default: null })
+  lastTickAt: number | null;
+
   // 장비 조각. 중복 장비를 분해해서 얻고, 레벨업에 모자란 복사본을 메꾸는 데 쓴다.
   @Prop({ default: 0, min: 0 })
   equipmentShards: number;

@@ -131,6 +131,9 @@ import {
   SURVIVAL_REVIVE_HP_RATE,
   EXPEDITION_PITY_LIMIT,
   EXPEDITION_TIERS,
+  LONG_OFFLINE_BREED_MIN_RARITY,
+  advanceBreeding,
+  getLongOfflineBreedSeconds,
   getBossCooldownSkipCost,
   getBoostFactor,
   getExpeditionPrice,
@@ -227,6 +230,7 @@ export class GameStateService {
   async createInitialState(userId: string): Promise<GameStateDocument> {
     return this.gameStateModel.create({
       userId: new Types.ObjectId(userId),
+      lastTickAt: Date.now(), // 새 계정은 만든 순간이 시간 진행의 기준이다
       terrariums: [
         {
           terrariumId: this.newTerrariumId(),
@@ -267,6 +271,21 @@ export class GameStateService {
     const hasMister = (gameState.upgrades.get('mister') || 0) > 0;
 
     const totalSeconds = clamp(seconds, 0, MAX_ADVANCE_SECONDS);
+    // 서버 시계로 잰, 지난 틱 이후 흐른 시간. 8시간을 넘게 자리를 비웠다면 넘는 시간은 전설·신화 번식에 한해 인정한다.
+    const nowMs = Date.now();
+    const updatedAt = (gameState as unknown as { updatedAt?: Date }).updatedAt;
+    const baselineMs = gameState.lastTickAt ?? updatedAt?.getTime() ?? nowMs;
+    let longOfflineSeconds = getLongOfflineBreedSeconds(Math.max(0, (nowMs - baselineMs) / 1000), totalSeconds);
+    if (longOfflineSeconds > 0) {
+      // 같은 계정으로 요청이 동시에 여러 개 들어와도 한 요청만 이 시간을 가져가게, 읽은 lastTickAt이 그대로일 때만 바꾼다.
+      const claim = await this.gameStateModel.updateOne(
+        { _id: gameState._id, lastTickAt: gameState.lastTickAt ?? null },
+        { $set: { lastTickAt: nowMs } },
+        { timestamps: false },
+      );
+      if (claim.matchedCount !== 1) longOfflineSeconds = 0;
+    }
+    gameState.lastTickAt = nowMs;
     let remaining = totalSeconds;
     // 부스트는 시간대로 저장돼 있어서, 이번에 처리하는 구간([지금 - 처리 시간, 지금])과 겹친 부분에만 배율을 적용한다.
     const windowStartMs = Date.now() - totalSeconds * 1000;
@@ -352,6 +371,38 @@ export class GameStateService {
             this.grantXp(gameState, 8);
             gameState.stats.births++;
             gameState.daily.births++;
+          }
+        }
+      }
+    }
+
+    // 평소 상한(8시간)을 넘는 자리 비움: 전설·신화만 번식이 계속 진행된다. 환경은 처리한 마지막 상태를 기준으로
+    // 하고(자동 급식·분무가 있어야 오래 유지된다), 그 상태에서 번식할 수 없으면 진행하지 않는다.
+    if (longOfflineSeconds > 0) {
+      const spanEndMs = nowMs - totalSeconds * 1000;
+      const longFactor = getBoostFactor(activeBoosts, 'breed', spanEndMs - longOfflineSeconds * 1000, spanEndMs);
+      for (const terrarium of gameState.terrariums) {
+        if (!canBreedInEnvironment(terrarium.food, terrarium.humidity, terrarium.temperature)) continue;
+        let capacityLeft = getCapacity(terrarium.spaceLevel) - getPopulationCount(terrarium.population);
+        for (const species of speciesList) {
+          if (species.rarity < LONG_OFFLINE_BREED_MIN_RARITY) continue;
+          const current = terrarium.population.get(species.speciesId) || 0;
+          if (current < 2) continue;
+          const limit = getBreedInterval(getBaseBreedSeconds(species.rarity), nurseryLevel);
+          const result = advanceBreeding(
+            terrarium.breeding.get(species.speciesId) || 0,
+            longOfflineSeconds * longFactor,
+            limit,
+            capacityLeft,
+          );
+          terrarium.breeding.set(species.speciesId, result.progress);
+          if (result.births > 0) {
+            terrarium.population.set(species.speciesId, current + result.births);
+            capacityLeft -= result.births;
+            babies.set(species.speciesId, (babies.get(species.speciesId) || 0) + result.births);
+            this.grantXp(gameState, 8 * result.births);
+            gameState.stats.births += result.births;
+            gameState.daily.births += result.births;
           }
         }
       }

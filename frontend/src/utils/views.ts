@@ -6,6 +6,7 @@ export const NAVIGABLE_VIEWS: readonly ViewKey[] = [
   'habitat',
   'collection',
   'market',
+  'expedition',
   'upgrades',
   'shop',
   'achievements',

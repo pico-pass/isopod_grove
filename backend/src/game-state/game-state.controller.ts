@@ -21,6 +21,8 @@ import { PvpBattleDto } from './dto/pvp-battle.dto';
 import { BossBattleDto } from './dto/boss-battle.dto';
 import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
 import { BuyBoostDto } from './dto/boost.dto';
+import { ExpeditionDto } from './dto/expedition.dto';
+import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
 import { EquipmentItemDto } from './dto/equipment-item.dto';
@@ -153,6 +155,16 @@ export class GameStateController {
     return this.gameStateService.survivalRevive(user.userId);
   }
 
+  @Get('expedition')
+  expeditionInfo(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getExpeditionInfo(user.userId);
+  }
+
+  @Post('expedition')
+  expedition(@CurrentUser() user: AuthenticatedUser, @Body() dto: ExpeditionDto) {
+    return this.gameStateService.expedition(user.userId, dto.tier, dto.terrariumId);
+  }
+
   @Post('explore')
   explore(@CurrentUser() user: AuthenticatedUser, @Body() dto: ExploreDto) {
     return this.gameStateService.explore(
@@ -226,6 +238,16 @@ export class GameStateController {
   @Post('equipment/level-up')
   levelUpEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentItemDto) {
     return this.gameStateService.levelUpEquipment(user.userId, dto.itemId);
+  }
+
+  @Post('equipment/dismantle')
+  dismantleEquipment(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentDismantleDto) {
+    return this.gameStateService.dismantleEquipment(user.userId, dto.itemId, dto.count);
+  }
+
+  @Post('equipment/level-up-shards')
+  levelUpEquipmentWithShards(@CurrentUser() user: AuthenticatedUser, @Body() dto: EquipmentItemDto) {
+    return this.gameStateService.levelUpEquipmentWithShards(user.userId, dto.itemId);
   }
 
   @Post('equipment/awaken')

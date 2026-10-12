@@ -17,6 +17,7 @@ import { PvpView } from './components/PvpView';
 import { BossView } from './components/BossView';
 import { SurvivalView } from './components/SurvivalView';
 import { BoostShopView } from './components/BoostShopView';
+import { ExpeditionView } from './components/ExpeditionView';
 import { EquipmentView } from './components/EquipmentView';
 import { FriendsView } from './components/FriendsView';
 import { MailView } from './components/MailView';
@@ -220,6 +221,14 @@ function App() {
               onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
             />
           )}
+          {view === 'expedition' && (
+            <ExpeditionView
+              gameState={gameState}
+              terrarium={terrarium}
+              species={displaySpecies}
+              onExpedition={(tier) => runAction(() => api.expedition(tier, terrarium.terrariumId))}
+            />
+          )}
           {view === 'upgrades' && (
             <UpgradesView
               gameState={gameState}
@@ -319,6 +328,8 @@ function App() {
               onAwaken={(itemId) => runAction(() => api.awakenEquipment(itemId))}
               onEquip={(slotIndex, itemId) => runAction(() => api.equipEquipment(slotIndex, itemId))}
               onExpandSlot={() => runAction(() => api.expandEquipmentSlots())}
+              onDismantle={(itemId, count) => runAction(() => api.dismantleEquipment(itemId, count))}
+              onLevelUpShards={(itemId) => runAction(() => api.levelUpEquipmentWithShards(itemId))}
             />
           )}
           {view === 'mail' && (

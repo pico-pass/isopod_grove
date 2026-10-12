@@ -107,7 +107,15 @@ export const EQUIPMENT_AWAKEN_FAIL_BONUS = 0.05; // 실패할 때마다 다음 �
 export const EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY = [3000, 8000, 20000, 50000, 120000];
 export const EQUIPMENT_BASE_SLOTS = 3;
 export const EQUIPMENT_MAX_SLOTS = 5;
-export const EQUIPMENT_SLOT_EXPAND_COSTS = [500, 1250]; // 4번째, 5번째 슬롯 확장 비용(다이아)
+export const EQUIPMENT_SLOT_EXPAND_COSTS = [300, 666]; // 4번째, 5번째 슬롯 확장 비용(다이아). 세트 효과 때문에 슬롯이 늘수록 이득이 커진다.
+// 세트 효과: 같은 세트의 장비를 2개 / 3개 장착하면 공격력·방어력·HP가 모두 이만큼 오른다(희귀도 0~4, 3개가 2개를 대신한다).
+export const EQUIPMENT_SET_BONUS_2 = [0.01, 0.015, 0.02, 0.03, 0.04];
+export const EQUIPMENT_SET_BONUS_3 = [0.03, 0.045, 0.06, 0.09, 0.12];
+// 장비 조각: 쓰지 않는 중복 장비(복사본)를 분해해서 얻고, 레벨업에 모자란 복사본을 조각+골드로 메꾼다.
+// 분해로 얻는 양보다 메꾸는 데 드는 양이 1.5배라서 같은 장비를 직접 모으는 쪽이 늘 이득이다.
+export const EQUIPMENT_SHARDS_PER_COPY = [4, 10, 25, 60, 150]; // 복사본 1개를 분해하면 얻는 조각(희귀도 0~4)
+export const EQUIPMENT_SHARD_COST_PER_COPY = [6, 15, 38, 90, 225]; // 모자란 복사본 1개를 메꾸는 데 드는 조각
+export const EQUIPMENT_SHARD_GOLD_PER_COPY = [100, 300, 1000, 3000, 10000]; // 모자란 복사본 1개를 메꾸는 데 드는 골드
 // 투기장에서 장비 효과를 얼마나 반영할지(1 = 100%). 밸런스가 무너지면 이 값만 낮추면 된다.
 export const PVP_EQUIPMENT_EFFECT_RATE = 1;
 
@@ -342,6 +350,7 @@ export function computeEquipmentBonuses(
 ): StatBonuses {
   const result: StatBonuses = { hp: 0, atk: 0, def: 0 };
   const used = new Set<string>();
+  const setCounts = new Map<string, { count: number; rarity: number }>();
   for (const itemId of slots ?? []) {
     if (!itemId || used.has(itemId)) continue;
     used.add(itemId);
@@ -350,8 +359,35 @@ export function computeEquipmentBonuses(
     if (!def || !state) continue;
     result[EQUIPMENT_STAT_BY_CATEGORY[def.category]] +=
       getEquipmentBonus(def.rarity, state.level, state.awakenCount) * rate;
+    const entry = setCounts.get(def.setId) ?? { count: 0, rarity: def.rarity };
+    entry.count += 1;
+    setCounts.set(def.setId, entry);
+  }
+  // 세트 효과는 모든 스탯에 같은 비율로 더해진다.
+  for (const { count, rarity } of setCounts.values()) {
+    const bonus = getEquipmentSetBonus(count, rarity) * rate;
+    result.hp += bonus;
+    result.atk += bonus;
+    result.def += bonus;
   }
   return result;
+}
+
+// 같은 세트 장비를 count개 장착했을 때 모든 스탯에 더해지는 비율(1개 이하는 0, 3개 이상은 3개 효과).
+export function getEquipmentSetBonus(count: number, rarity: number): number {
+  if (count >= 3) return EQUIPMENT_SET_BONUS_3[rarity] ?? 0;
+  if (count === 2) return EQUIPMENT_SET_BONUS_2[rarity] ?? 0;
+  return 0;
+}
+
+// 레벨업에 모자란 복사본을 조각과 골드로 메꾸는 비용. 이미 모은 복사본을 먼저 쓰고, 모자란 만큼에만 비용이 든다.
+export function getShardLevelUpCost(rarity: number, level: number, copies: number) {
+  const missing = Math.max(0, getEquipmentLevelUpCopies(level) - copies);
+  return {
+    missing,
+    shards: missing * (EQUIPMENT_SHARD_COST_PER_COPY[rarity] ?? EQUIPMENT_SHARD_COST_PER_COPY[0]),
+    gold: missing * (EQUIPMENT_SHARD_GOLD_PER_COPY[rarity] ?? EQUIPMENT_SHARD_GOLD_PER_COPY[0]),
+  };
 }
 
 // 보유 장비를 업적용 숫자로 요약한다. 프론트(gameCalc.ts)에도 같은 함수가 있다.
@@ -968,6 +1004,73 @@ export function playSurvivalSegment(
     if (enemy.isElite && stage < SURVIVAL_MAX_STAGE) return { state, stages, status: 'choose' };
   }
   return { state, stages, status: 'cleared' };
+}
+
+// ---- 고급 탐색(원정) ----
+// 숲 탐색 비용의 몇십 배를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만난다. 신화는 연속으로 못 만나면 확정이고,
+// 아직 도감에 없는 종이 그 등급에 남아 있으면 그중에서 먼저 나온다. 가격은 지금의 숲 탐색 비용에 비례하되 최소 가격이 있다.
+export interface ExpeditionTier {
+  tier: number;
+  name: string;
+  multiplier: number; // 숲 탐색 비용에 곱한다
+  minPrice: number;
+  odds: { rarity: number; percent: number }[]; // 합계 100
+}
+export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
+  {
+    tier: 1,
+    name: '원정',
+    multiplier: 40,
+    minPrice: 100_000,
+    odds: [
+      { rarity: 2, percent: 80 },
+      { rarity: 3, percent: 17 },
+      { rarity: 4, percent: 3 },
+    ],
+  },
+  {
+    tier: 2,
+    name: '대원정',
+    multiplier: 150,
+    minPrice: 500_000,
+    odds: [
+      { rarity: 3, percent: 80 },
+      { rarity: 4, percent: 20 },
+    ],
+  },
+];
+export const EXPEDITION_PITY_LIMIT = 30; // 신화가 이만큼 연속으로 안 나오면 이번 원정은 신화 확정(단계와 무관하게 센다)
+
+export function getExpeditionTier(tier: number): ExpeditionTier | undefined {
+  return EXPEDITION_TIERS.find((t) => t.tier === tier);
+}
+
+export function getExpeditionPrice(tier: ExpeditionTier, exploreCostSteps: number): number {
+  return Math.max(tier.minPrice, tier.multiplier * getExploreCost(exploreCostSteps));
+}
+
+// 확률표대로 희귀도를 뽑는다. random은 0 이상 1 미만.
+export function rollExpeditionRarity(tier: ExpeditionTier, random: number): number {
+  let r = random * 100;
+  for (const o of tier.odds) {
+    if (r < o.percent) return o.rarity;
+    r -= o.percent;
+  }
+  return tier.odds[tier.odds.length - 1].rarity;
+}
+
+// 뽑힌 등급에서 종을 고른다. 아직 도감에 없는 종이 있으면 그중에서 먼저 고른다.
+export function pickExpeditionSpecies(
+  speciesList: Species[],
+  rarity: number,
+  discovered: readonly string[],
+  random: number,
+): Species | null {
+  const pool = speciesList.filter((s) => s.rarity === rarity);
+  if (pool.length === 0) return null;
+  const fresh = pool.filter((s) => !discovered.includes(s.speciesId));
+  const from = fresh.length > 0 ? fresh : pool;
+  return from[Math.min(from.length - 1, Math.floor(random * from.length))];
 }
 
 // ---- 부스트 상점 ----

@@ -212,7 +212,14 @@ export const EQUIPMENT_AWAKEN_FAIL_BONUS = 0.05;
 export const EQUIPMENT_AWAKEN_GOLD_BASE_BY_RARITY = [3000, 8000, 20000, 50000, 120000];
 export const EQUIPMENT_BASE_SLOTS = 3;
 export const EQUIPMENT_MAX_SLOTS = 5;
-export const EQUIPMENT_SLOT_EXPAND_COSTS = [500, 1250];
+export const EQUIPMENT_SLOT_EXPAND_COSTS = [300, 666];
+// 세트 효과: 같은 세트 장비를 2개 / 3개 장착하면 모든 스탯이 이만큼 오른다(희귀도 0~4, 3개가 2개를 대신한다).
+export const EQUIPMENT_SET_BONUS_2 = [0.01, 0.015, 0.02, 0.03, 0.04];
+export const EQUIPMENT_SET_BONUS_3 = [0.03, 0.045, 0.06, 0.09, 0.12];
+// 장비 조각: 중복(복사본) 분해로 얻는 양과, 레벨업에 모자란 복사본 1개를 메꾸는 데 드는 조각·골드
+export const EQUIPMENT_SHARDS_PER_COPY = [4, 10, 25, 60, 150];
+export const EQUIPMENT_SHARD_COST_PER_COPY = [6, 15, 38, 90, 225];
+export const EQUIPMENT_SHARD_GOLD_PER_COPY = [100, 300, 1000, 3000, 10000];
 export const PVP_EQUIPMENT_EFFECT_RATE = 1;
 
 export interface StatBonuses {
@@ -242,6 +249,7 @@ export function computeEquipmentBonuses(
 ): StatBonuses {
   const result: StatBonuses = { hp: 0, atk: 0, def: 0 };
   const used = new Set<string>();
+  const setCounts = new Map<string, { count: number; rarity: number }>();
   for (const itemId of slots ?? []) {
     if (!itemId || used.has(itemId)) continue;
     used.add(itemId);
@@ -250,8 +258,76 @@ export function computeEquipmentBonuses(
     if (!def || !state) continue;
     result[EQUIPMENT_CATEGORY_INFO[def.category].stat] +=
       getEquipmentBonus(def.rarity, state.level, state.awakenCount) * rate;
+    const entry = setCounts.get(def.setId) ?? { count: 0, rarity: def.rarity };
+    entry.count += 1;
+    setCounts.set(def.setId, entry);
+  }
+  // 세트 효과는 모든 스탯에 같은 비율로 더해진다.
+  for (const { count, rarity } of setCounts.values()) {
+    const bonus = getEquipmentSetBonus(count, rarity) * rate;
+    result.hp += bonus;
+    result.atk += bonus;
+    result.def += bonus;
   }
   return result;
+}
+
+// 같은 세트 장비를 count개 장착했을 때 모든 스탯에 더해지는 비율(1개 이하는 0, 3개 이상은 3개 효과).
+export function getEquipmentSetBonus(count: number, rarity: number): number {
+  if (count >= 3) return EQUIPMENT_SET_BONUS_3[rarity] ?? 0;
+  if (count === 2) return EQUIPMENT_SET_BONUS_2[rarity] ?? 0;
+  return 0;
+}
+
+export interface EquipmentSetProgress {
+  setId: string;
+  name: string;
+  rarity: number;
+  itemIds: string[];
+  owned: number; // 이 세트 장비를 몇 개 갖고 있는지
+  equipped: number; // 그중 몇 개를 장착했는지
+  bonus: number; // 지금 적용 중인 세트 효과(모든 스탯)
+  nextBonus: number | null; // 한 개 더 장착하면 받는 효과(더 없으면 null)
+}
+
+// 세트별 보유·장착 현황. 카탈로그의 setId로 세트를 묶는다(세트 정의를 따로 받지 않는다).
+export function getEquipmentSetProgress(
+  slots: readonly string[] | undefined,
+  items: readonly EquipmentItemState[] | undefined,
+  catalog: readonly EquipmentCatalogItem[],
+): EquipmentSetProgress[] {
+  const sets = new Map<string, EquipmentSetProgress>();
+  for (const c of catalog) {
+    const set = sets.get(c.setId) ?? {
+      setId: c.setId,
+      name: c.setName,
+      rarity: c.rarity,
+      itemIds: [],
+      owned: 0,
+      equipped: 0,
+      bonus: 0,
+      nextBonus: null,
+    };
+    set.itemIds.push(c.equipmentId);
+    if ((items ?? []).some((i) => i.itemId === c.equipmentId)) set.owned += 1;
+    if ((slots ?? []).includes(c.equipmentId) && (items ?? []).some((i) => i.itemId === c.equipmentId)) set.equipped += 1;
+    sets.set(c.setId, set);
+  }
+  return [...sets.values()].map((set) => ({
+    ...set,
+    bonus: getEquipmentSetBonus(set.equipped, set.rarity),
+    nextBonus: set.equipped >= 3 ? null : getEquipmentSetBonus(set.equipped + 1, set.rarity),
+  }));
+}
+
+// 레벨업에 모자란 복사본을 조각과 골드로 메꾸는 비용(서버 getShardLevelUpCost와 같은 식).
+export function getShardLevelUpCost(rarity: number, level: number, copies: number) {
+  const missing = Math.max(0, getEquipmentLevelUpCopies(level) - copies);
+  return {
+    missing,
+    shards: missing * (EQUIPMENT_SHARD_COST_PER_COPY[rarity] ?? EQUIPMENT_SHARD_COST_PER_COPY[0]),
+    gold: missing * (EQUIPMENT_SHARD_GOLD_PER_COPY[rarity] ?? EQUIPMENT_SHARD_GOLD_PER_COPY[0]),
+  };
 }
 
 export function hasBonuses(b: StatBonuses): boolean {

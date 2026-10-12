@@ -17,6 +17,7 @@ import {
   EQUIPMENT_PULL_ODDS,
   EQUIPMENT_SLOT_EXPAND_COSTS,
   EQUIPMENT_BASE_SLOTS,
+  EQUIPMENT_SHARDS_PER_COPY,
   RARITIES,
   computeEquipmentBonuses,
   formatBonusPercent,
@@ -25,6 +26,8 @@ import {
   getAwakenSuccessChance,
   getEquipmentBonus,
   getEquipmentLevelUpCopies,
+  getEquipmentSetProgress,
+  getShardLevelUpCost,
 } from '../utils/gameCalc';
 
 type Tab = 'gacha' | 'inventory';
@@ -38,6 +41,8 @@ export function EquipmentView({
   onAwaken,
   onEquip,
   onExpandSlot,
+  onDismantle,
+  onLevelUpShards,
 }: {
   gameState: GameState;
   catalog: EquipmentCatalogItem[];
@@ -47,6 +52,8 @@ export function EquipmentView({
   onAwaken: (itemId: string) => Promise<unknown>;
   onEquip: (slotIndex: number, itemId: string) => Promise<unknown>;
   onExpandSlot: () => Promise<unknown>;
+  onDismantle: (itemId?: string, count?: number) => Promise<unknown>;
+  onLevelUpShards: (itemId: string) => Promise<unknown>;
 }) {
   const [tab, setTab] = useState<Tab>('gacha');
   const [pulling, setPulling] = useState(false);
@@ -56,6 +63,9 @@ export function EquipmentView({
   const defOf = (itemId: string) => catalog.find((c) => c.equipmentId === itemId);
   const slots = gameState.equipmentSlots;
   const bonuses = computeEquipmentBonuses(slots, gameState.equipment, catalog);
+  const shards = gameState.equipmentShards ?? 0;
+  const setProgress = getEquipmentSetProgress(slots, gameState.equipment, catalog);
+  const activeSets = setProgress.filter((s) => s.bonus > 0);
 
   const pull = async (count: 1 | 10) => {
     if (pulling) return;
@@ -89,6 +99,22 @@ export function EquipmentView({
       const db = defOf(b.itemId)!;
       return db.rarity - da.rarity || catalog.indexOf(da) - catalog.indexOf(db);
     });
+
+  // 장착하지 않은 장비의 중복(복사본)을 한꺼번에 분해하면 얻는 조각
+  const bulkDismantle = owned
+    .filter((e) => !slots.includes(e.itemId) && e.copies > 0)
+    .reduce((sum, e) => sum + e.copies * EQUIPMENT_SHARDS_PER_COPY[defOf(e.itemId)!.rarity], 0);
+  const dismantleOne = (state: EquipmentItemState) => {
+    const def = defOf(state.itemId);
+    if (!def) return;
+    const gain = state.copies * EQUIPMENT_SHARDS_PER_COPY[def.rarity];
+    if (!window.confirm(`${def.name}의 중복 ${state.copies}개를 분해해서 조각 ${gain}개를 얻을까요?\n분해한 장비는 되돌릴 수 없어요.`)) return;
+    act(() => onDismantle(state.itemId));
+  };
+  const dismantleAll = () => {
+    if (!window.confirm(`장착하지 않은 장비의 중복을 모두 분해해서 조각 ${formatNumber(bulkDismantle)}개를 얻을까요?\n분해한 장비는 되돌릴 수 없어요.`)) return;
+    act(() => onDismantle());
+  };
 
   const nextExpandCost =
     slots.length < EQUIPMENT_MAX_SLOTS ? EQUIPMENT_SLOT_EXPAND_COSTS[slots.length - EQUIPMENT_BASE_SLOTS] : null;
@@ -232,9 +258,62 @@ export function EquipmentView({
           <div className="info-banner">
             장착 보너스 합계 — ⚔️ 공격력 {formatBonusPercent(bonuses.atk)} · 🛡️ 방어력{' '}
             {formatBonusPercent(bonuses.def)} · ❤️ HP {formatBonusPercent(bonuses.hp)}
+            {activeSets.length > 0 && (
+              <>
+                <br />
+                🧩 세트 효과(모든 스탯){' '}
+                {activeSets.map((s) => `${s.name} ${s.equipped}개 ${formatBonusPercent(s.bonus)}`).join(' · ')}
+              </>
+            )}
           </div>
 
-          <p className="nav-caption">보유 장비</p>
+          <p className="nav-caption">세트 효과</p>
+          <div className="info-banner">
+            같은 세트의 무기·방어구·장신구를 <b>2개</b> 또는 <b>3개</b> 장착하면 공격력·방어력·HP가 모두 올라요. 슬롯을 늘리면 한 세트를 맞추고
+            다른 세트도 2개 끼울 수 있어요.
+          </div>
+          <div className="equip-set-grid">
+            {[...setProgress]
+              .sort((a, b) => b.rarity - a.rarity)
+              .map((s) => (
+                <div
+                  key={s.setId}
+                  className={`equip-set${s.bonus > 0 ? ' active' : ''}`}
+                  style={{ borderColor: RARITIES[s.rarity].color }}
+                >
+                  <strong style={{ color: RARITIES[s.rarity].color }}>{s.name}</strong>
+                  <span className="equip-set-items">
+                    {s.itemIds.map((id) => {
+                      const d = defOf(id);
+                      const have = gameState.equipment.some((e) => e.itemId === id);
+                      const on = slots.includes(id) && have;
+                      return (
+                        <span key={id} className={`equip-set-piece${on ? ' on' : have ? ' have' : ''}`} title={d?.name}>
+                          {d?.icon}
+                        </span>
+                      );
+                    })}
+                  </span>
+                  <small>
+                    장착 {s.equipped}/3 · {s.bonus > 0 ? `지금 ${formatBonusPercent(s.bonus)}` : '효과 없음'}
+                    {s.nextBonus !== null ? ` → ${s.equipped + 1}개 ${formatBonusPercent(s.nextBonus)}` : ' (최대)'}
+                  </small>
+                </div>
+              ))}
+          </div>
+
+          <p className="nav-caption">
+            보유 장비 · ✨ 장비 조각 {formatNumber(shards)}개
+          </p>
+          <div className="equip-shard-row">
+            <small>
+              쓰지 않는 중복 장비를 분해하면 조각을 얻고, 레벨업에 모자란 중복을 조각과 골드로 메꿀 수 있어요. 같은 장비를 직접 모으는 쪽이 늘 더
+              이득이에요.
+            </small>
+            <button className="button secondary" disabled={busy || bulkDismantle < 1} onClick={dismantleAll}>
+              중복 모두 분해 (장착 중 제외){bulkDismantle > 0 ? ` · +✨${formatNumber(bulkDismantle)}` : ''}
+            </button>
+          </div>
           {owned.length === 0 ? (
             <p className="empty">아직 장비가 없어요. 장비 뽑기에서 첫 장비를 얻어 보세요!</p>
           ) : (
@@ -246,9 +325,12 @@ export function EquipmentView({
                   def={defOf(state.itemId)!}
                   equipped={slots.includes(state.itemId)}
                   coins={gameState.coins}
+                  shards={shards}
                   busy={busy}
                   onEquip={() => equipToFirstEmpty(state.itemId)}
                   onLevelUp={() => act(() => onLevelUp(state.itemId))}
+                  onLevelUpShards={() => act(() => onLevelUpShards(state.itemId))}
+                  onDismantle={() => dismantleOne(state)}
                   onAwaken={() => act(() => onAwaken(state.itemId))}
                 />
               ))}
@@ -265,24 +347,32 @@ function InventoryCard({
   def,
   equipped,
   coins,
+  shards,
   busy,
   onEquip,
   onLevelUp,
+  onLevelUpShards,
+  onDismantle,
   onAwaken,
 }: {
   state: EquipmentItemState;
   def: EquipmentCatalogItem;
   equipped: boolean;
   coins: number;
+  shards: number;
   busy: boolean;
   onEquip: () => void;
   onLevelUp: () => void;
+  onLevelUpShards: () => void;
+  onDismantle: () => void;
   onAwaken: () => void;
 }) {
   const info = EQUIPMENT_CATEGORY_INFO[def.category];
   const atMax = state.level >= state.maxLevel;
   const needed = getEquipmentLevelUpCopies(state.level);
   const canLevelUp = !atMax && state.copies >= needed;
+  const shardCost = getShardLevelUpCost(def.rarity, state.level, state.copies);
+  const canShardLevelUp = !atMax && shardCost.missing > 0 && shards >= shardCost.shards && coins >= shardCost.gold;
   const canAwakenMore = state.awakenCount < EQUIPMENT_MAX_AWAKENINGS;
   const awakenCost = getAwakenCost(def.rarity, state.awakenCount);
   const awakenChance = Math.round(getAwakenSuccessChance(state.awakenFailures) * 100);
@@ -297,6 +387,7 @@ function InventoryCard({
       <small>
         {info.icon} {info.statLabel} {formatBonusPercent(getEquipmentBonus(def.rarity, state.level, state.awakenCount))}
       </small>
+      <small>🧩 {def.setName}</small>
       <small>
         Lv.{state.level} / {state.maxLevel}
         {state.awakenCount > 0 ? ` · 각성 ${state.awakenCount}회` : ''}
@@ -324,6 +415,21 @@ function InventoryCard({
         {!atMax && (
           <button className="button primary" disabled={busy || !canLevelUp} onClick={onLevelUp}>
             레벨업
+          </button>
+        )}
+        {!atMax && shardCost.missing > 0 && (
+          <button
+            className="button secondary"
+            disabled={busy || !canShardLevelUp}
+            onClick={onLevelUpShards}
+            title={`모자란 중복 ${shardCost.missing}개를 조각과 골드로 메꿔요`}
+          >
+            조각 레벨업 · ✨{formatNumber(shardCost.shards)} · {formatNumber(shardCost.gold)} G
+          </button>
+        )}
+        {state.copies > 0 && (
+          <button className="button secondary" disabled={busy} onClick={onDismantle}>
+            중복 분해 · +✨{formatNumber(state.copies * EQUIPMENT_SHARDS_PER_COPY[def.rarity])}
           </button>
         )}
         {atMax && canAwakenMore && (

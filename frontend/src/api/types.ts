@@ -99,6 +99,9 @@ export interface EquipmentCatalogItem {
   category: EquipmentCategory;
   rarity: number;
   description: string;
+  // 같은 테마의 무기·방어구·장신구 세 개가 한 세트다.
+  setId: string;
+  setName: string;
 }
 
 export interface EquipmentItemState {
@@ -131,6 +134,9 @@ export interface GameState {
   equipment: EquipmentItemState[];
   equipmentSlots: string[];
   equipmentPity: number;
+  // 장비 조각(중복 장비를 분해해서 얻는다), 신화 원정 천장 진행도. 예전 데이터에는 없을 수 있다.
+  equipmentShards?: number;
+  expeditionPity?: number;
   // 골드로 산 부스트(종류별 하나). 예전 데이터에는 없을 수 있다.
   boosts?: ActiveBoost[];
   terrariums: Terrarium[];
@@ -653,6 +659,51 @@ export interface SurvivalStatus {
   attemptsLeft: number;
   bestStage: number;
   extra: ExtraAttemptInfo;
+}
+
+// ---- 고급 탐색(원정) ----
+export interface ExpeditionTierInfo {
+  tier: number;
+  name: string;
+  price: number; // 내 탐색 횟수에 맞춰 서버가 계산한 가격
+  odds: { rarity: number; percent: number }[];
+}
+
+export interface ExpeditionInfo {
+  pity: number; // 신화를 못 만난 채 다녀온 횟수
+  pityLimit: number;
+  yield: number;
+  tiers: ExpeditionTierInfo[];
+}
+
+export interface ExpeditionResponse {
+  gameState: GameState;
+  message: string;
+  species: Species;
+  isNew: boolean;
+  rarity: number;
+  tier: number;
+  cost: number;
+  forced: boolean; // 신화 천장으로 확정된 원정인지
+  pity: number;
+  pityLimit: number;
+}
+
+// ---- 장비 조각 ----
+export interface DismantleResponse {
+  gameState: GameState;
+  message: string;
+  gained: number;
+  shards: number;
+  dismantled: { itemId: string; name: string; count: number; shards: number }[];
+}
+
+export interface ShardLevelUpResponse {
+  gameState: GameState;
+  message: string;
+  shardsUsed: number;
+  goldUsed: number;
+  copiesFilled: number;
 }
 
 // ---- 부스트 상점 ----

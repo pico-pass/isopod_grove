@@ -348,6 +348,14 @@ export class GameState {
   @Prop({ type: SurvivalRunSchema, default: null })
   survivalRun: SurvivalRun | null;
 
+  // 장비 조각. 중복 장비를 분해해서 얻고, 레벨업에 모자란 복사본을 메꾸는 데 쓴다.
+  @Prop({ default: 0, min: 0 })
+  equipmentShards: number;
+
+  // 신화를 못 만난 채 다녀온 원정 횟수(천장 계산용). 신화가 나오면 0으로 돌아간다.
+  @Prop({ default: 0, min: 0 })
+  expeditionPity: number;
+
   // 골드로 산 부스트(종류별 하나). 만료된 항목은 다음에 살 때 정리된다.
   @Prop({ type: [ActiveBoostSchema], default: [] })
   boosts: ActiveBoost[];

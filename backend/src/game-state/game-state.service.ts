@@ -55,6 +55,7 @@ import {
   EQUIPMENT_MAX_AWAKENINGS,
   EQUIPMENT_MAX_SLOTS,
   EQUIPMENT_PITY_LIMIT,
+  EQUIPMENT_SHARDS_PER_COPY,
   EQUIPMENT_PULL10_COST,
   EQUIPMENT_PULL_COST,
   EQUIPMENT_SLOT_EXPAND_COSTS,
@@ -128,8 +129,15 @@ import {
   SURVIVAL_EXTRA_ATTEMPT_COSTS,
   SURVIVAL_REVIVE_COSTS,
   SURVIVAL_REVIVE_HP_RATE,
+  EXPEDITION_PITY_LIMIT,
+  EXPEDITION_TIERS,
   getBossCooldownSkipCost,
   getBoostFactor,
+  getExpeditionPrice,
+  getExpeditionTier,
+  getShardLevelUpCost,
+  pickExpeditionSpecies,
+  rollExpeditionRarity,
   getBoostPrice,
   pickEquipmentOfRarity,
   pickRandomOfRarity,
@@ -182,6 +190,7 @@ export class GameStateService {
   // 서바이벌도 같은 이유로 막는다(진행 상태를 읽고 쓰는 중에 같은 유저의 요청이 겹치면 보상이 두 번 지급될 수 있다).
   private readonly survivalInFlight = new Set<string>();
   private readonly shopInFlight = new Set<string>();
+  private readonly expeditionInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -1862,6 +1871,84 @@ export class GameStateService {
     return { gameState, message };
   }
 
+  // 쓰지 않는 중복 장비(복사본)를 분해해서 장비 조각을 얻는다. 처음 얻은 1개(장비 자체)는 분해되지 않는다.
+  // itemId를 주면 그 장비의 복사본(개수를 주지 않으면 전부)을, 주지 않으면 장착하지 않은 모든 장비의 복사본을 분해한다.
+  async dismantleEquipment(userId: string, itemId?: string, count?: number) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const targets: { item: (typeof gameState.equipment)[number]; n: number }[] = [];
+    if (itemId) {
+      const item = this.findEquipment(gameState, itemId);
+      if (item.copies < 1) throw new BadRequestException('분해할 중복 장비가 없어요.');
+      const n = count ?? item.copies;
+      if (n > item.copies) {
+        throw new BadRequestException(`분해할 수 있는 중복은 ${item.copies}개뿐이에요.`);
+      }
+      targets.push({ item, n });
+    } else {
+      if (count !== undefined) {
+        throw new BadRequestException('모두 분해할 때는 개수를 정할 수 없어요.');
+      }
+      const equipped = new Set(gameState.equipmentSlots);
+      for (const item of gameState.equipment) {
+        if (!EQUIPMENT_BY_ID.has(item.itemId) || equipped.has(item.itemId) || item.copies < 1) continue;
+        targets.push({ item, n: item.copies });
+      }
+      if (targets.length === 0) {
+        throw new BadRequestException('분해할 중복 장비가 없어요. (장착 중인 장비의 중복은 건드리지 않아요.)');
+      }
+    }
+
+    let gained = 0;
+    const dismantled: { itemId: string; name: string; count: number; shards: number }[] = [];
+    for (const { item, n } of targets) {
+      const def = EQUIPMENT_BY_ID.get(item.itemId)!;
+      const shards = n * (EQUIPMENT_SHARDS_PER_COPY[def.rarity] ?? EQUIPMENT_SHARDS_PER_COPY[0]);
+      item.copies -= n;
+      gained += shards;
+      dismantled.push({ itemId: item.itemId, name: def.name, count: n, shards });
+    }
+    gameState.equipmentShards = (gameState.equipmentShards || 0) + gained;
+    const total = dismantled.reduce((a, d) => a + d.count, 0);
+    const message = `중복 장비 ${total}개를 분해해서 조각 ${gained.toLocaleString('ko-KR')}개를 얻었어요. (보유 ${gameState.equipmentShards.toLocaleString('ko-KR')}개)`;
+    this.pushLog(gameState, 'sprout', message);
+    await gameState.save();
+    return { gameState, message, gained, shards: gameState.equipmentShards, dismantled };
+  }
+
+  // 레벨업에 모자란 중복(복사본)을 조각과 골드로 메꿔서 레벨업한다. 이미 모은 복사본은 먼저 쓰고, 모자란 만큼에만 비용이 든다.
+  async levelUpEquipmentWithShards(userId: string, itemId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const item = this.findEquipment(gameState, itemId);
+    const def = EQUIPMENT_BY_ID.get(itemId)!;
+    if (item.level >= item.maxLevel) {
+      throw new BadRequestException('이미 최대 레벨이에요. 각성하면 더 키울 수 있어요.');
+    }
+    const cost = getShardLevelUpCost(def.rarity, item.level, item.copies);
+    if (cost.missing === 0) {
+      throw new BadRequestException('중복이 충분해요. 조각 없이 바로 레벨업할 수 있어요.');
+    }
+    const owned = gameState.equipmentShards || 0;
+    if (owned < cost.shards) {
+      throw new BadRequestException(
+        `조각이 모자라요. ${cost.shards.toLocaleString('ko-KR')}개가 필요해요. (지금 ${owned.toLocaleString('ko-KR')}개)`,
+      );
+    }
+    if (gameState.coins < cost.gold) {
+      throw new BadRequestException(`레벨업에는 ${cost.gold.toLocaleString('ko-KR')} G가 필요해요.`);
+    }
+    gameState.equipmentShards = owned - cost.shards;
+    gameState.coins -= cost.gold;
+    item.copies = 0; // 모자라서 조각으로 메꿨으니 모아 둔 복사본은 전부 쓴다
+    item.level += 1;
+
+    const message = `${def.name}이(가) Lv.${item.level}로 올랐어요! (조각 ${cost.shards.toLocaleString('ko-KR')}개 · ${cost.gold.toLocaleString('ko-KR')} G)`;
+    this.pushLog(gameState, 'sprout', message);
+    await gameState.save();
+    return { gameState, message, shardsUsed: cost.shards, goldUsed: cost.gold, copiesFilled: cost.missing };
+  }
+
   // 최대 레벨 장비를 골드로 각성한다. 성공하면 최대 레벨 +3, 효과 +5%. 실패하면 골드는 사라지고
   // 다음 성공 확률이 5%p 올라간다(성공하면 확률은 처음으로 돌아간다).
   async awakenEquipment(userId: string, itemId: string) {
@@ -2031,6 +2118,99 @@ export class GameStateService {
       isNew,
       message: `${species.name} 2마리가 숲에 왔어요!`,
     };
+  }
+
+  // ---- 고급 탐색(원정) ----
+  // 숲 탐색 비용에 비례하는 골드를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만난다. 탐색권으로는 갈 수 없다.
+  async getExpeditionInfo(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const steps = gameState.exploreCostSteps || 0;
+    return {
+      pity: gameState.expeditionPity || 0,
+      pityLimit: EXPEDITION_PITY_LIMIT,
+      yield: EXPLORE_YIELD,
+      tiers: EXPEDITION_TIERS.map((t) => ({
+        tier: t.tier,
+        name: t.name,
+        price: getExpeditionPrice(t, steps),
+        odds: t.odds,
+      })),
+    };
+  }
+
+  async expedition(userId: string, tierNo: number, terrariumId?: string) {
+    const tier = getExpeditionTier(tierNo);
+    if (!tier) throw new BadRequestException('존재하지 않는 원정이에요.');
+    if (this.expeditionInFlight.has(userId)) {
+      throw new BadRequestException('원정을 준비하는 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.expeditionInFlight.add(userId);
+    try {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+
+      const terrarium = this.getTerrarium(gameState, terrariumId);
+      if (getPopulationCount(terrarium.population) + EXPLORE_YIELD > getCapacity(terrarium.spaceLevel)) {
+        throw new BadRequestException(
+          `${terrarium.name}에 새 식구 2마리를 위한 자리가 부족해요. 사육장을 확장하거나 분양·이사해 주세요.`,
+        );
+      }
+      const steps = gameState.exploreCostSteps || 0;
+      const price = getExpeditionPrice(tier, steps);
+      if (gameState.coins < price) {
+        throw new BadRequestException(`${tier.name}에는 ${price.toLocaleString('ko-KR')} G가 필요해요.`);
+      }
+
+      const speciesList = await this.speciesService.findAll();
+      const pity = gameState.expeditionPity || 0;
+      const forced = pity + 1 >= EXPEDITION_PITY_LIMIT; // 신화를 못 만난 원정이 쌓이면 이번에는 신화 확정
+      const rarity = forced ? 4 : rollExpeditionRarity(tier, Math.random());
+      const species = pickExpeditionSpecies(speciesList, rarity, gameState.discovered, Math.random());
+      if (!species) throw new BadRequestException('만날 수 있는 종이 없어요.');
+
+      gameState.coins -= price;
+      // 원정도 숲 탐색 한 번으로 센다(다음 탐색 비용이 오르고, 일일 목표와 탐색 업적에 반영된다).
+      gameState.exploreCostSteps = steps + 1;
+      gameState.daily.explore = (gameState.daily.explore || 0) + 1;
+      gameState.stats.explored++;
+      gameState.expeditionPity = rarity === 4 ? 0 : pity + 1;
+
+      const isNew = !gameState.discovered.includes(species.speciesId);
+      terrarium.population.set(
+        species.speciesId,
+        (terrarium.population.get(species.speciesId) || 0) + EXPLORE_YIELD,
+      );
+      let newSpeciesDiamonds = 0;
+      if (isNew) {
+        gameState.discovered.push(species.speciesId);
+        newSpeciesDiamonds = NEW_SPECIES_DIAMONDS_BY_RARITY[species.rarity] ?? 0;
+        gameState.diamonds += newSpeciesDiamonds;
+      }
+      this.grantXp(gameState, isNew ? 40 : 20);
+
+      const message =
+        `${tier.name}에서 ${RARITIES[species.rarity].name} ${species.name} 2마리를 데려왔어요!` +
+        (isNew ? ` 도감에 새롭게 기록했어요! 💎 ${newSpeciesDiamonds}개 획득!` : '') +
+        (forced ? ' (신화 천장 발동)' : '') +
+        ` (-${price.toLocaleString('ko-KR')} G)`;
+      this.pushLog(gameState, 'search', message);
+      await gameState.save();
+      return {
+        gameState,
+        message,
+        species,
+        isNew,
+        rarity,
+        tier: tier.tier,
+        cost: price,
+        forced,
+        pity: gameState.expeditionPity,
+        pityLimit: EXPEDITION_PITY_LIMIT,
+      };
+    } finally {
+      this.expeditionInFlight.delete(userId);
+    }
   }
 
   async sell(

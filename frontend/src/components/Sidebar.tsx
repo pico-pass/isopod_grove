@@ -4,6 +4,7 @@ export type ViewKey =
   | 'habitat'
   | 'collection'
   | 'market'
+  | 'expedition'
   | 'upgrades'
   | 'shop'
   | 'achievements'
@@ -22,6 +23,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'habitat', label: '나의 사육장', icon: '🏠' },
   { key: 'collection', label: '등각류 도감', icon: '📖' },
   { key: 'market', label: '분양 마켓', icon: '💰' },
+  { key: 'expedition', label: '원정', icon: '🧭' },
   { key: 'upgrades', label: '사육장 업그레이드', icon: '🌱' },
   { key: 'shop', label: '부스트 상점', icon: '⚡' },
   { key: 'achievements', label: '업적', icon: '🏆' },

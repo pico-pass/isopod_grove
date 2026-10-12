@@ -9,9 +9,14 @@ export interface EquipmentCatalogItem {
   category: EquipmentCategory;
   rarity: number;
   description: string;
+  // 같은 테마의 무기·방어구·장신구 세 개가 한 세트다. 세트 효과는 EQUIPMENT_SETS와 game-engine.ts의 보너스표를 본다.
+  setId: string;
+  setName: string;
 }
 
-export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [
+type BaseEquipment = Omit<EquipmentCatalogItem, 'setId' | 'setName'>;
+
+const BASE_CATALOG: BaseEquipment[] = [
   // ---- 무기(공격력) ----
   { equipmentId: 'pine_spear', name: '솔잎 창', icon: '🗡️', category: 'weapon', rarity: 0, description: '솔잎을 단단히 엮어 만든 작은 창.' },
   { equipmentId: 'acorn_hammer', name: '도토리 망치', icon: '🔨', category: 'weapon', rarity: 0, description: '커다란 도토리 모자로 만든 묵직한 망치.' },
@@ -48,5 +53,34 @@ export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = [
   { equipmentId: 'starlight_orb', name: '별빛 이슬 구슬', icon: '🔮', category: 'charm', rarity: 4, description: '별빛이 스며든 이슬로 빚은 구슬.' },
   { equipmentId: 'worldtree_sprout_charm', name: '세계수 새싹 부적', icon: '🌱', category: 'charm', rarity: 4, description: '세계수에서 막 돋아난 새싹을 담은 부적.' },
 ];
+
+// 세트: 희귀도마다 두 세트씩, 한 세트는 무기·방어구·장신구 하나씩이다(세트 안의 장비는 희귀도가 같다).
+export interface EquipmentSetInfo {
+  setId: string;
+  name: string;
+  rarity: number;
+  itemIds: string[];
+}
+
+export const EQUIPMENT_SETS: EquipmentSetInfo[] = [
+  { setId: 'pine_patrol', name: '솔잎 순찰대', rarity: 0, itemIds: ['pine_spear', 'leaf_armor', 'clover_charm'] },
+  { setId: 'dewy_forest', name: '이슬 머금은 숲', rarity: 0, itemIds: ['acorn_hammer', 'bark_shield', 'dewdrop_necklace'] },
+  { setId: 'vine_and_moss', name: '덩굴과 이끼', rarity: 1, itemIds: ['thorn_whip', 'moss_armor', 'dandelion_charm'] },
+  { setId: 'pinecone_guard', name: '솔방울 수호대', rarity: 1, itemIds: ['twig_blades', 'pinecone_shield', 'acorn_pendant'] },
+  { setId: 'mycelium_grove', name: '균사 숲', rarity: 2, itemIds: ['mushroom_staff', 'mycelium_cloak', 'spore_sachet'] },
+  { setId: 'firefly_hunter', name: '반딧불 사냥꾼', rarity: 2, itemIds: ['beetle_horn_lance', 'stone_moss_shield', 'firefly_lamp'] },
+  { setId: 'amber_legacy', name: '호박 유산', rarity: 3, itemIds: ['amber_blade', 'amber_plate', 'amber_necklace'] },
+  { setId: 'fairy_forest', name: '요정의 숲', rarity: 3, itemIds: ['moss_lightning_axe', 'crystal_shell_armor', 'fairy_wing_charm'] },
+  { setId: 'moon_and_star', name: '달빛과 별빛', rarity: 4, itemIds: ['moondew_greatsword', 'moonlight_hide', 'starlight_orb'] },
+  { setId: 'worldtree_blessing', name: '세계수의 축복', rarity: 4, itemIds: ['worldtree_root_spear', 'worldtree_bark_armor', 'worldtree_sprout_charm'] },
+];
+
+const SET_OF_ITEM = new Map<string, EquipmentSetInfo>(EQUIPMENT_SETS.flatMap((set) => set.itemIds.map((id) => [id, set] as const)));
+
+export const EQUIPMENT_CATALOG: EquipmentCatalogItem[] = BASE_CATALOG.map((e) => {
+  const set = SET_OF_ITEM.get(e.equipmentId);
+  if (!set) throw new Error(`세트가 없는 장비예요: ${e.equipmentId}`);
+  return { ...e, setId: set.setId, setName: set.name };
+});
 
 export const EQUIPMENT_BY_ID = new Map(EQUIPMENT_CATALOG.map((e) => [e.equipmentId, e]));

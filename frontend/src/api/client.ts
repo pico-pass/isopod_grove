@@ -36,6 +36,10 @@ import type {
   BossCatalog,
   BuyAttemptResponse,
   BuyBoostResponse,
+  DismantleResponse,
+  ExpeditionInfo,
+  ExpeditionResponse,
+  ShardLevelUpResponse,
   BossDifficultyId,
   PvpBattleResponse,
   PvpOpponentResult,
@@ -136,6 +140,13 @@ export const api = {
   survivalStart: (speciesId: string) => post<SurvivalResponse>('/game-state/survival/start', { speciesId }),
   survivalChoose: (buffId: string) => post<SurvivalResponse>('/game-state/survival/choose', { buffId }),
   survivalRetire: () => post<SurvivalResponse>('/game-state/survival/retire'),
+  getExpeditionInfo: () => request<ExpeditionInfo>('/game-state/expedition'),
+  expedition: (tier: number, terrariumId?: string) =>
+    post<ExpeditionResponse>('/game-state/expedition', { tier, terrariumId }),
+  dismantleEquipment: (itemId?: string, count?: number) =>
+    post<DismantleResponse>('/game-state/equipment/dismantle', { itemId, count }),
+  levelUpEquipmentWithShards: (itemId: string) =>
+    post<ShardLevelUpResponse>('/game-state/equipment/level-up-shards', { itemId }),
   getBoostShop: () => request<BoostShop>('/game-state/boosts'),
   buyBoost: (kind: BoostKind, hours: number) => post<BuyBoostResponse>('/game-state/boosts/buy', { kind, hours }),
   survivalRevive: () => post<SurvivalResponse>('/game-state/survival/revive'),

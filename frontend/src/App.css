@@ -3039,3 +3039,80 @@ main {
   color: var(--green);
   font-weight: 700;
 }
+
+/* ---- 원정 ---- */
+.expedition-pity {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.expedition-pity p {
+  margin: 4px 0 0;
+}
+.expedition-card .expedition-odds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-weight: 600;
+}
+.expedition-result-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.expedition-result-row img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+/* ---- 장비 세트·조각 ---- */
+.equip-set-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.equip-set {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  opacity: 0.85;
+}
+.equip-set.active {
+  opacity: 1;
+  box-shadow: 0 0 0 1px currentColor inset;
+}
+.equip-set-items {
+  display: flex;
+  gap: 6px;
+  font-size: 1.3rem;
+}
+.equip-set-piece {
+  filter: grayscale(1);
+  opacity: 0.35;
+}
+.equip-set-piece.have {
+  filter: none;
+  opacity: 0.6;
+}
+.equip-set-piece.on {
+  filter: none;
+  opacity: 1;
+}
+.equip-shard-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.equip-shard-row small {
+  flex: 1 1 260px;
+  color: var(--muted);
+}

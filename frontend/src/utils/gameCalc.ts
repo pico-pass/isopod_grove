@@ -14,8 +14,8 @@ export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
 export const SOIL_RATE_BONUS_PER_LEVEL = 0.25;
 export const NURSERY_TIME_REDUCTION_PER_LEVEL = 0.12;
-// 희귀도(일반~신화)별 번식 주기(초): 15분 / 60분 / 3시간 / 12시간 / 30시간마다 +1마리
-export const BREED_SECONDS_BY_RARITY = [900, 3600, 10800, 43200, 108000];
+// 희귀도(일반~신화)별 번식 주기(초): 37분 30초 / 2시간 30분 / 7시간 30분 / 30시간 / 75시간마다 +1마리
+export const BREED_SECONDS_BY_RARITY = [2250, 9000, 27000, 108000, 270000];
 export const MAX_TERRARIUMS = 10;
 export const TERRARIUM_BASE_COST = 8750;
 export const TERRARIUM_COST_FACTOR = 2.5;

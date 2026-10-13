@@ -11,7 +11,7 @@ export interface BattleEnvironmentInfo {
 
 // 한 전투에 적용된 규칙. 공격력·방어력에 곱해진 최종 배율(상성 ±3% + 환경 +3%)을 보여준다.
 export interface BattleRules {
-  environment: BattleEnvironmentInfo | null; // 서바이벌은 환경이 없어서 null이다(상성만 적용)
+  environment: BattleEnvironmentInfo | null; // 환경이 없는 전투(예전 서바이벌)는 null이다(상성만 적용)
   mine: { family: SpeciesFamily; matchup: FamilyMatchup; multiplier: number };
   enemy: { family: SpeciesFamily; multiplier: number };
 }

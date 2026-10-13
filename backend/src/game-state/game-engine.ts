@@ -1166,12 +1166,12 @@ export interface SurvivalStageResult {
   hpAfter: number; // 이긴 경우 스테이지 회복까지 반영한 값
   won: boolean;
   log: BattleTurn[];
-  // 계열 상성을 적용한 전투에만 있다(enemyStats는 그 보정까지 반영한 값이다). 내 식구 계열을 모르면 없다.
+  // 계열 상성·환경을 적용한 전투에만 있다(enemyStats는 그 보정까지 반영한 값이다). 내 식구 계열을 모르면 없다.
   enemyFamily?: SpeciesFamily;
   rules?: BattleRulesView | null;
 }
 
-// 스테이지 한 판의 양쪽 능력치를 준비한다. 내 계열을 알면 적 계열을 굴려서 상성 보정을 곱한다(HP는 그대로).
+// 스테이지 한 판의 양쪽 능력치를 준비한다. 내 계열을 알면 적 계열과 전투 환경을 굴려서 상성·환경 보정을 곱한다(HP는 그대로).
 function setUpSurvivalFight(
   hp: number,
   mine: { atk: number; def: number },
@@ -1180,10 +1180,12 @@ function setUpSurvivalFight(
   random: () => number,
 ) {
   const myStats: CombatStats = { hp, atk: mine.atk, def: mine.def };
-  if (!myFamily) return { myStats, enemyStats: rolledEnemy, enemyFamily: undefined, rules: undefined };
+  if (!myFamily) return { myStats, enemyStats: rolledEnemy, enemyFamily: undefined, environmentId: undefined, rules: undefined };
   const enemyFamily = rollSurvivalEnemyFamily(random);
-  const applied = applyBattleRules(myStats, rolledEnemy, myFamily, enemyFamily, null);
-  return { myStats: applied.mine, enemyStats: applied.enemy, enemyFamily, rules: applied.rules };
+  // 환경은 야생 배틀과 같은 분포(평범 40%, 나머지 각 20%)로 스테이지마다 굴린다.
+  const environmentId = rollWildEnvironment(random());
+  const applied = applyBattleRules(myStats, rolledEnemy, myFamily, enemyFamily, environmentId);
+  return { myStats: applied.mine, enemyStats: applied.enemy, enemyFamily, environmentId, rules: applied.rules };
 }
 
 export type SurvivalSegmentStatus = 'choose' | 'dead' | 'cleared';
@@ -1295,6 +1297,7 @@ export function startSurvivalEliteDuel(
     mine: fight.myStats,
     maxHp: stats.maxHp,
     enemyFamily: fight.enemyFamily,
+    environmentId: fight.environmentId,
     rules: fight.rules,
     duelState: newBossDuelState(fight.myStats, fight.enemyStats),
   };
@@ -1363,7 +1366,7 @@ export function getBossEnvironment(floor: number): BattleEnvironmentId {
   return BOSS_ENVIRONMENT_CYCLE[(Math.max(1, floor) - 1) % BOSS_ENVIRONMENT_CYCLE.length];
 }
 
-// 야생 배틀의 환경은 전투마다 무작위다(평범 40%, 나머지 셋이 20%씩).
+// 야생 배틀과 서바이벌의 환경은 전투(스테이지)마다 무작위다(평범 40%, 나머지 셋이 20%씩).
 export function rollWildEnvironment(random: number): BattleEnvironmentId {
   if (random < 0.4) return 'plain';
   if (random < 0.6) return 'volcano';

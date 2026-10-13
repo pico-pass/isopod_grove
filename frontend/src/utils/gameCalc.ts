@@ -406,6 +406,8 @@ export const FAMILY_INFO: Record<SpeciesFamily, { name: string; icon: string }> 
   forest: { name: '숲', icon: '🌿' },
   frost: { name: '서리', icon: '❄️' },
 };
+// 전투 환경 아이콘(목록처럼 이름을 다 쓸 자리가 없을 때). 평범한 땅은 표시하지 않는다.
+export const ENVIRONMENT_ICONS: Record<string, string> = { volcano: '🌋', jungle: '🌳', tundra: '🧊' };
 export const FAMILY_BEATS: Record<SpeciesFamily, SpeciesFamily> = { fire: 'forest', forest: 'frost', frost: 'fire' };
 
 // 상성 배율을 공격력·방어력에 곱한 능력치(HP는 그대로). 서바이벌에서 스테이지마다 달라지는 내 능력치를 보여줄 때 쓴다.

@@ -2414,8 +2414,9 @@ export class GameStateService {
       run.duel = {
         stage: d.stage,
         enemySpeciesId: enemySpecies.speciesId,
-        // 상성 보정을 적용한 전투면 적 계열이 들어 있다(저장되는 적 능력치는 보정이 반영된 값)
+        // 상성·환경 보정을 적용한 전투면 적 계열과 환경이 들어 있다(저장되는 적 능력치는 보정이 반영된 값)
         enemyFamily: d.enemyFamily ?? '',
+        environment: d.environmentId ?? '',
         mineHp: d.mine.hp,
         enemyHpMax: d.enemyStats.hp,
         enemyAtk: d.enemyStats.atk,
@@ -2539,11 +2540,12 @@ export class GameStateService {
     };
   }
 
-  // 저장된 엘리트 직접 전투의 상성 규칙. 적 계열이 저장돼 있지 않으면(상성이 생기기 전에 시작한 전투) null이다.
+  // 저장된 엘리트 직접 전투의 상성·환경 규칙. 적 계열이 저장돼 있지 않으면(상성이 생기기 전에 시작한 전투) null이고,
+  // 환경만 비어 있으면(환경이 생기기 전에 시작한 전투) 상성만 적용한 규칙이다.
   private survivalDuelRules(mySpecies: { speciesId: string; family?: string }, duel: SurvivalDuel): BattleRulesView | null {
-    return duel.enemyFamily
-      ? describeBattleRules(resolveFamily(mySpecies), duel.enemyFamily as SpeciesFamily, null)
-      : null;
+    if (!duel.enemyFamily) return null;
+    const environment = duel.environment ? (duel.environment as BattleEnvironmentId) : null;
+    return describeBattleRules(resolveFamily(mySpecies), duel.enemyFamily as SpeciesFamily, environment);
   }
 
   private toSurvivalDuelView(
@@ -2556,7 +2558,7 @@ export class GameStateService {
     if (!duel) return null;
     const stats = getSurvivalStats(this.toSurvivalState(run));
     const info = getSurvivalEnemy(duel.stage);
-    // 상성이 적용된 전투(적 계열이 저장돼 있음)면 내 공격·방어에도 보정이 곱해져 있다. 상성이 생기기 전에 시작한 전투는 보정이 없다.
+    // 상성·환경이 적용된 전투(적 계열이 저장돼 있음)면 내 공격·방어에도 보정이 곱해져 있다. 규칙이 생기기 전에 시작한 전투는 보정이 없다.
     const rules = this.survivalDuelRules(mySpecies, duel);
     const enemy = enemySpecies ?? { speciesId: duel.enemySpeciesId, name: '엘리트', image: undefined, filter: '', rarity: info.speciesRarity };
     return {

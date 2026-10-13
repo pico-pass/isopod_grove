@@ -17,6 +17,7 @@ import type {
 } from '../api/types';
 import {
   RARITIES,
+  ENVIRONMENT_ICONS,
   formatBonusPercent,
   scaleStatsByMultiplier,
   formatNumber,
@@ -317,7 +318,10 @@ export function SurvivalView({
           )}
           <div className="info-banner">
             🔥 불꽃 &gt; 🌿 숲 &gt; ❄️ 서리 &gt; 🔥 불꽃 상성이 적용돼요. 스테이지마다 적의 계열이 무작위로 정해지고, 내 식구가 이기는
-            계열이면 공격·방어 +3%, 지는 계열이면 −3%예요(같은 계열이면 그대로). 환경 효과는 없어요.
+            계열이면 공격·방어 +3%, 지는 계열이면 −3%예요(같은 계열이면 그대로).
+            <br />
+            🌍 스테이지마다 전투 환경도 무작위로 정해져요(평범한 땅 40% · 🌋 화산 지대 · 🌳 울창한 숲 · 🧊 서리 평원 각 20%). 환경이 편드는
+            계열은 공격·방어 +3%를 더 받아요(내 식구도, 적도 해당될 수 있어요).
           </div>
           {hasBonuses(equipmentBonuses) && (
             <div className="info-banner">
@@ -394,6 +398,9 @@ export function SurvivalView({
                   <span className="survival-stage-enemy">
                     {st.isElite ? '👹 ' : ''}
                     {st.enemy.name} <FamilyBadge family={st.enemy.family} compact />
+                    {st.rules?.environment && ENVIRONMENT_ICONS[st.rules.environment.id] && (
+                      <small title={st.rules.environment.name}> {ENVIRONMENT_ICONS[st.rules.environment.id]}</small>
+                    )}
                     {st.rules?.mine.matchup === 'advantage' && <small className="matchup-up"> ▲</small>}
                     {st.rules?.mine.matchup === 'disadvantage' && <small className="matchup-down"> ▼</small>}
                     {st.isElite && st.patterns.length > 0 && <small> · {st.patterns.map((p) => p.name).join('+')}</small>}

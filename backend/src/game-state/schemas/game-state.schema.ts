@@ -211,6 +211,10 @@ export class SurvivalDuel {
   @Prop({ default: '' })
   enemyFamily: string;
 
+  // 이 전투의 환경(BattleEnvironmentId). 비어 있으면 환경이 생기기 전에 시작한 전투라 상성만 적용된다.
+  @Prop({ default: '' })
+  environment: string;
+
   // 이 전투를 시작할 때의 내 HP(이어받은 HP)
   @Prop({ required: true })
   mineHp: number;

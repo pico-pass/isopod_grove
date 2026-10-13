@@ -274,6 +274,9 @@ function App() {
               onTrain={(speciesId, intensity, extreme) =>
                 runAction(() => api.train(speciesId, intensity, extreme))
               }
+              onDuelStart={(speciesId, difficulty) => runAction(() => api.battleDuelStart(speciesId, difficulty))}
+              onDuelAct={(action) => runAction(() => api.battleDuelAct(action))}
+              onDuelForfeit={() => runAction(() => api.battleDuelForfeit())}
             />
           )}
           {view === 'boss' && (
@@ -286,6 +289,9 @@ function App() {
               onBattle={(speciesId, floor, difficulty) => runAction(() => api.bossBattle(speciesId, floor, difficulty))}
               onBuyAttempt={() => runAction(() => api.buyBossAttempt())}
               onSkipCooldown={() => runAction(() => api.skipBossCooldown())}
+              onDuelStart={(speciesId, floor, difficulty) => runAction(() => api.bossDuelStart(speciesId, floor, difficulty))}
+              onDuelAct={(action) => runAction(() => api.bossDuelAct(action))}
+              onDuelForfeit={() => runAction(() => api.bossDuelForfeit())}
             />
           )}
           {view === 'survival' && (
@@ -293,7 +299,8 @@ function App() {
               gameState={gameState}
               species={displaySpecies}
               equipmentBonuses={equipmentBonuses}
-              onStart={(speciesId) => runAction(() => api.survivalStart(speciesId))}
+              onStart={(speciesId, mode) => runAction(() => api.survivalStart(speciesId, mode))}
+              onDuelAct={(action) => runAction(() => api.survivalDuelAct(action))}
               onChoose={(buffId) => runAction(() => api.survivalChoose(buffId))}
               onRetire={() => runAction(() => api.survivalRetire())}
               onRevive={() => runAction(() => api.survivalRevive())}

@@ -24,6 +24,8 @@ import { BuyBoostDto } from './dto/boost.dto';
 import { ExpeditionDto } from './dto/expedition.dto';
 import { RenameTerrariumDto } from './dto/rename-terrarium.dto';
 import { SetSpeciesLockDto } from './dto/set-species-lock.dto';
+import { BossDuelActDto } from './dto/boss-duel-act.dto';
+import { BattleDuelStartDto } from './dto/battle-duel-start.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
@@ -107,6 +109,46 @@ export class GameStateController {
     return this.gameStateService.bossBattle(user.userId, dto.speciesId, dto.floor, dto.difficulty);
   }
 
+  @Get('battle/duel')
+  battleDuel(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getBattleDuel(user.userId);
+  }
+
+  @Post('battle/duel/start')
+  battleDuelStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: BattleDuelStartDto) {
+    return this.gameStateService.battleDuelStart(user.userId, dto.speciesId, dto.difficulty);
+  }
+
+  @Post('battle/duel/act')
+  battleDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
+    return this.gameStateService.battleDuelAct(user.userId, dto.action);
+  }
+
+  @Post('battle/duel/forfeit')
+  battleDuelForfeit(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.battleDuelForfeit(user.userId);
+  }
+
+  @Get('boss/duel')
+  bossDuel(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getBossDuel(user.userId);
+  }
+
+  @Post('boss/duel/start')
+  bossDuelStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossBattleDto) {
+    return this.gameStateService.bossDuelStart(user.userId, dto.speciesId, dto.floor, dto.difficulty);
+  }
+
+  @Post('boss/duel/act')
+  bossDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
+    return this.gameStateService.bossDuelAct(user.userId, dto.action);
+  }
+
+  @Post('boss/duel/forfeit')
+  bossDuelForfeit(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.bossDuelForfeit(user.userId);
+  }
+
   @Get('boosts')
   boostShop(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.getBoostShop(user.userId);
@@ -134,7 +176,12 @@ export class GameStateController {
 
   @Post('survival/start')
   survivalStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: SurvivalStartDto) {
-    return this.gameStateService.survivalStart(user.userId, dto.speciesId);
+    return this.gameStateService.survivalStart(user.userId, dto.speciesId, dto.mode);
+  }
+
+  @Post('survival/duel/act')
+  survivalDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
+    return this.gameStateService.survivalDuelAct(user.userId, dto.action);
   }
 
   @Post('survival/choose')

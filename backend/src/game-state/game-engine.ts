@@ -811,6 +811,200 @@ export function simulateBossBattle(
   return { winner: myHp / mine.hp >= bossHp / boss.hp ? 'me' : 'enemy', log };
 }
 
+// ---- 보스 직접 전투 ----
+// 자동 전투와 같은 능력치·패턴·보상으로, 매 턴 플레이어가 행동을 고른다. 서버가 전투 상태를 들고 한 턴씩 진행하고,
+// '공격'만 계속 고르면 자동 전투(simulateBossBattle)와 같은 규칙이다. 보스 패턴 중 강타·웅크리기는 턴 번호로 정해져서
+// 그 턴이 오기 전에 미리 예고해 줄 수 있고, 플레이어는 예고를 보고 방어하거나 힘을 모아 대응한다.
+export type DuelAction = 'attack' | 'guard' | 'strike' | 'heal';
+export const DUEL_ACTIONS: readonly DuelAction[] = ['attack', 'guard', 'strike', 'heal'];
+export const DUEL_GUARD_TAKEN_MULT = 0.5; // 방어 태세를 취한 턴에 받는 피해
+export const DUEL_CHARGE_MULT = 1.5; // 방어로 모은 힘: 다음 공격(강력한 일격 포함)의 피해 배율
+export const DUEL_STRIKE_MULT = 1.5; // 강력한 일격의 피해 배율
+export const DUEL_STRIKE_COOLDOWN = 3; // 쓴 뒤 3으로 시작해 턴이 끝날 때마다 1씩 줄고, 0이 되면 다시 쓴다(2턴 쉰다)
+export const DUEL_STRIKE_RECKLESS_MULT = 1.4; // 강력한 일격을 쓴 턴에 받는 피해(무리한 공격)
+export const DUEL_HEAL_RATIO = 0.2; // 회복: 최대 HP의 20%, 한 전투에 한 번
+
+export interface DuelActionInfo {
+  id: DuelAction;
+  name: string;
+  description: string;
+}
+export const DUEL_ACTION_INFO: readonly DuelActionInfo[] = [
+  { id: 'attack', name: '공격', description: '평범하게 공격해요. 자동 전투와 같아요.' },
+  {
+    id: 'guard',
+    name: '방어 태세',
+    description: `이번 턴 공격을 쉬고 받는 피해를 ${Math.round((1 - DUEL_GUARD_TAKEN_MULT) * 100)}% 줄여요. 힘을 모아 다음 공격이 ${DUEL_CHARGE_MULT}배가 돼요.`,
+  },
+  {
+    id: 'strike',
+    name: '강력한 일격',
+    description: `피해 ${DUEL_STRIKE_MULT}배. 쓴 턴에 받는 피해가 ${DUEL_STRIKE_RECKLESS_MULT}배가 되고, 쓰고 나면 ${DUEL_STRIKE_COOLDOWN - 1}턴 쉬어야 해요.`,
+  },
+  {
+    id: 'heal',
+    name: '회복',
+    description: `이번 턴 공격을 쉬고 최대 HP의 ${Math.round(DUEL_HEAL_RATIO * 100)}%를 회복해요. 한 전투에 한 번만 쓸 수 있어요.`,
+  },
+];
+
+export interface BossDuelState {
+  turn: number; // 지금 행동을 고를 턴(1부터)
+  myHp: number;
+  bossHp: number;
+  enraged: boolean;
+  charged: boolean; // 방어로 힘을 모았는지(다음 공격이 강해진다)
+  strikeCooldown: number; // 0이면 강력한 일격을 쓸 수 있다
+  healUsed: boolean;
+}
+
+export function newBossDuelState(mine: CombatStats, boss: CombatStats): BossDuelState {
+  return { turn: 1, myHp: mine.hp, bossHp: boss.hp, enraged: false, charged: false, strikeCooldown: 0, healUsed: false };
+}
+
+// 이번 턴에 보스가 하려는 일. 패턴이 턴 번호로 정해지는 것만 미리 알 수 있다.
+export interface DuelIntent {
+  heavy: boolean; // 이번 턴 보스의 공격이 강타(피해 2배)
+  guard: boolean; // 이번 턴 보스가 웅크려서 내가 주는 피해가 줄어든다
+}
+
+export function getDuelIntent(patterns: readonly BossPattern[], turn: number): DuelIntent {
+  return {
+    heavy: patterns.includes('heavy') && turn % BOSS_HEAVY_EVERY === 0,
+    guard: patterns.includes('guard') && turn % BOSS_GUARD_EVERY === 0,
+  };
+}
+
+// 지금 상태에서 각 행동을 고를 수 있는지와, 못 고르면 그 이유
+export function getDuelActionStates(state: BossDuelState): { id: DuelAction; available: boolean; reason?: string }[] {
+  return DUEL_ACTIONS.map((id) => {
+    if (id === 'strike' && state.strikeCooldown > 0) {
+      return { id, available: false, reason: `${state.strikeCooldown}턴 뒤에 쓸 수 있어요` };
+    }
+    if (id === 'heal' && state.healUsed) {
+      return { id, available: false, reason: '이미 썼어요' };
+    }
+    return { id, available: true };
+  });
+}
+
+export interface DuelTurnResult {
+  state: BossDuelState; // 이 턴을 마친 상태(winner가 있으면 마지막 상태)
+  turns: BattleTurn[]; // 이 턴에 일어난 일(내 행동, 보스 행동)
+  winner: 'me' | 'enemy' | null;
+}
+
+// 한 턴을 진행한다. 행동을 고를 수 없는 상태(쿨타임·이미 쓴 회복)는 호출 전에 막아야 한다.
+export function playDuelTurn(
+  mine: CombatStats,
+  boss: CombatStats,
+  patterns: readonly BossPattern[],
+  start: BossDuelState,
+  action: DuelAction,
+  random: () => number = Math.random,
+  // healCapHp: 회복의 기준이 되는 내 최대 HP. 처음 HP가 최대보다 낮은 채로 시작하는 전투(서바이벌)에서 쓴다. 기본은 mine.hp.
+  opts: { healCapHp?: number } = {},
+): DuelTurnResult {
+  const has = (p: BossPattern) => patterns.includes(p);
+  const turn = start.turn;
+  let { myHp, bossHp, enraged, charged, strikeCooldown, healUsed } = start;
+  const turns: BattleTurn[] = [];
+  const finish = (winner: 'me' | 'enemy' | null): DuelTurnResult => ({
+    state: { turn: turn + 1, myHp, bossHp, enraged, charged, strikeCooldown: Math.max(0, strikeCooldown - 1), healUsed },
+    turns,
+    winner,
+  });
+
+  // ---- 내 행동 ----
+  const myNotes: string[] = [];
+  let braced = false; // 방어 태세
+  let reckless = false; // 강력한 일격
+  const myTurn: BattleTurn = { turn, attacker: 'me', damage: 0, remainingHp: bossHp };
+  if (action === 'attack' || action === 'strike') {
+    let toBoss = rollDamage(mine.atk, boss.def, random);
+    if (action === 'strike') {
+      toBoss = Math.round(toBoss * DUEL_STRIKE_MULT);
+      strikeCooldown = DUEL_STRIKE_COOLDOWN;
+      reckless = true;
+      myNotes.push('💥 강력한 일격!');
+    }
+    if (charged) {
+      toBoss = Math.round(toBoss * DUEL_CHARGE_MULT);
+      charged = false;
+      myNotes.push('⚡ 모은 힘을 실었어요');
+    }
+    if (has('guard') && turn % BOSS_GUARD_EVERY === 0) {
+      toBoss = Math.max(1, Math.round(toBoss * BOSS_GUARD_DAMAGE_MULT));
+      myNotes.push('🛡️ 웅크리기! 받는 피해가 줄었어요');
+    }
+    bossHp = Math.max(0, bossHp - toBoss);
+    myTurn.damage = toBoss;
+    myTurn.remainingHp = bossHp;
+    if (bossHp <= 0) {
+      if (myNotes.length) myTurn.note = myNotes.join(' · ');
+      turns.push(myTurn);
+      return finish('me');
+    }
+    if (has('thorns')) {
+      const reflected = Math.max(1, Math.round(toBoss * BOSS_THORNS_RATIO));
+      myHp = Math.max(0, myHp - reflected);
+      myTurn.myHp = myHp;
+      myNotes.push(`🌵 가시갑옷! ${reflected} 반사`);
+    }
+  } else if (action === 'guard') {
+    braced = true;
+    charged = true;
+    myNotes.push('🛡️ 방어 태세! 힘을 모아요');
+  } else {
+    const cap = opts.healCapHp ?? mine.hp;
+    const healed = Math.min(cap, myHp + Math.round(cap * DUEL_HEAL_RATIO));
+    myNotes.push(`🌿 회복 +${healed - myHp}`);
+    myHp = healed;
+    healUsed = true;
+    myTurn.myHp = myHp;
+  }
+  if (myNotes.length) myTurn.note = myNotes.join(' · ');
+  turns.push(myTurn);
+  if (myHp <= 0) return finish('enemy');
+
+  // ---- 보스 행동 ---- (자동 전투와 같은 순서: 재생 → 분노 → 공격)
+  const bossNotes: string[] = [];
+  let healedHp: number | undefined;
+  if (has('regen') && bossHp < boss.hp) {
+    const heal = Math.max(1, Math.round(boss.hp * BOSS_REGEN_RATIO));
+    bossHp = Math.min(boss.hp, bossHp + heal);
+    healedHp = bossHp;
+    bossNotes.push(`💚 재생! +${heal}`);
+  }
+  if (has('enrage') && !enraged && bossHp <= boss.hp * BOSS_ENRAGE_HP_RATIO) {
+    enraged = true;
+    bossNotes.push('🔥 분노! 공격력이 올라갔어요');
+  }
+  let toMe = rollDamage(enraged ? boss.atk * BOSS_ENRAGE_ATK_MULT : boss.atk, mine.def, random);
+  if (has('heavy') && turn % BOSS_HEAVY_EVERY === 0) {
+    toMe = Math.round(toMe * BOSS_HEAVY_MULT);
+    bossNotes.push('💥 강타!');
+  }
+  if (braced) {
+    toMe = Math.max(1, Math.round(toMe * DUEL_GUARD_TAKEN_MULT));
+    bossNotes.push('🛡️ 방어 태세로 피해가 줄었어요');
+  }
+  if (reckless) {
+    toMe = Math.round(toMe * DUEL_STRIKE_RECKLESS_MULT);
+    bossNotes.push('⚠️ 무리한 공격이라 더 아프게 맞았어요');
+  }
+  myHp = Math.max(0, myHp - toMe);
+  const bossTurn: BattleTurn = { turn, attacker: 'enemy', damage: toMe, remainingHp: myHp };
+  if (healedHp !== undefined) bossTurn.enemyHp = healedHp;
+  if (bossNotes.length) bossTurn.note = bossNotes.join(' · ');
+  turns.push(bossTurn);
+  if (myHp <= 0) return finish('enemy');
+
+  // 턴 수를 모두 쓰면 남은 체력 "비율"로 판정한다(자동 전투와 같다).
+  if (turn >= BATTLE_MAX_TURNS) return finish(myHp / mine.hp >= bossHp / boss.hp ? 'me' : 'enemy');
+  return finish(null);
+}
+
 // ---- 서바이벌(무한 전투) ----
 // 식구 한 마리로 HP를 이어가며 적을 계속 쓰러뜨린다. 5스테이지마다 엘리트(보스 패턴)가 나오고, 엘리트를 쓰러뜨리면
 // 버프 3개 중 하나를 골라 이어간다. 내 HP가 0이 되면 끝이고, 깬 스테이지 수가 기록이다.
@@ -1006,6 +1200,78 @@ export function playSurvivalSegment(
     if (enemy.isElite && stage < SURVIVAL_MAX_STAGE) return { state, stages, status: 'choose' };
   }
   return { state, stages, status: 'cleared' };
+}
+
+// ---- 서바이벌 직접 전투 ----
+// 직접 전투 모드의 런은 일반 스테이지를 자동으로 진행하다가 엘리트 앞에서 멈추고, 엘리트와는 매 턴 행동을 골라 싸운다
+// (스테이지 수백 번을 일일이 고르면 지루해서 보스 패턴이 붙는 엘리트 전투만 직접 한다). 보상·회복·버프 선택은 자동 모드와 같다.
+export type SurvivalMode = 'auto' | 'direct';
+export const SURVIVAL_MODES: readonly SurvivalMode[] = ['auto', 'direct'];
+
+// 마지막으로 깬 스테이지 다음부터 일반 스테이지를 자동으로 진행해서, 다음 엘리트 앞까지("elite") 또는 쓰러질 때까지("dead") 간다.
+export function playSurvivalUntilElite(
+  start: SurvivalState,
+  random: () => number = Math.random,
+): { state: SurvivalState; stages: SurvivalStageResult[]; status: 'elite' | 'dead' } {
+  const state: SurvivalState = { ...start, buffs: { ...start.buffs } };
+  const stages: SurvivalStageResult[] = [];
+  const mine = getSurvivalStats(state);
+
+  for (let stage = state.stage + 1; stage <= SURVIVAL_MAX_STAGE; stage++) {
+    const enemy = getSurvivalEnemy(stage);
+    if (enemy.isElite) return { state, stages, status: 'elite' };
+    const enemyStats = rollBossStats(enemy.stats, random);
+    const hpBefore = state.hp;
+    const { winner, log } = simulateBossBattle({ hp: hpBefore, atk: mine.atk, def: mine.def }, enemyStats, enemy.patterns, random);
+    const base = {
+      stage,
+      isElite: false,
+      patterns: enemy.patterns,
+      enemyStats,
+      speciesRarity: enemy.speciesRarity,
+      hpBefore,
+      log,
+    };
+    if (winner !== 'me') {
+      stages.push({ ...base, hpAfter: Math.max(0, myHpAfterBattle(log, hpBefore)), won: false });
+      return { state, stages, status: 'dead' };
+    }
+    const healed = Math.min(mine.maxHp, myHpAfterBattle(log, hpBefore) + Math.round(mine.maxHp * mine.healRate));
+    state.hp = healed;
+    state.stage = stage;
+    stages.push({ ...base, hpAfter: healed, won: true });
+  }
+  // 상한(100스테이지)도 엘리트라서 여기까지 오지 않는다.
+  return { state, stages, status: 'elite' };
+}
+
+// 다음 스테이지(엘리트)와의 직접 전투를 준비한다. 내 HP는 이어받은 현재 HP로 시작하고, 적 능력치는 자동 모드와 같이 한 번 굴린다.
+export function startSurvivalEliteDuel(state: SurvivalState, random: () => number = Math.random) {
+  const stage = state.stage + 1;
+  const enemy = getSurvivalEnemy(stage);
+  const enemyStats = rollBossStats(enemy.stats, random);
+  const stats = getSurvivalStats(state);
+  const mine: CombatStats = { hp: state.hp, atk: stats.atk, def: stats.def };
+  return {
+    stage,
+    patterns: enemy.patterns,
+    speciesRarity: enemy.speciesRarity,
+    enemyStats,
+    mine,
+    maxHp: stats.maxHp,
+    duelState: newBossDuelState(mine, enemyStats),
+  };
+}
+
+// 직접 전투로 엘리트를 이겼을 때의 새 상태. 자동 모드와 똑같이 스테이지를 깬 뒤 최대 HP의 회복 비율만큼 HP가 돌아온다.
+export function finishSurvivalEliteWin(state: SurvivalState, hpAfterBattle: number): SurvivalState {
+  const stats = getSurvivalStats(state);
+  return {
+    ...state,
+    buffs: { ...state.buffs },
+    stage: state.stage + 1,
+    hp: Math.min(stats.maxHp, hpAfterBattle + Math.round(stats.maxHp * stats.healRate)),
+  };
 }
 
 // ---- 전설·신화 번식의 긴 오프라인 인정 ----

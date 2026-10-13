@@ -3222,3 +3222,68 @@ main {
   border-color: var(--lime);
   font-weight: 700;
 }
+
+/* ---- 보스 직접 전투 ---- */
+.boss-fight-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.duel-panel {
+  display: grid;
+  gap: 12px;
+}
+.duel-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+}
+.duel-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.duel-status .duel-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.duel-intent {
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--panel2);
+}
+.duel-intent p {
+  margin: 2px 0;
+}
+.duel-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.duel-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.duel-action small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+.duel-action:hover:not(:disabled) {
+  border-color: var(--lime);
+}
+.duel-action.unavailable,
+.duel-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

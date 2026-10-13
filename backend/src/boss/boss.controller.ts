@@ -7,6 +7,7 @@ import {
   BOSS_DIFFICULTIES,
   BOSS_EXTRA_ATTEMPT_COSTS,
   BOSS_FLOOR_COUNT,
+  DUEL_ACTION_INFO,
   BOSS_PATTERNS,
   getBossFloor,
   pickBossSpecies,
@@ -58,6 +59,8 @@ export class BossController {
       // 다이아 편의 기능: 오늘 N번째 추가 도전의 가격과, 쿨타임을 건너뛸 때 남은 초당 가격 단위
       extraAttemptCosts: BOSS_EXTRA_ATTEMPT_COSTS,
       cooldownSkipSecondsPerDiamond: BOSS_COOLDOWN_SKIP_SECONDS_PER_DIAMOND,
+      // 직접 전투(매 턴 행동을 고르는 전투)에서 쓸 수 있는 행동 설명
+      duelActions: DUEL_ACTION_INFO,
       difficulties: BOSS_DIFFICULTIES,
       floors,
     };

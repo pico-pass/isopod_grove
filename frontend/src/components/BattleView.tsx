@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
-import type { BattleResponse, GameState, Species, TrainResponse } from '../api/types';
+import { api } from '../api/client';
+import type {
+  BattleResponse,
+  DuelActionId,
+  GameState,
+  Species,
+  TrainResponse,
+  WildDuelActResponse,
+  WildDuelEndResponse,
+  WildDuelTurnResponse,
+  WildDuelView,
+} from '../api/types';
 import {
   BATTLE_DIAMOND_CHANCE_BY_RARITY,
   BATTLE_REWARD_BY_RARITY,
@@ -22,6 +33,7 @@ import {
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
+import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
 
 type Mode = 'wild' | 'train';
@@ -32,12 +44,18 @@ export function BattleView({
   equipmentBonuses,
   onBattle,
   onTrain,
+  onDuelStart,
+  onDuelAct,
+  onDuelForfeit,
 }: {
   gameState: GameState;
   species: Species[];
   equipmentBonuses: StatBonuses;
   onBattle: (speciesId: string, difficulty: number) => Promise<BattleResponse | null>;
   onTrain: (speciesId: string, intensity: number, extreme: boolean) => Promise<TrainResponse | null>;
+  onDuelStart: (speciesId: string, difficulty: number) => Promise<WildDuelTurnResponse | null>;
+  onDuelAct: (action: DuelActionId) => Promise<WildDuelActResponse | null>;
+  onDuelForfeit: () => Promise<WildDuelEndResponse | null>;
 }) {
   const [mode, setMode] = useState<Mode>('wild');
   const [difficulty, setDifficulty] = useState(0);
@@ -49,11 +67,25 @@ export function BattleView({
   const [fighting, setFighting] = useState(false);
   const [training, setTraining] = useState(false);
   const [now, setNow] = useState(0);
+  // 진행 중인 직접 전투(없으면 null). 새로고침하거나 다른 기기에서 들어와도 서버에서 다시 불러와 이어간다.
+  const [duel, setDuel] = useState<WildDuelView | null>(null);
+  const [duelBusy, setDuelBusy] = useState(false);
   const { visibleTurns, setVisibleTurns, animating, logRef } = useBattleReplay(result?.log);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // Promise.resolve().then(...)으로 감싸서 setState 호출이 이펙트 본문에서 동기로 일어나지 않게 한다.
+  useEffect(() => {
+    Promise.resolve().then(async () => {
+      try {
+        setDuel((await api.getBattleDuel()).duel);
+      } catch {
+        // 진행 중인 전투를 못 불러와도 자동 전투는 할 수 있다.
+      }
+    });
   }, []);
 
   const totals = getTotalPopulationBySpecies(gameState);
@@ -88,6 +120,45 @@ export function BattleView({
     setFighting(false);
   };
 
+  // 전투가 끝나면(승·패·포기) 자동 전투와 같은 결과 화면을 바로 보여준다. 이미 턴마다 봤으니 다시 재생하지 않는다.
+  const finishDuel = (r: WildDuelEndResponse) => {
+    setDuel(null);
+    setMode('wild');
+    setResult(r);
+    setVisibleTurns(r.log.length);
+  };
+
+  const startDuel = async () => {
+    if (!selected || fighting || animating || cooldownRemaining > 0 || duelBusy) return;
+    setDuelBusy(true);
+    const r = await onDuelStart(selected, difficulty);
+    if (r) {
+      setResult(null);
+      setDuel(r.duel);
+    }
+    setDuelBusy(false);
+  };
+
+  const duelAct = async (action: DuelActionId) => {
+    if (duelBusy) return;
+    setDuelBusy(true);
+    const r = await onDuelAct(action);
+    if (r) {
+      if (r.finished) finishDuel(r);
+      else setDuel(r.duel);
+    }
+    setDuelBusy(false);
+  };
+
+  const duelForfeit = async () => {
+    if (duelBusy) return;
+    if (!window.confirm('직접 전투를 포기할까요?\n패배로 처리돼요.')) return;
+    setDuelBusy(true);
+    const r = await onDuelForfeit();
+    if (r) finishDuel(r);
+    setDuelBusy(false);
+  };
+
   const train = async () => {
     if (!selected || training || trainCooldownRemaining > 0 || !canAffordTrain) return;
     setTraining(true);
@@ -100,6 +171,32 @@ export function BattleView({
   const lastTurn = visibleLog[visibleLog.length - 1];
   const myHp = result ? hpAfter(result.log, visibleTurns, 'me', result.mine.stats.hp) : 0;
   const enemyHp = result ? hpAfter(result.log, visibleTurns, 'enemy', result.enemy.stats.hp) : 0;
+
+  if (duel) {
+    return (
+      <section className="view active">
+        <div className="page-heading">
+          <div>
+            <p className="eyebrow">WILD BATTLE ARENA</p>
+            <h1>
+              야생 배틀 <span>직접 전투 진행 중</span>
+            </h1>
+            <p className="subheading">매 턴 행동을 골라 야생 개체와 싸워요. 보상은 자동 전투와 같아요.</p>
+          </div>
+        </div>
+        <DuelPanel
+          duel={duel}
+          title={`${RARITIES[duel.difficulty].name} 난이도`}
+          enemyLabel="야생 개체"
+          enemyLevelLabel={`Lv.${duel.enemy.level}`}
+          enemyAttackLabel="상대 공격"
+          busy={duelBusy}
+          onAct={(a) => void duelAct(a)}
+          onForfeit={() => void duelForfeit()}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="view active">
@@ -226,19 +323,36 @@ export function BattleView({
       )}
 
       {mode === 'wild' ? (
-        <button
-          className="button primary full battle-fight-button"
-          disabled={!selected || fighting || animating || cooldownRemaining > 0}
-          onClick={fight}
-        >
-          {cooldownRemaining > 0
-            ? `${cooldownRemaining}초 후 다시 도전할 수 있어요`
-            : fighting
-              ? '야생 개체를 찾는 중...'
-              : animating
-                ? '전투가 진행 중이에요...'
-                : `⚔️ ${RARITIES[difficulty].name} 난이도로 전투 시작`}
-        </button>
+        <>
+          <div className="boss-fight-buttons">
+            <button
+              className="button primary full battle-fight-button"
+              disabled={!selected || fighting || animating || cooldownRemaining > 0 || duelBusy}
+              onClick={fight}
+            >
+              {cooldownRemaining > 0
+                ? `${cooldownRemaining}초 후 다시 도전할 수 있어요`
+                : fighting
+                  ? '야생 개체를 찾는 중...'
+                  : animating
+                    ? '전투가 진행 중이에요...'
+                    : `⚔️ ${RARITIES[difficulty].name} 난이도 자동 전투`}
+            </button>
+            {cooldownRemaining <= 0 && (
+              <button
+                className="button secondary full battle-fight-button"
+                disabled={!selected || fighting || animating || duelBusy}
+                onClick={() => void startDuel()}
+              >
+                {duelBusy ? '준비 중...' : '🎮 직접 전투'}
+              </button>
+            )}
+          </div>
+          <p className="footnote">
+            🎮 직접 전투는 매 턴 행동(공격·방어 태세·강력한 일격·회복)을 직접 골라요. 보상은 자동 전투와 똑같고, 공격만 고르면 자동 전투와
+            같은 결과가 나와요. 일격과 회복을 어느 타이밍에 쓰느냐가 승부를 갈라요.
+          </p>
+        </>
       ) : (
         <button
           className="button primary full battle-fight-button"
@@ -277,8 +391,8 @@ export function BattleView({
           <div className="battle-log" ref={logRef}>
             {visibleLog.map((turn, i) => (
               <div key={i} className={`battle-log-row ${turn.attacker}`}>
-                <span>{turn.attacker === 'me' ? '내 공격' : '상대 공격'}</span>
-                <span>-{formatNumber(turn.damage)}</span>
+                <span>{turn.attacker === 'me' ? (turn.damage === 0 && turn.note ? '내 행동' : '내 공격') : '상대 공격'}</span>
+                <span>{turn.attacker === 'me' && turn.damage === 0 && turn.note ? '—' : `-${formatNumber(turn.damage)}`}</span>
                 <span>남은 HP {formatNumber(turn.remainingHp)}</span>
               </div>
             ))}

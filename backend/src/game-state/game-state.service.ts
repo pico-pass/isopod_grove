@@ -7,14 +7,28 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomBytes } from 'crypto';
 import { Model, Types } from 'mongoose';
 import {
+  BossDuel,
   GameState,
   GameStateDocument,
+  SurvivalDuel,
   SurvivalRun,
   Terrarium,
+  WildDuel,
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
-import type { BoostKind, SurvivalBuffId, SurvivalState } from './game-engine';
+import type {
+  BattleTurn,
+  BoostKind,
+  BossDuelState,
+  BossPattern,
+  CombatStats,
+  DuelAction,
+  SurvivalBuffId,
+  SurvivalSegmentStatus,
+  SurvivalStageResult,
+  SurvivalState,
+} from './game-engine';
 import type { Species } from '../species/schemas/species.schema';
 import { SpeciesService } from '../species/species.service';
 import { UpgradesService } from '../upgrades/upgrades.service';
@@ -26,6 +40,9 @@ import { CareAction } from './dto/care.dto';
 import {
   BATTLE_ACCOUNT_XP_BY_RARITY,
   BATTLE_COOLDOWN_MS,
+  BATTLE_MAX_TURNS,
+  DUEL_ACTIONS,
+  DUEL_ACTION_INFO,
   BATTLE_DIAMOND_CHANCE_BY_RARITY,
   BATTLE_LOSE_XP,
   BATTLE_REWARD_BY_RARITY,
@@ -102,6 +119,9 @@ import {
   TRAIN_XP_BY_INTENSITY,
   applySurvivalBuff,
   applyStatBonuses,
+  getDuelActionStates,
+  getDuelIntent,
+  playDuelTurn,
   canBreedInEnvironment,
   clamp,
   computeEquipmentBonuses,
@@ -127,6 +147,11 @@ import {
   isComfortable,
   pickBossSpecies,
   playSurvivalSegment,
+  playSurvivalUntilElite,
+  startSurvivalEliteDuel,
+  finishSurvivalEliteWin,
+  getSurvivalEnemy,
+  SURVIVAL_MODES,
   SURVIVAL_EXTRA_ATTEMPT_COSTS,
   SURVIVAL_REVIVE_COSTS,
   SURVIVAL_REVIVE_HP_RATE,
@@ -171,6 +196,16 @@ const dayKey = (now = Date.now()) => {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 };
 
+export interface DuelFighterView {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+  stats: CombatStats;
+  level: number;
+}
+
 @Injectable()
 export class GameStateService {
   constructor(
@@ -195,6 +230,7 @@ export class GameStateService {
   private readonly survivalInFlight = new Set<string>();
   private readonly shopInFlight = new Set<string>();
   private readonly expeditionInFlight = new Set<string>();
+  private readonly wildDuelInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -618,11 +654,25 @@ export class GameStateService {
 
   // 보유한 종 하나를 내보내 희귀도를 굴려 뽑은 야생 개체와 맞붙는다. 실제 개체 수는 줄지 않는다.
   async battle(userId: string, speciesId: string, difficulty: number) {
+    this.assertWildDifficulty(difficulty);
+    const gameState = await this.getOrThrow(userId);
+    const ctx = await this.beginWildBattle(gameState, speciesId, difficulty);
+    const { winner, log } = simulateBattle(ctx.mine, ctx.enemy);
+    return this.concludeWildBattle(gameState, ctx, winner === 'me', log);
+  }
+
+  private assertWildDifficulty(difficulty: number) {
     if (!Number.isInteger(difficulty) || difficulty < 0 || difficulty >= RARITIES.length) {
       throw new BadRequestException('올바르지 않은 난이도예요.');
     }
-    const gameState = await this.getOrThrow(userId);
+  }
+
+  // 야생 배틀을 시작한다(자동 전투와 직접 전투가 같이 쓴다). 검증을 통과하면 쿨타임을 쓰고 상대를 뽑아 양쪽 능력치를 굴린다.
+  private async beginWildBattle(gameState: GameStateDocument, speciesId: string, difficulty: number) {
     this.guardPaused(gameState);
+    if (gameState.battleDuel) {
+      throw new BadRequestException('진행 중인 직접 전투가 있어요. 이어서 하거나 포기해 주세요.');
+    }
     if (!(this.totalOf(gameState, speciesId) > 0)) {
       throw new BadRequestException('아직 만나지 못한 식구예요.');
     }
@@ -639,22 +689,44 @@ export class GameStateService {
     }
     // 난이도 = 상대 희귀도를 그대로 고른다. 어떤 종이 나올지만 그 등급 안에서 무작위다.
     const enemySpecies = pickRandomOfRarity(speciesList, difficulty, Math.random());
-    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
-
-    const beforeXp = gameState.battleXp.get(speciesId) || 0;
-    const beforeLevel = getBattleLevel(beforeXp);
+    const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
     const mine = rollCombatStats(
       mySpecies.rarity,
-      beforeLevel,
+      level,
       Math.random,
       computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
     );
     // 야생 개체 레벨은 내 종 레벨 기준 ±1. 내가 키울수록 상대도 같이 세진다.
-    const enemyLevel = rollEnemyLevel(beforeLevel);
+    const enemyLevel = rollEnemyLevel(level);
     const enemy = rollCombatStats(enemySpecies.rarity, enemyLevel);
-    const { winner, log } = simulateBattle(mine, enemy);
+    return { speciesId, mySpecies, enemySpecies, difficulty, level, enemyLevel, mine, enemy };
+  }
 
-    const won = winner === 'me';
+  // 야생 배틀 결과를 반영한다(경험치·보상·기록·응답). 자동 전투와 직접 전투가 똑같은 보상 규칙을 쓴다.
+  // 직접 전투를 끝낼 때는 진행 상태를 지우고 쿨타임을 끝난 시점부터 다시 센다.
+  private async concludeWildBattle(
+    gameState: GameStateDocument,
+    ctx: {
+      speciesId: string;
+      mySpecies: Species;
+      enemySpecies: Species;
+      difficulty: number;
+      level: number;
+      enemyLevel: number;
+      mine: CombatStats;
+      enemy: CombatStats;
+    },
+    won: boolean,
+    log: BattleTurn[],
+  ) {
+    const { speciesId, mySpecies, enemySpecies, difficulty, mine, enemy } = ctx;
+    if (gameState.battleDuel) {
+      gameState.battleDuel = null;
+      gameState.cooldowns.set('battle', Date.now() + BATTLE_COOLDOWN_MS);
+    }
+    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const beforeLevel = getBattleLevel(beforeXp);
     const speciesXpGain = this.boostXp(
       gameState,
       won
@@ -703,7 +775,7 @@ export class GameStateService {
         filter: mySpecies.filter,
         rarity: mySpecies.rarity,
         stats: mine,
-        level: beforeLevel,
+        level: ctx.level,
       },
       enemy: {
         speciesId: enemySpecies.speciesId,
@@ -712,7 +784,7 @@ export class GameStateService {
         filter: enemySpecies.filter,
         rarity: enemySpecies.rarity,
         stats: enemy,
-        level: enemyLevel,
+        level: ctx.enemyLevel,
       },
       log,
       reward,
@@ -725,6 +797,174 @@ export class GameStateService {
         xpGained: speciesXpGain,
       },
     };
+  }
+
+  // ---- 야생 배틀 직접 전투 ----
+  // 자동 전투와 같은 상대·능력치·보상으로 서버가 전투 상태를 들고 한 턴씩 진행한다. 야생 개체에게는 보스 패턴이 없어서
+  // 강타·웅크리기 예고는 없고, 강력한 일격과 회복을 어느 타이밍에 쓸지가 선택이다.
+  private async withWildDuelLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.wildDuelInFlight.has(userId)) {
+      throw new BadRequestException('전투가 진행 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.wildDuelInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.wildDuelInFlight.delete(userId);
+    }
+  }
+
+  private toWildDuelState(duel: WildDuel): BossDuelState {
+    return {
+      turn: duel.turn,
+      myHp: duel.myHp,
+      bossHp: duel.enemyHp,
+      enraged: false,
+      charged: duel.charged,
+      strikeCooldown: duel.strikeCooldown,
+      healUsed: duel.healUsed,
+    };
+  }
+
+  private wildDuelContext(duel: WildDuel, speciesList: Species[]) {
+    const mySpecies = speciesList.find((s) => s.speciesId === duel.speciesId);
+    const enemySpecies = speciesList.find((s) => s.speciesId === duel.enemySpeciesId);
+    if (!mySpecies || !enemySpecies) {
+      throw new BadRequestException('진행 중인 전투 정보를 읽지 못했어요. 포기하고 다시 시작해 주세요.');
+    }
+    return {
+      speciesId: duel.speciesId,
+      mySpecies,
+      enemySpecies,
+      difficulty: duel.difficulty,
+      level: duel.level,
+      enemyLevel: duel.enemyLevel,
+      mine: { hp: duel.mineHp, atk: duel.mineAtk, def: duel.mineDef } as CombatStats,
+      enemy: { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef } as CombatStats,
+    };
+  }
+
+  private toWildDuelView(gameState: GameStateDocument, duel: WildDuel, ctx: ReturnType<GameStateService['wildDuelContext']>) {
+    const fighter = (s: Species, name: string, stats: CombatStats, level: number): DuelFighterView => ({
+      speciesId: s.speciesId,
+      name,
+      image: s.image,
+      filter: s.filter,
+      rarity: s.rarity,
+      stats,
+      level,
+    });
+    return {
+      difficulty: ctx.difficulty,
+      ...this.duelCoreView(
+        fighter(ctx.mySpecies, this.displayNameFor(gameState, ctx.speciesId, ctx.mySpecies.name), ctx.mine, ctx.level),
+        fighter(ctx.enemySpecies, ctx.enemySpecies.name, ctx.enemy, ctx.enemyLevel),
+        [],
+        this.toWildDuelState(duel),
+        duel.log as unknown as BattleTurn[],
+      ),
+    };
+  }
+
+  async getBattleDuel(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const duel = gameState.battleDuel;
+    if (!duel) return { duel: null };
+    const speciesList = await this.speciesService.findAll();
+    return { duel: this.toWildDuelView(gameState, duel, this.wildDuelContext(duel, speciesList)) };
+  }
+
+  async battleDuelStart(userId: string, speciesId: string, difficulty: number) {
+    this.assertWildDifficulty(difficulty);
+    return this.withWildDuelLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const ctx = await this.beginWildBattle(gameState, speciesId, difficulty);
+      gameState.battleDuel = {
+        speciesId,
+        difficulty,
+        enemySpeciesId: ctx.enemySpecies.speciesId,
+        enemyLevel: ctx.enemyLevel,
+        level: ctx.level,
+        mineHp: ctx.mine.hp,
+        mineAtk: ctx.mine.atk,
+        mineDef: ctx.mine.def,
+        enemyHpMax: ctx.enemy.hp,
+        enemyAtk: ctx.enemy.atk,
+        enemyDef: ctx.enemy.def,
+        turn: 1,
+        myHp: ctx.mine.hp,
+        enemyHp: ctx.enemy.hp,
+        charged: false,
+        strikeCooldown: 0,
+        healUsed: false,
+        log: [],
+        startedAt: Date.now(),
+      };
+      await gameState.save();
+      const duel = gameState.battleDuel as WildDuel;
+      return {
+        gameState,
+        message: `야생 ${ctx.enemySpecies.name}을(를) 만났어요! 행동을 골라 주세요.`,
+        duel: this.toWildDuelView(gameState, duel, ctx),
+        turns: [] as BattleTurn[],
+        finished: false as const,
+      };
+    });
+  }
+
+  // 한 턴 진행한다. 이긴 쪽이 정해지면 자동 전투와 같은 보상 응답에 finished: true를 붙여 돌려준다.
+  async battleDuelAct(userId: string, action: string) {
+    if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
+      throw new BadRequestException('알 수 없는 행동이에요.');
+    }
+    return this.withWildDuelLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const duel = gameState.battleDuel;
+      if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
+      const speciesList = await this.speciesService.findAll();
+      const ctx = this.wildDuelContext(duel, speciesList);
+      const state = this.toWildDuelState(duel);
+      const status = getDuelActionStates(state).find((a) => a.id === action)!;
+      if (!status.available) {
+        const name = DUEL_ACTION_INFO.find((a) => a.id === action)?.name ?? action;
+        throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
+      }
+
+      const r = playDuelTurn(ctx.mine, ctx.enemy, [], state, action as DuelAction);
+      const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
+      if (r.winner) {
+        const result = await this.concludeWildBattle(gameState, ctx, r.winner === 'me', log);
+        return { ...result, finished: true as const, duel: null, turns: r.turns };
+      }
+      duel.turn = r.state.turn;
+      duel.myHp = r.state.myHp;
+      duel.enemyHp = r.state.bossHp;
+      duel.charged = r.state.charged;
+      duel.strikeCooldown = r.state.strikeCooldown;
+      duel.healUsed = r.state.healUsed;
+      duel.log = log as unknown as Record<string, unknown>[];
+      await gameState.save();
+      return {
+        gameState,
+        duel: this.toWildDuelView(gameState, duel, ctx),
+        turns: r.turns,
+        finished: false as const,
+      };
+    });
+  }
+
+  // 직접 전투를 포기한다. 패배로 처리한다(야생 배틀은 도전 횟수 제한이 없다).
+  async battleDuelForfeit(userId: string) {
+    return this.withWildDuelLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const duel = gameState.battleDuel;
+      if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
+      const speciesList = await this.speciesService.findAll();
+      const ctx = this.wildDuelContext(duel, speciesList);
+      const result = await this.concludeWildBattle(gameState, ctx, false, duel.log as unknown as BattleTurn[]);
+      return { ...result, finished: true as const, duel: null, turns: [] as BattleTurn[] };
+    });
   }
 
   // 상대 없이 코인을 내고 보유한 종 하나의 전투 경험치를 바로 올린다. 승패가 없는 대신 비용이 확정적이다.
@@ -1157,8 +1397,24 @@ export class GameStateService {
     difficulty: NonNullable<ReturnType<typeof getBossDifficulty>>,
   ) {
     const gameState = await this.getOrThrow(userId);
+    const ctx = await this.beginBossBattle(gameState, speciesId, floor, difficulty);
+    const { winner, log } = simulateBossBattle(ctx.mine, ctx.bossStats, floor.patterns);
+    return this.concludeBossBattle(gameState, ctx, winner === 'me', log);
+  }
+
+  // 보스 전투를 시작한다(자동 전투와 직접 전투가 같이 쓴다). 검증을 통과하면 도전 횟수와 쿨타임을 쓰고,
+  // 내 능력치와 보스 능력치를 굴려서 돌려준다. 검증에서 거절된 시도는 횟수를 쓰지 않는다.
+  private async beginBossBattle(
+    gameState: GameStateDocument,
+    speciesId: string,
+    floor: NonNullable<ReturnType<typeof getBossFloor>>,
+    difficulty: NonNullable<ReturnType<typeof getBossDifficulty>>,
+  ) {
     this.guardPaused(gameState);
     this.resetDailyIfNeeded(gameState);
+    if (gameState.bossDuel) {
+      throw new BadRequestException('진행 중인 직접 전투가 있어요. 이어서 하거나 포기해 주세요.');
+    }
     if (!(this.totalOf(gameState, speciesId) > 0)) {
       throw new BadRequestException('아직 만나지 못한 식구예요.');
     }
@@ -1192,24 +1448,53 @@ export class GameStateService {
     if (!mySpecies || !bossSpecies) {
       throw new BadRequestException('존재하지 않는 종이에요.');
     }
-    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
 
-    // 여기서부터는 도전으로 센다(위의 검증에서 거절된 시도는 횟수를 쓰지 않는다).
+    // 여기서부터는 도전으로 센다.
     gameState.cooldowns.set('boss', now + BOSS_COOLDOWN_MS);
     gameState.daily.bossAttempts = attemptsUsed + 1;
 
-    const beforeXp = gameState.battleXp.get(speciesId) || 0;
-    const beforeLevel = getBattleLevel(beforeXp);
+    const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
     const mine = rollCombatStats(
       mySpecies.rarity,
-      beforeLevel,
+      level,
       Math.random,
       computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
     );
     // 난이도 배율은 보스의 기준 능력치에 먼저 곱하고, 개체 편차(±15%)는 그 위에 붙는다.
     const bossStats = rollBossStats(scaleBossStats(floor.stats, difficulty.multiplier));
-    const { winner, log } = simulateBossBattle(mine, bossStats, floor.patterns);
-    const won = winner === 'me';
+    return { speciesId, mySpecies, bossSpecies, floor, difficulty, level, mine, bossStats };
+  }
+
+  // 보스 전투 결과를 반영한다(경험치·보상·기록·응답). 자동 전투와 직접 전투가 똑같은 보상 규칙을 쓴다.
+  // 직접 전투를 끝낼 때는 진행 상태를 지우고 쿨타임을 끝난 시점부터 다시 센다.
+  private async concludeBossBattle(
+    gameState: GameStateDocument,
+    ctx: {
+      speciesId: string;
+      mySpecies: Species;
+      bossSpecies: Species;
+      floor: NonNullable<ReturnType<typeof getBossFloor>>;
+      difficulty: NonNullable<ReturnType<typeof getBossDifficulty>>;
+      level: number;
+      mine: CombatStats;
+      bossStats: CombatStats;
+    },
+    won: boolean,
+    log: BattleTurn[],
+  ) {
+    const { speciesId, mySpecies, bossSpecies, floor, difficulty, mine, bossStats } = ctx;
+    const wasDuel = !!gameState.bossDuel;
+    if (wasDuel) {
+      gameState.bossDuel = null;
+      gameState.cooldowns.set('boss', Date.now() + BOSS_COOLDOWN_MS);
+    }
+    this.resetDailyIfNeeded(gameState);
+    const attemptLimit = this.bossAttemptLimit(gameState);
+    const progressField = BOSS_PROGRESS_FIELD[difficulty.id];
+    const highestBefore = gameState.stats[progressField] || 0;
+    const myDisplayName = this.displayNameFor(gameState, speciesId, mySpecies.name);
+    const beforeXp = gameState.battleXp.get(speciesId) || 0;
+    const beforeLevel = getBattleLevel(beforeXp);
     const firstClear = won && floor.floor > highestBefore;
 
     // 골드와 경험치 보상은 난이도 배율만큼 늘어난다. 다이아·장비는 난이도별 첫 클리어마다 따로 받는다(배율 없음).
@@ -1304,7 +1589,7 @@ export class GameStateService {
         filter: mySpecies.filter,
         rarity: mySpecies.rarity,
         stats: mine,
-        level: beforeLevel,
+        level: ctx.level,
       },
       enemy: {
         speciesId: bossSpecies.speciesId,
@@ -1326,6 +1611,207 @@ export class GameStateService {
         xpGained: speciesXpGain,
       },
     };
+  }
+
+  // ---- 보스 직접 전투 ----
+  // 자동 전투와 같은 규칙·능력치·보상으로, 서버가 전투 상태를 들고 한 턴씩 진행한다. 시작할 때 도전 횟수와 쿨타임을 쓰고,
+  // 끝나면(승·패·포기) 자동 전투와 똑같이 보상을 반영한다(concludeBossBattle).
+  private toDuelState(duel: BossDuel): BossDuelState {
+    return {
+      turn: duel.turn,
+      myHp: duel.myHp,
+      bossHp: duel.bossHp,
+      enraged: duel.enraged,
+      charged: duel.charged,
+      strikeCooldown: duel.strikeCooldown,
+      healUsed: duel.healUsed,
+    };
+  }
+
+  // 저장된 직접 전투에서 양쪽 종·층·능력치를 되살린다. 저장된 값이 더는 유효하지 않으면(층·종이 사라진 경우) 포기하게 안내한다.
+  private bossDuelContext(duel: BossDuel, speciesList: Species[]) {
+    const floor = getBossFloor(duel.floor);
+    const difficulty = getBossDifficulty(duel.difficulty);
+    const mySpecies = speciesList.find((s) => s.speciesId === duel.speciesId);
+    const bossSpecies = floor ? pickBossSpecies(floor, speciesList) : null;
+    if (!floor || !difficulty || !mySpecies || !bossSpecies) {
+      throw new BadRequestException('진행 중인 전투 정보를 읽지 못했어요. 포기하고 다시 시작해 주세요.');
+    }
+    return {
+      speciesId: duel.speciesId,
+      mySpecies,
+      bossSpecies,
+      floor,
+      difficulty,
+      level: duel.level,
+      mine: { hp: duel.mineHp, atk: duel.mineAtk, def: duel.mineDef } as CombatStats,
+      bossStats: { hp: duel.bossHpMax, atk: duel.bossAtk, def: duel.bossDef } as CombatStats,
+    };
+  }
+
+  // 직접 전투 화면에 공통으로 필요한 부분(양쪽 정보, 상태, 예고, 행동 목록, 기록). 보스·야생·서바이벌이 같이 쓴다.
+  // state.bossHp는 보스뿐 아니라 상대(야생 개체·엘리트)의 현재 HP를 뜻한다.
+  private duelCoreView(
+    mine: DuelFighterView,
+    enemy: DuelFighterView,
+    patterns: readonly BossPattern[],
+    state: BossDuelState,
+    log: BattleTurn[],
+  ) {
+    const states = getDuelActionStates(state);
+    return {
+      patterns: patterns.map((p) => BOSS_PATTERNS[p]),
+      mine,
+      enemy,
+      maxTurns: BATTLE_MAX_TURNS,
+      state: {
+        turn: state.turn,
+        myHp: state.myHp,
+        bossHp: state.bossHp,
+        enraged: state.enraged,
+        charged: state.charged,
+        strikeCooldown: state.strikeCooldown,
+        healUsed: state.healUsed,
+      },
+      intent: getDuelIntent(patterns, state.turn),
+      actions: DUEL_ACTION_INFO.map((info) => ({ ...info, ...states.find((a) => a.id === info.id)! })),
+      log,
+    };
+  }
+
+  private toBossDuelView(gameState: GameStateDocument, duel: BossDuel, ctx: ReturnType<GameStateService['bossDuelContext']>) {
+    const fighter = (s: Species, name: string, stats: CombatStats, level: number): DuelFighterView => ({
+      speciesId: s.speciesId,
+      name,
+      image: s.image,
+      filter: s.filter,
+      rarity: s.rarity,
+      stats,
+      level,
+    });
+    return {
+      floor: ctx.floor.floor,
+      isBoss: ctx.floor.isBoss,
+      difficulty: { id: ctx.difficulty.id, name: ctx.difficulty.name, multiplier: ctx.difficulty.multiplier },
+      ...this.duelCoreView(
+        fighter(ctx.mySpecies, this.displayNameFor(gameState, ctx.speciesId, ctx.mySpecies.name), ctx.mine, ctx.level),
+        fighter(ctx.bossSpecies, ctx.bossSpecies.name, ctx.bossStats, ctx.floor.floor),
+        ctx.floor.patterns,
+        this.toDuelState(duel),
+        duel.log as unknown as BattleTurn[],
+      ),
+    };
+  }
+
+  async getBossDuel(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const duel = gameState.bossDuel;
+    if (!duel) return { duel: null };
+    const speciesList = await this.speciesService.findAll();
+    return { duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList)) };
+  }
+
+  async bossDuelStart(
+    userId: string,
+    speciesId: string,
+    floorNumber: number,
+    difficultyId: string = BOSS_DEFAULT_DIFFICULTY,
+  ) {
+    const floor = getBossFloor(floorNumber);
+    if (!floor) throw new BadRequestException('존재하지 않는 층이에요.');
+    const difficulty = getBossDifficulty(difficultyId);
+    if (!difficulty) throw new BadRequestException('존재하지 않는 난이도예요.');
+    return this.withBossLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const ctx = await this.beginBossBattle(gameState, speciesId, floor, difficulty);
+      gameState.bossDuel = {
+        speciesId,
+        floor: floor.floor,
+        difficulty: difficulty.id,
+        level: ctx.level,
+        mineHp: ctx.mine.hp,
+        mineAtk: ctx.mine.atk,
+        mineDef: ctx.mine.def,
+        bossHpMax: ctx.bossStats.hp,
+        bossAtk: ctx.bossStats.atk,
+        bossDef: ctx.bossStats.def,
+        turn: 1,
+        myHp: ctx.mine.hp,
+        bossHp: ctx.bossStats.hp,
+        enraged: false,
+        charged: false,
+        strikeCooldown: 0,
+        healUsed: false,
+        log: [],
+        startedAt: Date.now(),
+      };
+      await gameState.save();
+      const speciesList = await this.speciesService.findAll();
+      const duel = gameState.bossDuel as BossDuel;
+      return {
+        gameState,
+        message: `직접 전투를 시작했어요! 행동을 골라 주세요.`,
+        duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList)),
+        turns: [] as BattleTurn[],
+        finished: false as const,
+      };
+    });
+  }
+
+  // 한 턴 진행한다. 이긴 쪽이 정해지면 자동 전투와 같은 보상 응답에 finished: true를 붙여 돌려준다.
+  async bossDuelAct(userId: string, action: string) {
+    if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
+      throw new BadRequestException('알 수 없는 행동이에요.');
+    }
+    return this.withBossLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const duel = gameState.bossDuel;
+      if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
+      const speciesList = await this.speciesService.findAll();
+      const ctx = this.bossDuelContext(duel, speciesList);
+      const state = this.toDuelState(duel);
+      const status = getDuelActionStates(state).find((a) => a.id === action)!;
+      if (!status.available) {
+        const name = DUEL_ACTION_INFO.find((a) => a.id === action)?.name ?? action;
+        throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
+      }
+
+      const r = playDuelTurn(ctx.mine, ctx.bossStats, ctx.floor.patterns, state, action as DuelAction);
+      const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
+      if (r.winner) {
+        const result = await this.concludeBossBattle(gameState, ctx, r.winner === 'me', log);
+        return { ...result, finished: true as const, duel: null, turns: r.turns };
+      }
+      duel.turn = r.state.turn;
+      duel.myHp = r.state.myHp;
+      duel.bossHp = r.state.bossHp;
+      duel.enraged = r.state.enraged;
+      duel.charged = r.state.charged;
+      duel.strikeCooldown = r.state.strikeCooldown;
+      duel.healUsed = r.state.healUsed;
+      duel.log = log as unknown as Record<string, unknown>[];
+      await gameState.save();
+      return {
+        gameState,
+        duel: this.toBossDuelView(gameState, duel, ctx),
+        turns: r.turns,
+        finished: false as const,
+      };
+    });
+  }
+
+  // 직접 전투를 포기한다. 이미 쓴 도전 횟수는 돌려주지 않고, 패배로 처리한다.
+  async bossDuelForfeit(userId: string) {
+    return this.withBossLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const duel = gameState.bossDuel;
+      if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
+      const speciesList = await this.speciesService.findAll();
+      const ctx = this.bossDuelContext(duel, speciesList);
+      const result = await this.concludeBossBattle(gameState, ctx, false, duel.log as unknown as BattleTurn[]);
+      return { ...result, finished: true as const, duel: null, turns: [] as BattleTurn[] };
+    });
   }
 
   // ---- 부스트 상점 ----
@@ -1470,6 +1956,9 @@ export class GameStateService {
       this.guardPaused(gameState);
       this.resetDailyIfNeeded(gameState);
       const now = Date.now();
+      if (gameState.bossDuel) {
+        throw new BadRequestException('직접 전투가 끝난 뒤에 쿨타임을 건너뛸 수 있어요.');
+      }
       const readyAt = gameState.cooldowns.get('boss') || 0;
       if (readyAt <= now) {
         throw new BadRequestException('보스 전투 쿨타임이 이미 끝났어요.');
@@ -1530,7 +2019,7 @@ export class GameStateService {
   }
 
   // 화면에 보여줄 현재 런 상태(능력치는 버프까지 반영한 값)
-  private toSurvivalRunView(run: SurvivalRun, speciesName: string) {
+  private toSurvivalRunView(run: SurvivalRun, speciesName: string, duel: ReturnType<GameStateService['toSurvivalDuelView']> = null) {
     const stats = getSurvivalStats(this.toSurvivalState(run));
     return {
       speciesId: run.speciesId,
@@ -1553,6 +2042,9 @@ export class GameStateService {
       dead: !!run.dead,
       revives: run.revives || 0,
       reviveCost: run.dead ? (SURVIVAL_REVIVE_COSTS[run.revives || 0] ?? null) : null,
+      // 'direct'면 엘리트를 직접 전투로 싸우는 런이고, 엘리트와 싸우는 중이면 duel에 전투 상태가 들어 있다.
+      mode: run.mode === 'direct' ? ('direct' as const) : ('auto' as const),
+      duel,
     };
   }
 
@@ -1561,8 +2053,13 @@ export class GameStateService {
     this.resetDailyIfNeeded(gameState);
     const run = gameState.survivalRun;
     const species = run ? await this.speciesService.findOne(run.speciesId) : null;
+    let duelView: ReturnType<GameStateService['toSurvivalDuelView']> = null;
+    if (run && run.duel && species) {
+      const enemy = await this.speciesService.findOne(run.duel.enemySpeciesId);
+      duelView = this.toSurvivalDuelView(gameState, run, species, enemy);
+    }
     return {
-      run: run ? this.toSurvivalRunView(run, this.displayNameFor(gameState, run.speciesId, species?.name ?? run.speciesId)) : null,
+      run: run ? this.toSurvivalRunView(run, this.displayNameFor(gameState, run.speciesId, species?.name ?? run.speciesId), duelView) : null,
       attemptsLeft: this.survivalAttemptsLeft(gameState),
       bestStage: gameState.stats.highestSurvivalStage || 0,
       extra: this.survivalExtraInfo(gameState),
@@ -1570,7 +2067,10 @@ export class GameStateService {
   }
 
   // 식구 한 마리로 입장해서 첫 구간(첫 엘리트를 쓰러뜨리거나 쓰러질 때까지)을 진행한다. 입장 횟수는 여기서 센다.
-  async survivalStart(userId: string, speciesId: string) {
+  async survivalStart(userId: string, speciesId: string, mode: string = 'auto') {
+    if (!(SURVIVAL_MODES as readonly string[]).includes(mode)) {
+      throw new BadRequestException('알 수 없는 진행 방식이에요.');
+    }
     return this.withSurvivalLock(userId, async () => {
       const gameState = await this.getOrThrow(userId);
       this.guardPaused(gameState);
@@ -1617,9 +2117,12 @@ export class GameStateService {
         diamondsEarned: 0,
         dead: false,
         revives: 0,
+        mode,
+        healUsed: false,
+        duel: null,
         startedAt: Date.now(),
       };
-      return this.advanceSurvival(gameState, species, '입장');
+      return this.advanceSurvival(gameState, species, mode === 'direct' ? '입장(직접 전투)' : '입장');
     });
   }
 
@@ -1640,6 +2143,7 @@ export class GameStateService {
       run.hp = applied.hp;
       run.buffs = applied.buffs;
       run.choices = [];
+      run.healUsed = false; // 새 구간이 시작되니 직접 전투의 회복을 다시 쓸 수 있다
       const buffName = SURVIVAL_BUFFS.find((b) => b.id === buffId)?.name ?? buffId;
       return this.advanceSurvival(gameState, species, `${buffName} 선택`);
     });
@@ -1698,6 +2202,7 @@ export class GameStateService {
 
       gameState.diamonds -= cost;
       run.dead = false;
+      run.duel = null;
       run.revives = revives + 1;
       run.hp = Math.max(1, Math.round(getSurvivalStats(this.toSurvivalState(run)).maxHp * SURVIVAL_REVIVE_HP_RATE));
       return this.advanceSurvival(gameState, species, `부활(💎 ${cost}개)`);
@@ -1727,30 +2232,26 @@ export class GameStateService {
     });
   }
 
-  // 저장된 런을 다음 구간까지 진행하고, 이번에 깬 스테이지의 보상을 지급한 뒤 상태를 저장한다.
-  private async advanceSurvival(
+  // 깬 스테이지들의 보상을 지급한다: 스테이지마다 골드·종 경험치, 이전 최고 기록을 넘은 스테이지에는 5스테이지 단위 다이아와 첫 도달 장비.
+  // 자동 모드의 구간 진행과 직접 전투 모드의 엘리트 승리가 같은 규칙을 쓴다.
+  private grantSurvivalStageRewards(
     gameState: GameStateDocument,
-    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
-    reason: string,
+    species: { speciesId: string },
+    wonStages: number[],
   ) {
-    const run = gameState.survivalRun as SurvivalRun;
-    const segment = playSurvivalSegment(this.toSurvivalState(run));
-
-    // 보상: 깬 스테이지마다 골드·종 경험치, 이전 최고 기록을 넘은 구간에는 5스테이지 단위 다이아와 첫 도달 장비
     const bestBefore = gameState.stats.highestSurvivalStage || 0;
     let best = bestBefore;
     let gold = 0;
     let xp = 0;
     let diamonds = 0;
     const equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number }[] = [];
-    for (const st of segment.stages) {
-      if (!st.won) continue;
-      gold += SURVIVAL_GOLD_BASE + SURVIVAL_GOLD_PER_STAGE * st.stage;
-      xp += SURVIVAL_SPECIES_XP_BASE + SURVIVAL_SPECIES_XP_PER_STAGE * st.stage;
-      if (st.stage > best) {
-        best = st.stage;
-        if (st.stage % SURVIVAL_MILESTONE_EVERY === 0) diamonds += SURVIVAL_MILESTONE_DIAMONDS;
-        const rarity = SURVIVAL_FIRST_REACH_EQUIPMENT[st.stage];
+    for (const stage of wonStages) {
+      gold += SURVIVAL_GOLD_BASE + SURVIVAL_GOLD_PER_STAGE * stage;
+      xp += SURVIVAL_SPECIES_XP_BASE + SURVIVAL_SPECIES_XP_PER_STAGE * stage;
+      if (stage > best) {
+        best = stage;
+        if (stage % SURVIVAL_MILESTONE_EVERY === 0) diamonds += SURVIVAL_MILESTONE_DIAMONDS;
+        const rarity = SURVIVAL_FIRST_REACH_EQUIPMENT[stage];
         if (rarity !== undefined) {
           const picked = pickEquipmentOfRarity(rarity, Math.random());
           const { item, isNew } = this.grantEquipment(gameState, picked.equipmentId);
@@ -1768,53 +2269,20 @@ export class GameStateService {
     gameState.battleXp.set(species.speciesId, beforeXp + xp);
     const levelAfter = getBattleLevel(beforeXp + xp);
     gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, levelAfter);
+    return { bestBefore, best, gold, xp, diamonds, equipment, levelBefore, levelAfter };
+  }
 
-    const displayName = this.displayNameFor(gameState, species.speciesId, species.name);
-    const finalStage = segment.state.stage;
-    run.stage = segment.state.stage;
-    run.hp = segment.state.hp;
-    run.goldEarned += gold;
-    run.xpEarned += xp;
-    run.diamondsEarned += diamonds;
-
-    const status = segment.status;
-    let message: string;
-    let runView: ReturnType<GameStateService['toSurvivalRunView']> | null = null;
-    if (status === 'choose') {
-      run.choices = rollSurvivalChoices();
-      runView = this.toSurvivalRunView(run, displayName);
-      message = `엘리트를 쓰러뜨렸어요! ${finalStage}스테이지 돌파 — 버프를 하나 골라 주세요.`;
-    } else {
-      const totals = { gold: run.goldEarned, xp: run.xpEarned, diamonds: run.diamondsEarned };
-      const summaryText = `이번 런 +${totals.gold.toLocaleString('ko-KR')} G · 경험치 +${totals.xp}${totals.diamonds ? ` · 💎 ${totals.diamonds}개` : ''}`;
-      const reviveCost = SURVIVAL_REVIVE_COSTS[run.revives || 0];
-      if (status === 'dead' && reviveCost !== undefined) {
-        // 부활할 수 있으면 런을 지우지 않고 쓰러진 채로 남겨 둔다(포기하거나 새로 입장하면 끝난다).
-        run.dead = true;
-        run.hp = 0;
-        run.choices = [];
-        runView = this.toSurvivalRunView(run, displayName);
-        message = `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. 💎 ${reviveCost}개로 부활하면 이어갈 수 있어요. (${summaryText})`;
-      } else {
-        gameState.survivalRun = null;
-        message =
-          status === 'cleared'
-            ? `🏆 ${SURVIVAL_MAX_STAGE}스테이지를 모두 돌파했어요! (${summaryText})`
-            : `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. ${summaryText}`;
-      }
-    }
-    if (best > bestBefore) message += ` 🆕 최고 기록 ${best}스테이지!`;
-    if (equipment.length) message += ` · 🎒 ${equipment.map((e) => e.name).join(', ')} 획득`;
-    if (levelAfter > levelBefore) message += ` 🆙 ${displayName}이(가) 전투 Lv.${levelAfter}로 성장했어요!`;
-    this.pushLog(gameState, status === 'dead' ? 'leaf' : 'trophy', `서바이벌(${reason}) - ${message}`);
-
-    // 화면용 스테이지 요약. 전투 로그는 엘리트와 마지막(패배) 전투에만 담아 응답을 가볍게 한다.
-    const speciesList = await this.speciesService.findAll();
-    const mineStats = getSurvivalStats(this.toSurvivalState(run));
-    const maxHp = mineStats.maxHp;
-    const stages = segment.stages.map((st, i) => {
-      const enemySpecies = pickRandomOfRarity(speciesList, st.speciesRarity, Math.random());
-      const keepLog = st.isElite || i === segment.stages.length - 1;
+  // 화면용 스테이지 요약. 전투 로그는 엘리트와 마지막(패배) 전투에만 담아 응답을 가볍게 한다.
+  // fixedEnemy가 있으면 그 스테이지의 적 종을 그대로 쓰고, 없으면 등급에서 무작위로 고른다(표시용).
+  private toSurvivalStageViews(
+    stages: SurvivalStageResult[],
+    maxHp: number,
+    speciesList: Species[],
+    fixedEnemy?: Map<number, Species>,
+  ) {
+    return stages.map((st, i) => {
+      const enemySpecies = fixedEnemy?.get(st.stage) ?? pickRandomOfRarity(speciesList, st.speciesRarity, Math.random());
+      const keepLog = st.isElite || i === stages.length - 1;
       return {
         stage: st.stage,
         isElite: st.isElite,
@@ -1834,13 +2302,132 @@ export class GameStateService {
         log: keepLog ? st.log : [],
       };
     });
+  }
+
+  // 저장된 런을 다음 구간까지 진행하고, 이번에 깬 스테이지의 보상을 지급한 뒤 상태를 저장한다.
+  // 자동 모드는 엘리트를 쓰러뜨리거나 쓰러질 때까지, 직접 전투 모드는 일반 스테이지를 자동으로 진행하다가 엘리트 앞에서 멈춘다.
+  private async advanceSurvival(
+    gameState: GameStateDocument,
+    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    reason: string,
+  ) {
+    const run = gameState.survivalRun as SurvivalRun;
+    const speciesList = await this.speciesService.findAll();
+    let stages: SurvivalStageResult[];
+    let status: SurvivalSegmentStatus | 'duel';
+    let nextState: SurvivalState;
+    if (run.mode === 'direct') {
+      const segment = playSurvivalUntilElite(this.toSurvivalState(run));
+      stages = segment.stages;
+      nextState = segment.state;
+      status = segment.status === 'elite' ? 'duel' : 'dead';
+    } else {
+      const segment = playSurvivalSegment(this.toSurvivalState(run));
+      stages = segment.stages;
+      nextState = segment.state;
+      status = segment.status;
+    }
+    const rewards = this.grantSurvivalStageRewards(
+      gameState,
+      species,
+      stages.filter((st) => st.won).map((st) => st.stage),
+    );
+    run.stage = nextState.stage;
+    run.hp = nextState.hp;
+
+    if (status === 'duel') {
+      // 다음 스테이지는 엘리트다. 직접 전투를 준비해서 저장하고, 행동을 고를 때까지 기다린다.
+      const d = startSurvivalEliteDuel(this.toSurvivalState(run));
+      const enemySpecies = pickRandomOfRarity(speciesList, d.speciesRarity, Math.random());
+      run.duel = {
+        stage: d.stage,
+        enemySpeciesId: enemySpecies.speciesId,
+        mineHp: d.mine.hp,
+        enemyHpMax: d.enemyStats.hp,
+        enemyAtk: d.enemyStats.atk,
+        enemyDef: d.enemyStats.def,
+        turn: 1,
+        myHp: d.mine.hp,
+        enemyHp: d.enemyStats.hp,
+        enraged: false,
+        charged: false,
+        strikeCooldown: 0,
+        healUsed: run.healUsed,
+        log: [],
+      };
+    }
+    return this.concludeSurvivalSegment(gameState, species, speciesList, reason, stages, status, rewards);
+  }
+
+  // 구간이 끝난 상태(선택 대기·직접 전투 대기·쓰러짐·완주)를 런에 반영하고 저장한 뒤 응답을 만든다.
+  // 실제로 이긴 스테이지는 이미 run.stage·run.hp에 반영돼 있어야 한다.
+  private async concludeSurvivalSegment(
+    gameState: GameStateDocument,
+    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    speciesList: Species[],
+    reason: string,
+    stages: SurvivalStageResult[],
+    status: SurvivalSegmentStatus | 'duel',
+    rewards: ReturnType<GameStateService['grantSurvivalStageRewards']>,
+    fixedEnemy?: Map<number, Species>,
+  ) {
+    const run = gameState.survivalRun as SurvivalRun;
+    const { bestBefore, best, gold, xp, diamonds, equipment, levelBefore, levelAfter } = rewards;
+    const displayName = this.displayNameFor(gameState, species.speciesId, species.name);
+    const finalStage = run.stage;
+    run.goldEarned += gold;
+    run.xpEarned += xp;
+    run.diamondsEarned += diamonds;
+
+    const duelView = () => {
+      const enemy = run.duel ? speciesList.find((s) => s.speciesId === run.duel!.enemySpeciesId) ?? null : null;
+      return this.toSurvivalDuelView(gameState, run, species, enemy);
+    };
+    let message: string;
+    let runView: ReturnType<GameStateService['toSurvivalRunView']> | null = null;
+    if (status === 'choose') {
+      run.choices = rollSurvivalChoices();
+      run.duel = null;
+      runView = this.toSurvivalRunView(run, displayName);
+      message = `엘리트를 쓰러뜨렸어요! ${finalStage}스테이지 돌파 — 버프를 하나 골라 주세요.`;
+    } else if (status === 'duel') {
+      runView = this.toSurvivalRunView(run, displayName, duelView());
+      message = `${finalStage + 1}스테이지 엘리트가 앞을 막고 있어요! 행동을 골라 직접 싸워 보세요.`;
+    } else {
+      const totals = { gold: run.goldEarned, xp: run.xpEarned, diamonds: run.diamondsEarned };
+      const summaryText = `이번 런 +${totals.gold.toLocaleString('ko-KR')} G · 경험치 +${totals.xp}${totals.diamonds ? ` · 💎 ${totals.diamonds}개` : ''}`;
+      const reviveCost = SURVIVAL_REVIVE_COSTS[run.revives || 0];
+      if (status === 'dead' && reviveCost !== undefined) {
+        // 부활할 수 있으면 런을 지우지 않고 쓰러진 채로 남겨 둔다(포기하거나 새로 입장하면 끝난다).
+        run.dead = true;
+        run.hp = 0;
+        run.choices = [];
+        run.duel = null;
+        runView = this.toSurvivalRunView(run, displayName);
+        message = `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. 💎 ${reviveCost}개로 부활하면 이어갈 수 있어요. (${summaryText})`;
+      } else {
+        gameState.survivalRun = null;
+        message =
+          status === 'cleared'
+            ? `🏆 ${SURVIVAL_MAX_STAGE}스테이지를 모두 돌파했어요! (${summaryText})`
+            : `${displayName}이(가) ${finalStage}스테이지에서 쓰러졌어요. ${summaryText}`;
+      }
+    }
+    if (best > bestBefore) message += ` 🆕 최고 기록 ${best}스테이지!`;
+    if (equipment.length) message += ` · 🎒 ${equipment.map((e) => e.name).join(', ')} 획득`;
+    if (levelAfter > levelBefore) message += ` 🆙 ${displayName}이(가) 전투 Lv.${levelAfter}로 성장했어요!`;
+    this.pushLog(gameState, status === 'dead' ? 'leaf' : 'trophy', `서바이벌(${reason}) - ${message}`);
+
+    const mineStats = getSurvivalStats(this.toSurvivalState(run));
+    const maxHp = mineStats.maxHp;
+    const stageViews = this.toSurvivalStageViews(stages, maxHp, speciesList, fixedEnemy);
 
     await gameState.save();
     return {
       gameState,
       message,
       status,
-      stages,
+      stages: stageViews,
       run: runView,
       // 전투 재생 화면에 쓰는 내 정보(능력치는 이번 구간에 적용된 값 = 버프 반영, HP는 최대 HP)
       mine: {
@@ -1863,6 +2450,146 @@ export class GameStateService {
         equipment,
       },
     };
+  }
+
+  // ---- 서바이벌 엘리트 직접 전투 ----
+  private toSurvivalDuelState(duel: SurvivalDuel): BossDuelState {
+    return {
+      turn: duel.turn,
+      myHp: duel.myHp,
+      bossHp: duel.enemyHp,
+      enraged: duel.enraged,
+      charged: duel.charged,
+      strikeCooldown: duel.strikeCooldown,
+      healUsed: duel.healUsed,
+    };
+  }
+
+  private toSurvivalDuelView(
+    gameState: GameStateDocument,
+    run: SurvivalRun,
+    mySpecies: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    enemySpecies: Species | null,
+  ) {
+    const duel = run.duel;
+    if (!duel) return null;
+    const stats = getSurvivalStats(this.toSurvivalState(run));
+    const info = getSurvivalEnemy(duel.stage);
+    const enemy = enemySpecies ?? { speciesId: duel.enemySpeciesId, name: '엘리트', image: undefined, filter: '', rarity: info.speciesRarity };
+    return {
+      stage: duel.stage,
+      isElite: true,
+      ...this.duelCoreView(
+        {
+          speciesId: mySpecies.speciesId,
+          name: this.displayNameFor(gameState, mySpecies.speciesId, mySpecies.name),
+          image: mySpecies.image,
+          filter: mySpecies.filter ?? '',
+          rarity: mySpecies.rarity,
+          stats: { hp: stats.maxHp, atk: stats.atk, def: stats.def },
+          level: run.level,
+        },
+        {
+          speciesId: enemy.speciesId,
+          name: enemy.name,
+          image: enemy.image,
+          filter: enemy.filter ?? '',
+          rarity: enemy.rarity,
+          stats: { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef },
+          level: duel.stage,
+        },
+        info.patterns,
+        this.toSurvivalDuelState(duel),
+        duel.log as unknown as BattleTurn[],
+      ),
+    };
+  }
+
+  // 엘리트와의 직접 전투를 한 턴 진행한다. 이기면 자동 모드와 같은 보상을 지급하고 버프 선택으로 넘어가며(100스테이지면 완주),
+  // 지면 쓰러진 채로 부활을 기다린다. 아직 끝나지 않았으면 status: 'duel'과 갱신된 전투 상태를 돌려준다.
+  async survivalDuelAct(userId: string, action: string) {
+    if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
+      throw new BadRequestException('알 수 없는 행동이에요.');
+    }
+    return this.withSurvivalLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.survivalRun;
+      const duel = run?.duel;
+      if (!run || !duel) throw new BadRequestException('진행 중인 엘리트 직접 전투가 없어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+      const info = getSurvivalEnemy(duel.stage);
+      const stats = getSurvivalStats(this.toSurvivalState(run));
+      const mine: CombatStats = { hp: duel.mineHp, atk: stats.atk, def: stats.def };
+      const enemyStats: CombatStats = { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef };
+      const state = this.toSurvivalDuelState(duel);
+      const status = getDuelActionStates(state).find((a) => a.id === action)!;
+      if (!status.available) {
+        const name = DUEL_ACTION_INFO.find((a) => a.id === action)?.name ?? action;
+        throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
+      }
+
+      const r = playDuelTurn(mine, enemyStats, info.patterns, state, action as DuelAction, Math.random, {
+        healCapHp: stats.maxHp,
+      });
+      const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
+      const speciesList = await this.speciesService.findAll();
+      const enemySpecies = speciesList.find((s) => s.speciesId === duel.enemySpeciesId) ?? null;
+
+      if (!r.winner) {
+        duel.turn = r.state.turn;
+        duel.myHp = r.state.myHp;
+        duel.enemyHp = r.state.bossHp;
+        duel.enraged = r.state.enraged;
+        duel.charged = r.state.charged;
+        duel.strikeCooldown = r.state.strikeCooldown;
+        duel.healUsed = r.state.healUsed;
+        duel.log = log as unknown as Record<string, unknown>[];
+        await gameState.save();
+        const displayName = this.displayNameFor(gameState, run.speciesId, species.name);
+        return {
+          gameState,
+          message: '',
+          step: true as const, // 엘리트 전투 중간 응답(전투가 끝난 응답에는 없다)
+          status: 'duel' as const,
+          stages: [],
+          run: this.toSurvivalRunView(run, displayName, this.toSurvivalDuelView(gameState, run, species, enemySpecies)),
+          turns: r.turns,
+          attemptsLeft: this.survivalAttemptsLeft(gameState),
+        };
+      }
+
+      // 전투가 끝났다. 이긴 경우 이 스테이지를 깬 것으로 치고(자동 모드와 같은 회복·보상), 진 경우 쓰러진다.
+      const won = r.winner === 'me';
+      const stage = duel.stage;
+      const hpBefore = duel.mineHp;
+      run.healUsed = r.state.healUsed;
+      run.duel = null;
+      let hpAfter = 0;
+      if (won) {
+        const next = finishSurvivalEliteWin(this.toSurvivalState(run), r.state.myHp);
+        run.stage = next.stage;
+        run.hp = next.hp;
+        hpAfter = next.hp;
+      }
+      const rewards = this.grantSurvivalStageRewards(gameState, species, won ? [stage] : []);
+      const stageResult: SurvivalStageResult = {
+        stage,
+        isElite: true,
+        patterns: info.patterns,
+        enemyStats,
+        speciesRarity: info.speciesRarity,
+        hpBefore,
+        hpAfter,
+        won,
+        log,
+      };
+      const outcome: SurvivalSegmentStatus = !won ? 'dead' : stage >= SURVIVAL_MAX_STAGE ? 'cleared' : 'choose';
+      const fixed = enemySpecies ? new Map<number, Species>([[stage, enemySpecies]]) : undefined;
+      return this.concludeSurvivalSegment(gameState, species, speciesList, '엘리트 직접 전투', [stageResult], outcome, rewards, fixed);
+    });
   }
 
   // ---- 장비 ----

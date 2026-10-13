@@ -1,9 +1,15 @@
 import { Fragment, useEffect, useState } from 'react';
+import { api } from '../api/client';
 import type {
   BossBattleResponse,
   BossCatalog,
   BossDifficultyId,
+  BossDuelActResponse,
+  BossDuelEndResponse,
+  BossDuelTurnResponse,
+  BossDuelView,
   BuyAttemptResponse,
+  DuelActionId,
   EquipmentCatalogItem,
   GameState,
   SkipCooldownResponse,
@@ -27,6 +33,7 @@ import {
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
+import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
 
@@ -53,6 +60,9 @@ export function BossView({
   onBattle,
   onBuyAttempt,
   onSkipCooldown,
+  onDuelStart,
+  onDuelAct,
+  onDuelForfeit,
 }: {
   gameState: GameState;
   species: Species[];
@@ -62,12 +72,18 @@ export function BossView({
   onBattle: (speciesId: string, floor: number, difficulty: BossDifficultyId) => Promise<BossBattleResponse | null>;
   onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
   onSkipCooldown: () => Promise<SkipCooldownResponse | null>;
+  onDuelStart: (speciesId: string, floor: number, difficulty: BossDifficultyId) => Promise<BossDuelTurnResponse | null>;
+  onDuelAct: (action: DuelActionId) => Promise<BossDuelActResponse | null>;
+  onDuelForfeit: () => Promise<BossDuelEndResponse | null>;
 }) {
   const [selected, setSelected] = useState('');
   const [picked, setPicked] = useState<number | null>(null);
   const [difficultyId, setDifficultyId] = useState<BossDifficultyId>(loadDifficulty);
   const [fighting, setFighting] = useState(false);
   const [buying, setBuying] = useState(false);
+  // 진행 중인 직접 전투(없으면 null). 새로고침하거나 다른 기기에서 들어와도 서버에서 다시 불러와 이어간다.
+  const [duel, setDuel] = useState<BossDuelView | null>(null);
+  const [duelBusy, setDuelBusy] = useState(false);
   const [result, setResult] = useState<BossBattleResponse | null>(null);
   const [now, setNow] = useState(0);
   const { visibleTurns, setVisibleTurns, animating, logRef } = useBattleReplay(result?.log);
@@ -75,6 +91,17 @@ export function BossView({
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
+  }, []);
+
+  // Promise.resolve().then(...)으로 감싸서 setState 호출이 이펙트 본문에서 동기로 일어나지 않게 한다.
+  useEffect(() => {
+    Promise.resolve().then(async () => {
+      try {
+        setDuel((await api.getBossDuel()).duel);
+      } catch {
+        // 진행 중인 전투를 못 불러와도 자동 전투는 할 수 있다.
+      }
+    });
   }, []);
 
   const floors = catalog?.floors ?? [];
@@ -116,6 +143,45 @@ export function BossView({
     setFighting(false);
   };
 
+  // 전투가 끝나면(승·패·포기) 자동 전투와 같은 결과 화면을 바로 보여준다. 이미 턴마다 봤으니 다시 재생하지 않는다.
+  const finishDuel = (r: BossDuelEndResponse) => {
+    setDuel(null);
+    setResult(r);
+    setVisibleTurns(r.log.length);
+    setPicked(null);
+  };
+
+  const startDuel = async () => {
+    if (!selected || !info || fighting || animating || cooldownRemaining > 0 || attemptsLeft <= 0 || duelBusy) return;
+    setDuelBusy(true);
+    const r = await onDuelStart(selected, info.floor, difficulty.id);
+    if (r) {
+      setResult(null);
+      setDuel(r.duel);
+    }
+    setDuelBusy(false);
+  };
+
+  const duelAct = async (action: DuelActionId) => {
+    if (duelBusy) return;
+    setDuelBusy(true);
+    const r = await onDuelAct(action);
+    if (r) {
+      if (r.finished) finishDuel(r);
+      else setDuel(r.duel);
+    }
+    setDuelBusy(false);
+  };
+
+  const duelForfeit = async () => {
+    if (duelBusy) return;
+    if (!window.confirm('직접 전투를 포기할까요?\n이미 쓴 도전 횟수는 돌아오지 않고 패배로 처리돼요.')) return;
+    setDuelBusy(true);
+    const r = await onDuelForfeit();
+    if (r) finishDuel(r);
+    setDuelBusy(false);
+  };
+
   const buyAttempt = async () => {
     if (buying) return;
     setBuying(true);
@@ -145,6 +211,31 @@ export function BossView({
     .filter((x) => x.floor > 0);
 
   const visibleLog = result ? result.log.slice(0, visibleTurns) : [];
+  if (duel) {
+    return (
+      <section className="view active">
+        <div className="page-heading">
+          <div>
+            <p className="eyebrow">BOSS TOWER</p>
+            <h1>
+              보스 타워 <span>직접 전투 진행 중 · 오늘 남은 도전 {attemptsLeft}/{attemptLimit}</span>
+            </h1>
+            <p className="subheading">매 턴 행동을 골라 보스와 싸워요. 보상은 자동 전투와 같아요.</p>
+          </div>
+        </div>
+        <DuelPanel
+          duel={duel}
+          title={`[${duel.difficulty.name}] ${duel.floor}층${duel.isBoss ? ' 보스' : ''}`}
+          enemyLabel={duel.isBoss ? '👹 보스' : '수문장'}
+          enemyLevelLabel={`${duel.floor}층 · ${duel.difficulty.name}`}
+          enemyAttackLabel={duel.isBoss ? '보스 공격' : '상대 공격'}
+          busy={duelBusy}
+          onAct={(a) => void duelAct(a)}
+          onForfeit={() => void duelForfeit()}
+        />
+      </section>
+    );
+  }
   const lastTurn = visibleLog[visibleLog.length - 1];
   const myHp = result ? hpAfter(result.log, visibleTurns, 'me', result.mine.stats.hp) : 0;
   const enemyHp = result ? hpAfter(result.log, visibleTurns, 'enemy', result.enemy.stats.hp) : 0;
@@ -303,25 +394,40 @@ export function BossView({
         </div>
       )}
 
-      <button
-        className="button primary full battle-fight-button"
-        disabled={!selected || !info || fighting || animating || cooldownRemaining > 0 || attemptsLeft <= 0}
-        onClick={fight}
-      >
-        {attemptsLeft <= 0
-          ? '오늘 도전 횟수를 모두 썼어요 (내일 다시)'
-          : cooldownRemaining > 0
-            ? `⏳ ${formatDuration(cooldownRemaining)} 뒤에 다시 도전할 수 있어요`
-            : !info
-              ? '층을 불러오는 중이에요'
-              : !selected
-                ? '내보낼 식구를 먼저 골라주세요'
-                : fighting
-                  ? '도전 중...'
-                  : animating
-                    ? '전투가 진행 중이에요...'
-                    : `⚔️ ${info.floor}층${info.isBoss ? ' 보스' : ''}에 도전`}
-      </button>
+      <div className="boss-fight-buttons">
+        <button
+          className="button primary full battle-fight-button"
+          disabled={!selected || !info || fighting || animating || cooldownRemaining > 0 || attemptsLeft <= 0 || duelBusy}
+          onClick={fight}
+        >
+          {attemptsLeft <= 0
+            ? '오늘 도전 횟수를 모두 썼어요 (내일 다시)'
+            : cooldownRemaining > 0
+              ? `⏳ ${formatDuration(cooldownRemaining)} 뒤에 다시 도전할 수 있어요`
+              : !info
+                ? '층을 불러오는 중이에요'
+                : !selected
+                  ? '내보낼 식구를 먼저 골라주세요'
+                  : fighting
+                    ? '도전 중...'
+                    : animating
+                      ? '전투가 진행 중이에요...'
+                      : `⚔️ 자동 전투 · ${info.floor}층${info.isBoss ? ' 보스' : ''}`}
+        </button>
+        {attemptsLeft > 0 && cooldownRemaining <= 0 && (
+          <button
+            className="button secondary full battle-fight-button"
+            disabled={!selected || !info || fighting || animating || duelBusy}
+            onClick={() => void startDuel()}
+          >
+            {duelBusy ? '준비 중...' : '🎮 직접 전투'}
+          </button>
+        )}
+      </div>
+      <p className="footnote">
+        🎮 직접 전투는 매 턴 행동(공격·방어 태세·강력한 일격·회복)을 직접 골라요. 보스가 강타·웅크리기를 하기 전에 미리 알려 주니
+        보고 대응해 보세요. 보상은 자동 전투와 똑같고, 공격만 고르면 자동 전투와 같은 결과가 나와요.
+      </p>
 
       {attemptsLeft <= 0 && nextExtraCost !== null && (
         <button
@@ -369,8 +475,10 @@ export function BossView({
             {visibleLog.map((turn, i) => (
               <Fragment key={i}>
                 <div className={`battle-log-row ${turn.attacker}`}>
-                  <span>{turn.attacker === 'me' ? '내 공격' : result.isBoss ? '보스 공격' : '상대 공격'}</span>
-                  <span>-{formatNumber(turn.damage)}</span>
+                  <span>
+                    {turn.attacker === 'me' ? (turn.damage === 0 && turn.note ? '내 행동' : '내 공격') : result.isBoss ? '보스 공격' : '상대 공격'}
+                  </span>
+                  <span>{turn.attacker === 'me' && turn.damage === 0 && turn.note ? '—' : `-${formatNumber(turn.damage)}`}</span>
                   <span>남은 HP {formatNumber(turn.remainingHp)}</span>
                 </div>
                 {turn.note && <div className="battle-log-note">{turn.note}</div>}

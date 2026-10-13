@@ -31,7 +31,16 @@ import type {
   PublicProfile,
   PushConfig,
   BossBattleResponse,
+  BossDuelActResponse,
+  BossDuelEndResponse,
+  BossDuelTurnResponse,
+  BossDuelView,
   BoostKind,
+  SurvivalDuelStepResponse,
+  WildDuelActResponse,
+  WildDuelEndResponse,
+  WildDuelTurnResponse,
+  WildDuelView,
   BoostShop,
   BossCatalog,
   BuyAttemptResponse,
@@ -48,6 +57,7 @@ import type {
   Species,
   SkipCooldownResponse,
   SurvivalInfo,
+  SurvivalMode,
   SurvivalResponse,
   SurvivalStatus,
   TrainResponse,
@@ -137,9 +147,22 @@ export const api = {
   pvpBattle: (speciesId: string, opponentUserId: string) =>
     post<PvpBattleResponse>('/game-state/pvp/battle', { speciesId, opponentUserId }),
   getSurvivalStatus: () => request<SurvivalStatus>('/game-state/survival'),
-  survivalStart: (speciesId: string) => post<SurvivalResponse>('/game-state/survival/start', { speciesId }),
+  survivalStart: (speciesId: string, mode: SurvivalMode = 'auto') =>
+    post<SurvivalResponse>('/game-state/survival/start', { speciesId, mode }),
+  survivalDuelAct: (action: string) =>
+    post<SurvivalResponse | SurvivalDuelStepResponse>('/game-state/survival/duel/act', { action }),
+  getBattleDuel: () => request<{ duel: WildDuelView | null }>('/game-state/battle/duel'),
+  battleDuelStart: (speciesId: string, difficulty: number) =>
+    post<WildDuelTurnResponse>('/game-state/battle/duel/start', { speciesId, difficulty }),
+  battleDuelAct: (action: string) => post<WildDuelActResponse>('/game-state/battle/duel/act', { action }),
+  battleDuelForfeit: () => post<WildDuelEndResponse>('/game-state/battle/duel/forfeit'),
   survivalChoose: (buffId: string) => post<SurvivalResponse>('/game-state/survival/choose', { buffId }),
   survivalRetire: () => post<SurvivalResponse>('/game-state/survival/retire'),
+  getBossDuel: () => request<{ duel: BossDuelView | null }>('/game-state/boss/duel'),
+  bossDuelStart: (speciesId: string, floor: number, difficulty: BossDifficultyId = 'easy') =>
+    post<BossDuelTurnResponse>('/game-state/boss/duel/start', { speciesId, floor, difficulty }),
+  bossDuelAct: (action: string) => post<BossDuelActResponse>('/game-state/boss/duel/act', { action }),
+  bossDuelForfeit: () => post<BossDuelEndResponse>('/game-state/boss/duel/forfeit'),
   getExpeditionInfo: () => request<ExpeditionInfo>('/game-state/expedition'),
   expedition: (tier: number, terrariumId?: string) =>
     post<ExpeditionResponse>('/game-state/expedition', { tier, terrariumId }),

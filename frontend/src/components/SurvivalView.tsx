@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type {
   BuyAttemptResponse,
+  DuelActionId,
+  SurvivalDuelStepResponse,
+  SurvivalMode,
   ExtraAttemptInfo,
   GameState,
   Species,
@@ -22,6 +25,7 @@ import {
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
 import { FighterCard } from './FighterCard';
+import { DuelPanel } from './DuelPanel';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
 
 const BUFF_ICONS: Record<string, string> = { atk: '⚔️', def: '🛡️', hp: '❤️', heal: '🌿', regen: '💧' };
@@ -50,16 +54,18 @@ export function SurvivalView({
   onRetire,
   onRevive,
   onBuyAttempt,
+  onDuelAct,
   showToast,
 }: {
   gameState: GameState;
   species: Species[];
   equipmentBonuses: StatBonuses;
-  onStart: (speciesId: string) => Promise<SurvivalResponse | null>;
+  onStart: (speciesId: string, mode: SurvivalMode) => Promise<SurvivalResponse | null>;
   onChoose: (buffId: string) => Promise<SurvivalResponse | null>;
   onRetire: () => Promise<SurvivalResponse | null>;
   onRevive: () => Promise<SurvivalResponse | null>;
   onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
+  onDuelAct: (action: DuelActionId) => Promise<SurvivalResponse | SurvivalDuelStepResponse | null>;
   showToast: (message: string, isError?: boolean) => void;
 }) {
   const [info, setInfo] = useState<SurvivalInfo | null>(null);
@@ -138,10 +144,29 @@ export function SurvivalView({
     setBusy(false);
   };
 
-  const start = async () => {
+  const start = async (mode: SurvivalMode) => {
     if (!selected || busy || attemptsLeft <= 0) return;
     setBusy(true);
-    apply(await onStart(selected));
+    apply(await onStart(selected, mode));
+    setBusy(false);
+  };
+
+  // 엘리트 직접 전투에서 한 턴 진행한다. 아직 안 끝났으면 전투 상태만 갱신하고(이전 구간 결과는 그대로 둔다),
+  // 끝나면 보통의 구간 결과로 처리해서 방금 싸운 엘리트 전투를 다시 재생하지 않고 바로 보여준다.
+  const duelAct = async (action: DuelActionId) => {
+    if (busy) return;
+    setBusy(true);
+    const r = await onDuelAct(action);
+    if (r) {
+      if ('step' in r) {
+        setSegment((prev) => (prev ? { ...prev, run: r.run } : prev));
+        setStatus((prev) => (prev ? { ...prev, run: r.run } : prev));
+      } else {
+        apply(r);
+        const last = [...r.stages].reverse().find((s) => s.log.length > 0);
+        if (last) setVisibleTurns(last.log.length);
+      }
+    }
     setBusy(false);
   };
 
@@ -221,6 +246,17 @@ export function SurvivalView({
               {run.buffs.regen > 0 && <span className="mail-chip">💧 빠른 회복 ×{run.buffs.regen}</span>}
             </div>
           )}
+          {run.duel && (
+            <DuelPanel
+              duel={run.duel}
+              title={`${run.duel.stage}스테이지 엘리트`}
+              enemyLabel="👹 엘리트"
+              enemyLevelLabel={`${run.duel.stage}스테이지`}
+              enemyAttackLabel="엘리트 공격"
+              busy={busy}
+              onAct={(a) => void duelAct(a)}
+            />
+          )}
           {run.dead && (
             <>
               <p className="nav-caption">
@@ -281,15 +317,26 @@ export function SurvivalView({
               {formatBonusPercent(equipmentBonuses.hp)}가 입장할 때 적용돼요.
             </div>
           )}
-          <button className="button primary full battle-fight-button" disabled={!selected || busy || attemptsLeft <= 0} onClick={() => void start()}>
-            {attemptsLeft <= 0
-              ? '오늘 입장 횟수를 모두 썼어요 (내일 다시)'
-              : !selected
-                ? '입장할 식구를 먼저 골라주세요'
-                : busy
-                  ? '진행 중...'
-                  : '♾️ 서바이벌 입장'}
-          </button>
+          <div className="boss-fight-buttons">
+            <button className="button primary full battle-fight-button" disabled={!selected || busy || attemptsLeft <= 0} onClick={() => void start('auto')}>
+              {attemptsLeft <= 0
+                ? '오늘 입장 횟수를 모두 썼어요 (내일 다시)'
+                : !selected
+                  ? '입장할 식구를 먼저 골라주세요'
+                  : busy
+                    ? '진행 중...'
+                    : '♾️ 자동 진행으로 입장'}
+            </button>
+            {attemptsLeft > 0 && (
+              <button className="button secondary full battle-fight-button" disabled={!selected || busy} onClick={() => void start('direct')}>
+                🎮 엘리트 직접 전투로 입장
+              </button>
+            )}
+          </div>
+          <p className="footnote">
+            🎮 엘리트 직접 전투로 입장하면 일반 스테이지는 자동으로 깨고, 보스 패턴이 붙는 엘리트와는 매 턴 행동(공격·방어 태세·강력한
+            일격·회복)을 직접 골라 싸워요. 보상과 규칙은 자동 진행과 같고, 회복은 엘리트와 엘리트 사이(한 구간)에 한 번만 쓸 수 있어요.
+          </p>
           {attemptsLeft <= 0 && extra.nextCost !== null && (
             <button
               className="button secondary full"
@@ -309,6 +356,7 @@ export function SurvivalView({
             {segment.status === 'dead' && `💧 ${segment.summary.finalStage}스테이지에서 쓰러졌어요`}
             {segment.status === 'cleared' && '🏆 모든 스테이지를 돌파했어요!'}
             {segment.status === 'choose' && `🎉 ${segment.summary.finalStage}스테이지 돌파`}
+            {segment.status === 'duel' && `⚔️ ${segment.summary.finalStage + 1}스테이지 엘리트가 기다려요`}
             {segment.status === 'retired' && `🏁 ${segment.summary.finalStage}스테이지에서 마쳤어요`}
           </div>
           <p className="battle-reward">

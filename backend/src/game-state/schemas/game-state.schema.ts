@@ -197,6 +197,56 @@ export class EquipmentItem {
 }
 export const EquipmentItemSchema = SchemaFactory.createForClass(EquipmentItem);
 
+// 진행 중인 서바이벌 엘리트 직접 전투. 이 스테이지의 적 능력치와 지금까지의 전투 상태·기록을 들고 있다.
+@Schema({ _id: false })
+export class SurvivalDuel {
+  @Prop({ required: true })
+  stage: number;
+
+  // 화면에 보일 적 종(스테이지 등급에서 한 번 골라 저장해 새로고침해도 같은 종이 보이게 한다)
+  @Prop({ default: '' })
+  enemySpeciesId: string;
+
+  // 이 전투를 시작할 때의 내 HP(이어받은 HP)
+  @Prop({ required: true })
+  mineHp: number;
+
+  @Prop({ required: true })
+  enemyHpMax: number;
+
+  @Prop({ required: true })
+  enemyAtk: number;
+
+  @Prop({ required: true })
+  enemyDef: number;
+
+  @Prop({ default: 1 })
+  turn: number;
+
+  @Prop({ required: true })
+  myHp: number;
+
+  @Prop({ required: true })
+  enemyHp: number;
+
+  @Prop({ default: false })
+  enraged: boolean;
+
+  @Prop({ default: false })
+  charged: boolean;
+
+  @Prop({ default: 0 })
+  strikeCooldown: number;
+
+  // 회복은 한 구간(엘리트와 엘리트 사이)에 한 번만 쓸 수 있다
+  @Prop({ default: false })
+  healUsed: boolean;
+
+  @Prop({ type: [Object], default: [] })
+  log: Record<string, unknown>[];
+}
+export const SurvivalDuelSchema = SchemaFactory.createForClass(SurvivalDuel);
+
 // 서바이벌에서 고른 버프 횟수(같은 버프를 여러 번 고를 수 있다)
 @Schema({ _id: false })
 export class SurvivalBuffs {
@@ -259,6 +309,18 @@ export class SurvivalRun {
   @Prop({ default: 0 })
   diamondsEarned: number;
 
+  // 'auto'면 구간 전체를 자동으로 진행하고, 'direct'면 일반 스테이지는 자동으로, 엘리트는 직접 전투로 진행한다.
+  @Prop({ default: 'auto' })
+  mode: string;
+
+  // 직접 전투 모드에서 이번 구간의 회복을 이미 썼는지(버프를 고르면 새 구간이라 다시 쓸 수 있다)
+  @Prop({ default: false })
+  healUsed: boolean;
+
+  // 직접 전투 모드에서 지금 진행 중인 엘리트 전투. 없으면 null.
+  @Prop({ type: SurvivalDuelSchema, default: null })
+  duel: SurvivalDuel | null;
+
   // 쓰러진 상태로 부활을 기다리는 중인지, 이번 런에서 몇 번 부활했는지
   @Prop({ default: false })
   dead: boolean;
@@ -270,6 +332,137 @@ export class SurvivalRun {
   startedAt: number;
 }
 export const SurvivalRunSchema = SchemaFactory.createForClass(SurvivalRun);
+
+// 진행 중인 야생 배틀 직접 전투. 시작할 때 뽑은 상대와 굴린 양쪽 능력치, 지금까지의 전투 상태·기록을 서버가 들고 있다.
+@Schema({ _id: false })
+export class WildDuel {
+  @Prop({ required: true })
+  speciesId: string;
+
+  // 고른 난이도 = 상대 희귀도(0~4)
+  @Prop({ required: true })
+  difficulty: number;
+
+  @Prop({ required: true })
+  enemySpeciesId: string;
+
+  @Prop({ default: 1 })
+  enemyLevel: number;
+
+  // 시작할 때의 내 전투 레벨(화면 표시용)
+  @Prop({ default: 1 })
+  level: number;
+
+  @Prop({ required: true })
+  mineHp: number;
+
+  @Prop({ required: true })
+  mineAtk: number;
+
+  @Prop({ required: true })
+  mineDef: number;
+
+  @Prop({ required: true })
+  enemyHpMax: number;
+
+  @Prop({ required: true })
+  enemyAtk: number;
+
+  @Prop({ required: true })
+  enemyDef: number;
+
+  @Prop({ default: 1 })
+  turn: number;
+
+  @Prop({ required: true })
+  myHp: number;
+
+  @Prop({ required: true })
+  enemyHp: number;
+
+  @Prop({ default: false })
+  charged: boolean;
+
+  @Prop({ default: 0 })
+  strikeCooldown: number;
+
+  @Prop({ default: false })
+  healUsed: boolean;
+
+  @Prop({ type: [Object], default: [] })
+  log: Record<string, unknown>[];
+
+  @Prop({ required: true })
+  startedAt: number;
+}
+export const WildDuelSchema = SchemaFactory.createForClass(WildDuel);
+
+// 진행 중인 보스 직접 전투. 시작할 때 굴린 양쪽 능력치와 지금까지의 전투 상태·기록을 서버가 들고 있다.
+@Schema({ _id: false })
+export class BossDuel {
+  @Prop({ required: true })
+  speciesId: string;
+
+  @Prop({ required: true })
+  floor: number;
+
+  @Prop({ required: true })
+  difficulty: string;
+
+  // 시작할 때의 전투 레벨(화면 표시용)
+  @Prop({ default: 1 })
+  level: number;
+
+  // 시작할 때 굴린 내 능력치(전투 중에는 고정)
+  @Prop({ required: true })
+  mineHp: number;
+
+  @Prop({ required: true })
+  mineAtk: number;
+
+  @Prop({ required: true })
+  mineDef: number;
+
+  // 시작할 때 굴린 보스 능력치(난이도 배율 반영)
+  @Prop({ required: true })
+  bossHpMax: number;
+
+  @Prop({ required: true })
+  bossAtk: number;
+
+  @Prop({ required: true })
+  bossDef: number;
+
+  // 지금 전투 상태
+  @Prop({ default: 1 })
+  turn: number;
+
+  @Prop({ required: true })
+  myHp: number;
+
+  @Prop({ required: true })
+  bossHp: number;
+
+  @Prop({ default: false })
+  enraged: boolean;
+
+  @Prop({ default: false })
+  charged: boolean;
+
+  @Prop({ default: 0 })
+  strikeCooldown: number;
+
+  @Prop({ default: false })
+  healUsed: boolean;
+
+  // 지금까지의 전투 기록(BattleTurn 목록). 매번 통째로 다시 대입해서 저장한다.
+  @Prop({ type: [Object], default: [] })
+  log: Record<string, unknown>[];
+
+  @Prop({ required: true })
+  startedAt: number;
+}
+export const BossDuelSchema = SchemaFactory.createForClass(BossDuel);
 
 // 골드로 산 부스트 한 종류의 유효 시간대(ms). 같은 종류를 다시 사면 until이 늘어난다.
 @Schema({ _id: false })
@@ -343,6 +536,14 @@ export class GameState {
   // 장착 슬롯. 칸마다 장비 itemId가 들어가고 빈 칸은 ''이다. 길이가 곧 슬롯 수(기본 3, 최대 5).
   @Prop({ type: [String], default: () => ['', '', ''] })
   equipmentSlots: string[];
+
+  // 진행 중인 야생 배틀 직접 전투. 없으면 null.
+  @Prop({ type: WildDuelSchema, default: null })
+  battleDuel: WildDuel | null;
+
+  // 진행 중인 보스 직접 전투. 없으면 null.
+  @Prop({ type: BossDuelSchema, default: null })
+  bossDuel: BossDuel | null;
 
   // 진행 중인 서바이벌 런. 없으면 null.
   @Prop({ type: SurvivalRunSchema, default: null })

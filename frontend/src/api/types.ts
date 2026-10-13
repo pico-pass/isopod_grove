@@ -590,6 +590,8 @@ export interface BossDifficultyInfo {
 
 export interface BossCatalog {
   dailyAttempts: number;
+  // 직접 전투에서 쓸 수 있는 행동 설명
+  duelActions: { id: DuelActionId; name: string; description: string }[];
   // 다이아로 사는 추가 도전: 오늘 N번째 가격(배열 길이 = 하루 최대 횟수)
   extraAttemptCosts: number[];
   // 쿨타임을 건너뛸 때 남은 이 초마다 💎1(올림)
@@ -647,7 +649,12 @@ export interface SurvivalRunView {
   dead: boolean;
   revives: number;
   reviveCost: number | null;
+  // 'direct'면 일반 스테이지는 자동으로, 엘리트는 직접 전투로 진행하는 런. 엘리트와 싸우는 중이면 duel에 전투 상태가 있다.
+  mode: SurvivalMode;
+  duel: SurvivalDuelView | null;
 }
+
+export type SurvivalMode = 'auto' | 'direct';
 
 // 오늘 다이아로 산 추가 횟수: 지금까지 산 횟수 / 하루 최대 / 다음 가격(더 못 사면 null)
 export interface ExtraAttemptInfo {
@@ -780,7 +787,8 @@ export interface SurvivalStageView {
 export interface SurvivalResponse {
   gameState: GameState;
   message: string;
-  status: 'choose' | 'dead' | 'cleared' | 'retired';
+  // 'duel'은 엘리트 직접 전투가 기다리거나 진행 중이라는 뜻이다.
+  status: 'choose' | 'dead' | 'cleared' | 'retired' | 'duel';
   stages: SurvivalStageView[];
   run: SurvivalRunView | null;
   mine?: {
@@ -804,6 +812,18 @@ export interface SurvivalResponse {
   };
 }
 
+// 엘리트 직접 전투를 한 턴 진행했지만 아직 끝나지 않았을 때의 응답. 끝나면 보통의 SurvivalResponse가 온다.
+export interface SurvivalDuelStepResponse {
+  gameState: GameState;
+  message: string;
+  step: true;
+  status: 'duel';
+  stages: [];
+  run: SurvivalRunView;
+  turns: BattleTurn[]; // 방금 일어난 일(내 행동, 상대 행동)
+  attemptsLeft: number;
+}
+
 export interface BossBattleResponse {
   gameState: GameState;
   message: string;
@@ -824,6 +844,77 @@ export interface BossBattleResponse {
   };
   speciesLevel: SpeciesLevelResult;
 }
+
+// ---- 보스 직접 전투(매 턴 행동을 고르는 전투) ----
+export type DuelActionId = 'attack' | 'guard' | 'strike' | 'heal';
+
+export interface DuelActionView {
+  id: DuelActionId;
+  name: string;
+  description: string;
+  available: boolean;
+  reason?: string; // 지금 못 고르는 이유
+}
+
+// 보스·야생·서바이벌 직접 전투가 같이 쓰는 화면 데이터. state.bossHp는 보스뿐 아니라 상대(야생 개체·엘리트)의 현재 HP다.
+export interface DuelCoreView {
+  patterns: BossPatternInfo[];
+  mine: BattleFighter;
+  enemy: BattleFighter;
+  maxTurns: number;
+  state: {
+    turn: number;
+    myHp: number;
+    bossHp: number;
+    enraged: boolean;
+    charged: boolean;
+    strikeCooldown: number;
+    healUsed: boolean;
+  };
+  // 이번 턴에 상대가 하려는 일(강타·웅크리기는 미리 알 수 있다)
+  intent: { heavy: boolean; guard: boolean };
+  actions: DuelActionView[];
+  log: BattleTurn[];
+}
+
+export interface BossDuelView extends DuelCoreView {
+  floor: number;
+  isBoss: boolean;
+  difficulty: BossDifficultyInfo;
+}
+
+// 야생 배틀 직접 전투. 상대 개체에게는 패턴이 없다.
+export interface WildDuelView extends DuelCoreView {
+  difficulty: number;
+}
+
+// 서바이벌 엘리트 직접 전투
+export interface SurvivalDuelView extends DuelCoreView {
+  stage: number;
+  isElite: boolean;
+}
+
+export interface BossDuelTurnResponse {
+  gameState: GameState;
+  message?: string;
+  duel: BossDuelView;
+  turns: BattleTurn[]; // 방금 일어난 일(내 행동, 보스 행동)
+  finished: false;
+}
+
+// 전투가 끝나면 자동 전투와 같은 결과 응답에 finished: true가 붙는다.
+export type BossDuelEndResponse = BossBattleResponse & { finished: true; duel: null; turns: BattleTurn[] };
+export type BossDuelActResponse = BossDuelTurnResponse | BossDuelEndResponse;
+
+export interface WildDuelTurnResponse {
+  gameState: GameState;
+  message?: string;
+  duel: WildDuelView;
+  turns: BattleTurn[];
+  finished: false;
+}
+export type WildDuelEndResponse = BattleResponse & { finished: true; duel: null; turns: BattleTurn[] };
+export type WildDuelActResponse = WildDuelTurnResponse | WildDuelEndResponse;
 
 export interface EquipmentPullResult {
   itemId: string;

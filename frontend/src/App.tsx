@@ -191,6 +191,7 @@ function App() {
                 const result = await runAction(() => api.addTerrarium());
                 if (result?.terrariumId) setSelectedTerrariumId(result.terrariumId);
               }}
+              onRenameTerrarium={(terrariumId, name) => runAction(() => api.renameTerrarium(terrariumId, name))}
               onMove={(speciesId, toTerrariumId) =>
                 runAction(() => api.moveSpecies(speciesId, terrarium.terrariumId, toTerrariumId))
               }

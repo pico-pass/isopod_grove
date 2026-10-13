@@ -32,6 +32,7 @@
 - **숲 탐색**: 탐색할 때마다 같은 종 2마리를 만나요. 등급 확률이 낮고 비용이 계속 올라가요.
 - **원정**: 숲 탐색 비용의 수십~수백 배를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만나요. 신화는 천장이 있어요.
 - **분양 마켓**: 시세가 5분마다 ±25% 범위에서 오르내려요.
+- **사육장 이름**: 사육장마다 이름을 무료로 바꿀 수 있어요(최대 20자, 나에게만 보여요).
 - **업그레이드**: 사육장 확장, 바닥재(수익), 번식 쉼터(번식 시간), 자동 먹이 공급기, 자동 분무기.
 - **부스트 상점**: 골드를 내고 일정 시간 동안 수익·번식·전투 경험치를 2배로 만들어요.
 - **종 별명**: 내 화면에서만 보이는 별명을 지어줄 수 있어요.
@@ -220,7 +221,7 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 ### 사육
 - 환경이 **쾌적**(먹이 25 이상, 습도 65~85%, 온도 20~26°C)하면 수익 100%, 아니면 40%예요. 번식은 먹이 15 이상·습도 50~92%·온도 18~28°C에서만 돼요.
 - 돌봄: 먹이 +30, 분무(습도 78%), 온도 조절(24°C). 같은 동작은 10초마다 한 번.
-- 사육장은 최대 10개, 다음 사육장 비용은 `8,750 × 2.5^(보유 수 − 1)` G. 수용량은 기본 20마리에 확장 단계마다 +20.
+- 사육장은 최대 10개, 이름은 20자 이하로 무료 변경(같은 이름·빈 이름·제어 문자는 거절), 다음 사육장 비용은 `8,750 × 2.5^(보유 수 − 1)` G. 수용량은 기본 20마리에 확장 단계마다 +20.
 - 분양할 때는 번식을 위해 2마리가 남아야 해요.
 - 업그레이드: 공간 확장(5단계) · 바닥재(수익 +25%/단계, 5단계) · 번식 쉼터(번식 시간 −12%/단계, 5단계) · 자동 먹이 공급기 · 자동 분무기.
 
@@ -302,7 +303,7 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 |---|---|
 | 인증 | `GET auth/google` · `GET auth/google/callback` · `GET auth/me` · `POST auth/profile-message` |
 | 콘텐츠 | `GET species` · `upgrades` · `quests` · `achievements` · `equipment` · `boss` · `survival` |
-| 게임 상태 | `GET game-state` · `POST game-state/{advance, care, observe, collect, explore, sell, upgrade, terrariums, move, claim, claim-achievement, set-nickname, species-nickname}` |
+| 게임 상태 | `GET game-state` · `POST game-state/{advance, care, observe, collect, explore, sell, upgrade, terrariums, terrariums/rename, move, claim, claim-achievement, set-nickname, species-nickname}` |
 | 전투 | `POST game-state/{battle, train, pvp/defense, pvp/battle, boss/battle}` · `GET game-state/pvp/opponent` |
 | 서바이벌 | `GET survival`(규칙 안내) · `GET game-state/survival`(진행 상태) · `POST game-state/survival/{start, choose, retire, revive, buy-attempt}` |
 | 보스 편의(💎) | `POST game-state/boss/{buy-attempt, skip-cooldown}` |

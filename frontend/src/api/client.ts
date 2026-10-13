@@ -162,6 +162,8 @@ export const api = {
   upgrade: (upgradeId: string, terrariumId?: string) =>
     post<ActionResult>('/game-state/upgrade', { upgradeId, terrariumId }),
   addTerrarium: (name?: string) => post<ActionResult>('/game-state/terrariums', { name }),
+  renameTerrarium: (terrariumId: string, name: string) =>
+    post<ActionResult>('/game-state/terrariums/rename', { terrariumId, name }),
   moveSpecies: (speciesId: string, fromTerrariumId: string, toTerrariumId: string) =>
     post<ActionResult>('/game-state/move', { speciesId, fromTerrariumId, toTerrariumId }),
   claim: (questId: string) => post<ActionResult>('/game-state/claim', { questId }),

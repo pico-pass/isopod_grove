@@ -17,6 +17,7 @@ export const NURSERY_TIME_REDUCTION_PER_LEVEL = 0.12;
 // 희귀도(일반~신화)별 번식 주기(초): 37분 30초 / 2시간 30분 / 7시간 30분 / 30시간 / 75시간마다 +1마리
 export const BREED_SECONDS_BY_RARITY = [2250, 9000, 27000, 108000, 270000];
 export const MAX_TERRARIUMS = 10;
+export const TERRARIUM_NAME_MAX_LENGTH = 20; // 서버 TERRARIUM_NAME_MAX_LENGTH와 같은 값
 export const TERRARIUM_BASE_COST = 8750;
 export const TERRARIUM_COST_FACTOR = 2.5;
 export const LEVEL_XP_BASE = 100; // 1레벨 → 2레벨에 필요한 경험치

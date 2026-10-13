@@ -84,6 +84,7 @@ import {
   PVP_WIN_DIAMOND_CHANCE,
   PVP_WIN_SPECIES_XP,
   SPECIES_NICKNAME_MAX_LENGTH,
+  TERRARIUM_NAME_MAX_LENGTH,
   STEP_SECONDS,
   SURVIVAL_BUFFS,
   SURVIVAL_DAILY_ATTEMPTS,
@@ -421,6 +422,48 @@ export class GameStateService {
     return { gameState, births: totalBirths, earned };
   }
 
+  // 이름을 정하지 않고 만든 사육장의 기본 이름. 이름을 바꾼 사육장과 겹치지 않는 가장 작은 "사육장 N"을 쓴다.
+  private defaultTerrariumName(gameState: GameStateDocument): string {
+    const taken = new Set(gameState.terrariums.map((t) => t.name.trim().toLowerCase()));
+    let n = gameState.terrariums.length + 1;
+    while (taken.has(`사육장 ${n}`)) n++;
+    return `사육장 ${n}`;
+  }
+
+  // 사육장 이름을 바꾼다(무료). 이름은 나에게만 보인다. 앞뒤 공백은 지우고, 비었거나 20자를 넘거나 줄바꿈 같은
+  // 제어 문자가 있거나 다른 사육장과 같은 이름(대소문자 무시)이면 거절한다. 지금 이름과 같으면 아무것도 바꾸지 않는다.
+  async renameTerrarium(userId: string, terrariumId: string, name: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    const terrarium = this.getTerrarium(gameState, terrariumId);
+
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new BadRequestException('사육장 이름을 입력해 주세요.');
+    }
+    if (trimmed.length > TERRARIUM_NAME_MAX_LENGTH) {
+      throw new BadRequestException(`사육장 이름은 ${TERRARIUM_NAME_MAX_LENGTH}자 이하로 입력해 주세요.`);
+    }
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+      throw new BadRequestException('사육장 이름에 사용할 수 없는 문자가 있어요.');
+    }
+    if (trimmed === terrarium.name) {
+      return { gameState, message: '이미 같은 이름이에요.' };
+    }
+    const key = trimmed.toLowerCase();
+    if (gameState.terrariums.some((t) => t.terrariumId !== terrariumId && t.name.trim().toLowerCase() === key)) {
+      throw new BadRequestException('같은 이름의 사육장이 이미 있어요.');
+    }
+
+    const before = terrarium.name;
+    terrarium.name = trimmed;
+    const message = `"${before}" 사육장의 이름을 "${trimmed}"(으)로 바꿨어요.`;
+    this.pushLog(gameState, 'leaf', message);
+    await gameState.save();
+    return { gameState, message };
+  }
+
   async addTerrarium(userId: string, name?: string) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
@@ -438,7 +481,7 @@ export class GameStateService {
       );
     }
 
-    const terrariumName = name?.trim() || `사육장 ${owned + 1}`;
+    const terrariumName = name?.trim() || this.defaultTerrariumName(gameState);
     const terrariumId = this.newTerrariumId();
     gameState.coins -= cost;
     this.grantXp(gameState, 20);

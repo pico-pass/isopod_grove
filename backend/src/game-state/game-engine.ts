@@ -88,6 +88,8 @@ export const PVP_WIN_ACCOUNT_XP = 20;
 export const PVP_LOSE_ACCOUNT_XP = 3;
 // 종(콩벌레) 별명: 나에게만 보이는 표시용 이름. 무료이며 언제든 바꾸거나 되돌릴 수 있다.
 export const SPECIES_NICKNAME_MAX_LENGTH = 10;
+// 사육장 이름: 나에게만 보이는 표시용 이름이다. 무료로 언제든 바꿀 수 있다.
+export const TERRARIUM_NAME_MAX_LENGTH = 20;
 // ---- 장비 ----
 // 뽑기: 1회 40다이아, 10연차는 10% 할인(희귀 이상 1개 보장). 전설 이상이 50회 연속 안 나오면 50번째는 확정.
 export const EQUIPMENT_PULL_COST = 40;

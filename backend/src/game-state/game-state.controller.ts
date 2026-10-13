@@ -22,6 +22,7 @@ import { BossBattleDto } from './dto/boss-battle.dto';
 import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
 import { BuyBoostDto } from './dto/boost.dto';
 import { ExpeditionDto } from './dto/expedition.dto';
+import { RenameTerrariumDto } from './dto/rename-terrarium.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
@@ -199,6 +200,11 @@ export class GameStateController {
     @Body() dto: CreateTerrariumDto,
   ) {
     return this.gameStateService.addTerrarium(user.userId, dto?.name);
+  }
+
+  @Post('terrariums/rename')
+  renameTerrarium(@CurrentUser() user: AuthenticatedUser, @Body() dto: RenameTerrariumDto) {
+    return this.gameStateService.renameTerrarium(user.userId, dto.terrariumId, dto.name);
   }
 
   @Post('move')

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { GameState, Quest, Species, Terrarium } from '../api/types';
 import { WanderingCreatures } from './WanderingCreatures';
 import {
   EXPLORE_COST_STEP,
   MAX_TERRARIUMS,
   RARITIES,
+  TERRARIUM_NAME_MAX_LENGTH,
   canBreedInEnvironment,
   formatDuration,
   formatNumber,
@@ -20,6 +21,73 @@ import {
 } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
 
+// 사육장 이름표. 연필 버튼을 누르면 그 자리에서 이름을 고칠 수 있다(저장하면 닫힌다, Esc로 취소).
+// 부모에서 key={terrariumId}로 쓰므로 다른 사육장으로 바꾸면 편집 상태가 초기화된다.
+function TerrariumNameBadge({
+  terrarium,
+  level,
+  disabled,
+  onRename,
+}: {
+  terrarium: Terrarium;
+  level: number;
+  disabled: boolean;
+  onRename: (name: string) => Promise<unknown>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(terrarium.name);
+  const [saving, setSaving] = useState(false);
+
+  const start = () => {
+    setDraft(terrarium.name);
+    setEditing(true);
+  };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const name = draft.trim();
+    if (!name || saving) return;
+    if (name === terrarium.name) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const result = await onRename(name);
+    setSaving(false);
+    if (result) setEditing(false); // 실패하면 서버가 알려준 이유를 토스트로 보여주고 그대로 둔다
+  };
+
+  if (!editing) {
+    return (
+      <span className="habitat-badge">
+        🍃 {terrarium.name} <b>Lv. {level}</b>
+        <button className="rename-btn" onClick={start} disabled={disabled} aria-label="사육장 이름 변경" title="사육장 이름 변경">
+          ✏️
+        </button>
+      </span>
+    );
+  }
+  return (
+    <form className="habitat-badge rename-form" onSubmit={(e) => void submit(e)}>
+      <input
+        autoFocus
+        value={draft}
+        maxLength={TERRARIUM_NAME_MAX_LENGTH}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        aria-label="사육장 이름"
+      />
+      <button type="submit" className="rename-save" disabled={saving || !draft.trim()}>
+        {saving ? '저장 중' : '저장'}
+      </button>
+      <button type="button" className="rename-cancel" onClick={() => setEditing(false)} disabled={saving}>
+        취소
+      </button>
+    </form>
+  );
+}
+
 export function HabitatView({
   gameState,
   terrarium,
@@ -27,6 +95,7 @@ export function HabitatView({
   quests,
   onSelectTerrarium,
   onAddTerrarium,
+  onRenameTerrarium,
   onMove,
   onCare,
   onObserve,
@@ -40,6 +109,7 @@ export function HabitatView({
   quests: Quest[];
   onSelectTerrarium: (terrariumId: string) => void;
   onAddTerrarium: () => void;
+  onRenameTerrarium: (terrariumId: string, name: string) => Promise<unknown>;
   onMove: (speciesId: string, toTerrariumId: string) => void;
   onCare: (action: 'feed' | 'mist' | 'climate') => void;
   onObserve: (speciesId: string) => void;
@@ -171,7 +241,13 @@ export function HabitatView({
             <img className="terrain-image" src="/assets/terrarium.webp" alt="이끼와 낙엽이 있는 작은 숲 사육장" />
             <div className="terrain-shade" />
             <div className="scene-top">
-              <span className="habitat-badge">🍃 {terrarium.name} <b>Lv. {spaceLevel + 1}</b></span>
+              <TerrariumNameBadge
+                key={terrarium.terrariumId}
+                terrarium={terrarium}
+                level={spaceLevel + 1}
+                disabled={gameState.paused}
+                onRename={(name) => onRenameTerrarium(terrarium.terrariumId, name)}
+              />
             </div>
             <WanderingCreatures
               key={terrarium.terrariumId}

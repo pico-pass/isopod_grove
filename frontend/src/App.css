@@ -663,6 +663,8 @@ main {
   right: 12px;
   display: flex;
   justify-content: space-between;
+  /* 배회하는 식구 레이어(.creatures)가 DOM에서 뒤에 와서 화면 전체를 덮는다. 이름표의 버튼이 눌리도록 위로 올린다. */
+  z-index: 2;
 }
 .habitat-badge {
   background: rgba(17, 27, 25, 0.7);
@@ -676,8 +678,11 @@ main {
 .creatures {
   position: absolute;
   inset: 0;
+  /* 빈 곳은 클릭이 통과해서 아래(이름표·장면)가 눌리고, 식구 버튼만 눌린다. */
+  pointer-events: none;
 }
 .creature {
+  pointer-events: auto;
   position: absolute;
   padding: 0;
   border: 0;
@@ -3149,4 +3154,46 @@ main {
 .chat-report-link:hover {
   opacity: 1;
   text-decoration: underline;
+}
+
+/* ---- 사육장 이름 변경 ---- */
+.habitat-badge .rename-btn {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 0.8rem;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0.8;
+}
+.habitat-badge .rename-btn:hover:not(:disabled) {
+  opacity: 1;
+}
+.habitat-badge.rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.habitat-badge.rename-form input {
+  width: 9.5em;
+  padding: 2px 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.habitat-badge.rename-form button {
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--text);
+  cursor: pointer;
+}
+.habitat-badge.rename-form .rename-save {
+  border-color: var(--lime);
+  color: var(--lime);
 }

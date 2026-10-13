@@ -216,9 +216,10 @@ function App() {
               gameState={gameState}
               terrarium={terrarium}
               species={displaySpecies}
-              onSell={(speciesId, quantity) =>
-                runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId))
+              onSell={(speciesId, quantity, confirmLast) =>
+                runAction(() => api.sell(speciesId, quantity, terrarium.terrariumId, confirmLast))
               }
+              onToggleLock={(speciesId, locked) => runAction(() => api.setSpeciesLock(speciesId, locked))}
               onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
             />
           )}

@@ -2307,11 +2307,14 @@ export class GameStateService {
     }
   }
 
+  // 사육장에 있는 식구를 분양한다. 잠근 종은 분양할 수 없고, 이 분양으로 계정 전체의 그 종이 0마리가 되려면
+  // confirmLast(마지막 개체까지 판다는 확인)가 있어야 한다. 사육장마다 2마리를 남겨야 한다는 제한은 없다.
   async sell(
     userId: string,
     speciesId: string,
     quantity: number,
     terrariumId?: string,
+    confirmLast = false,
   ) {
     const gameState = await this.getOrThrow(userId);
     this.guardPaused(gameState);
@@ -2319,14 +2322,28 @@ export class GameStateService {
 
     const species = await this.speciesService.findOne(speciesId);
     if (!species) throw new BadRequestException('분양 수량을 확인해 주세요.');
+    if ((gameState.lockedSpecies ?? []).includes(speciesId)) {
+      throw new BadRequestException(`${species.name}은(는) 잠겨 있어요. 잠금을 풀어야 분양할 수 있어요.`);
+    }
 
     const current = terrarium.population.get(speciesId) || 0;
-    if (current - quantity < 2) {
-      throw new BadRequestException('번식을 위해 2마리는 남겨둬야 해요.');
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > current) {
+      throw new BadRequestException('분양 수량을 확인해 주세요. 이 사육장에 있는 만큼만 분양할 수 있어요.');
+    }
+    if (this.totalOf(gameState, speciesId) - quantity <= 0 && !confirmLast) {
+      throw new BadRequestException(
+        `${species.name}의 마지막 개체까지 분양하게 돼요. 다시 만나려면 탐색이나 원정에서 우연히 만나야 해요. 확인 후 다시 분양해 주세요.`,
+      );
     }
 
     const amount = species.price * quantity;
-    terrarium.population.set(speciesId, current - quantity);
+    if (current - quantity <= 0) {
+      // 한 마리도 남지 않으면 이 사육장의 기록(식구 수·번식 진행)을 지운다.
+      terrarium.population.delete(speciesId);
+      terrarium.breeding.delete(speciesId);
+    } else {
+      terrarium.population.set(speciesId, current - quantity);
+    }
     gameState.coins += amount;
     gameState.stats.sold += quantity;
     gameState.stats.earned += amount;
@@ -2530,6 +2547,29 @@ export class GameStateService {
 
   // 종(콩벌레)에 내 전용 별명을 붙인다. 무료이며, 빈 문자열을 보내면 기본 이름으로 되돌린다.
   // 발견(discovered)한 종이면 지금 보유 중이 아니어도 지정할 수 있다.
+  // 종을 잠그거나 푼다. 잠근 종은 분양할 수 없다(이사·번식·전투는 그대로 된다). 도감에 있는 종만 잠글 수 있다.
+  async setSpeciesLock(userId: string, speciesId: string, locked: boolean) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (!gameState.discovered.includes(speciesId)) {
+      throw new BadRequestException('아직 만나지 못한 식구예요.');
+    }
+    const species = await this.speciesService.findOne(speciesId);
+    if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+    const current = gameState.lockedSpecies ?? [];
+    const isLocked = current.includes(speciesId);
+    if (isLocked === locked) {
+      return { gameState, message: locked ? '이미 잠겨 있어요.' : '이미 잠금이 풀려 있어요.' };
+    }
+    gameState.lockedSpecies = locked ? [...current, speciesId] : current.filter((id) => id !== speciesId);
+    const displayName = this.displayNameFor(gameState, speciesId, species.name);
+    const message = locked ? `${displayName}을(를) 잠갔어요. 풀기 전에는 분양할 수 없어요.` : `${displayName}의 잠금을 풀었어요.`;
+    this.pushLog(gameState, 'leaf', message);
+    await gameState.save();
+    return { gameState, message };
+  }
+
   async setSpeciesNickname(userId: string, speciesId: string, nickname: string) {
     const gameState = await this.getOrThrow(userId);
     if (!gameState.discovered.includes(speciesId)) {

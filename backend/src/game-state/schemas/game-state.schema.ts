@@ -353,6 +353,10 @@ export class GameState {
   @Prop({ type: Number, default: null })
   lastTickAt: number | null;
 
+  // 잠근 종(speciesId). 잠근 종은 어느 사육장에서도 분양할 수 없다. 실수로 팔지 않게 하는 보호 장치다.
+  @Prop({ type: [String], default: [] })
+  lockedSpecies: string[];
+
   // 장비 조각. 중복 장비를 분해해서 얻고, 레벨업에 모자란 복사본을 메꾸는 데 쓴다.
   @Prop({ default: 0, min: 0 })
   equipmentShards: number;

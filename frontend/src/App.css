@@ -3197,3 +3197,28 @@ main {
   border-color: var(--lime);
   color: var(--lime);
 }
+
+/* ---- 분양 잠금 ---- */
+.market-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lock-btn {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.lock-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+.lock-btn.on {
+  color: var(--lime);
+  border-color: var(--lime);
+  font-weight: 700;
+}

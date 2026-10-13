@@ -157,8 +157,10 @@ export const api = {
     post<BossBattleResponse>('/game-state/boss/battle', { speciesId, floor, difficulty }),
   explore: (terrariumId?: string, useTicket?: boolean) =>
     post<ActionResult>('/game-state/explore', { terrariumId, useTicket }),
-  sell: (speciesId: string, quantity: number, terrariumId?: string) =>
-    post<ActionResult>('/game-state/sell', { speciesId, quantity, terrariumId }),
+  sell: (speciesId: string, quantity: number, terrariumId?: string, confirmLast?: boolean) =>
+    post<ActionResult>('/game-state/sell', { speciesId, quantity, terrariumId, confirmLast }),
+  setSpeciesLock: (speciesId: string, locked: boolean) =>
+    post<ActionResult>('/game-state/species-lock', { speciesId, locked }),
   upgrade: (upgradeId: string, terrariumId?: string) =>
     post<ActionResult>('/game-state/upgrade', { upgradeId, terrariumId }),
   addTerrarium: (name?: string) => post<ActionResult>('/game-state/terrariums', { name }),

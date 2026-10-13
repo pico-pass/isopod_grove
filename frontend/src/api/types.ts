@@ -134,6 +134,8 @@ export interface GameState {
   equipment: EquipmentItemState[];
   equipmentSlots: string[];
   equipmentPity: number;
+  // 잠근 종(speciesId). 잠근 종은 분양할 수 없다. 예전 데이터에는 없을 수 있다.
+  lockedSpecies?: string[];
   // 장비 조각(중복 장비를 분해해서 얻는다), 신화 원정 천장 진행도. 예전 데이터에는 없을 수 있다.
   equipmentShards?: number;
   expeditionPity?: number;

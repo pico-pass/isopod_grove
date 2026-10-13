@@ -23,6 +23,7 @@ import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
 import { BuyBoostDto } from './dto/boost.dto';
 import { ExpeditionDto } from './dto/expedition.dto';
 import { RenameTerrariumDto } from './dto/rename-terrarium.dto';
+import { SetSpeciesLockDto } from './dto/set-species-lock.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
 import { EquipmentPullDto } from './dto/equipment-pull.dto';
@@ -182,6 +183,7 @@ export class GameStateController {
       dto.speciesId,
       dto.quantity,
       dto.terrariumId,
+      dto.confirmLast === true,
     );
   }
 
@@ -277,6 +279,11 @@ export class GameStateController {
     @Body() dto: SetNicknameDto,
   ) {
     return this.gameStateService.setNickname(user.userId, dto.nickname);
+  }
+
+  @Post('species-lock')
+  setSpeciesLock(@CurrentUser() user: AuthenticatedUser, @Body() dto: SetSpeciesLockDto) {
+    return this.gameStateService.setSpeciesLock(user.userId, dto.speciesId, dto.locked);
   }
 
   @Post('species-nickname')

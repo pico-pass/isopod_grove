@@ -178,6 +178,8 @@ import {
   getBoostPrice,
   pickEquipmentOfRarity,
   pickRandomOfRarity,
+  pickRandomOfRarityAndFamily,
+  scaleStatsByMultiplier,
   rollBossStats,
   rollCombatStats,
   rollEnemyLevel,
@@ -2341,7 +2343,12 @@ export class GameStateService {
     fixedEnemy?: Map<number, Species>,
   ) {
     return stages.map((st, i) => {
-      const enemySpecies = fixedEnemy?.get(st.stage) ?? pickRandomOfRarity(speciesList, st.speciesRarity, Math.random());
+      // 상성을 적용한 전투는 굴린 적 계열에 맞는 종을 보여준다(능력치 보정과 화면의 계열이 어긋나지 않게).
+      const enemySpecies =
+        fixedEnemy?.get(st.stage) ??
+        (st.enemyFamily
+          ? pickRandomOfRarityAndFamily(speciesList, st.speciesRarity, st.enemyFamily, Math.random())
+          : pickRandomOfRarity(speciesList, st.speciesRarity, Math.random()));
       const keepLog = st.isElite || i === stages.length - 1;
       return {
         stage: st.stage,
@@ -2354,7 +2361,9 @@ export class GameStateService {
           filter: enemySpecies.filter,
           rarity: enemySpecies.rarity,
           stats: st.enemyStats,
+          family: st.enemyFamily ?? undefined,
         },
+        rules: st.rules ?? null,
         hpBefore: st.hpBefore,
         hpAfter: st.hpAfter,
         maxHp,
@@ -2368,21 +2377,22 @@ export class GameStateService {
   // 자동 모드는 엘리트를 쓰러뜨리거나 쓰러질 때까지, 직접 전투 모드는 일반 스테이지를 자동으로 진행하다가 엘리트 앞에서 멈춘다.
   private async advanceSurvival(
     gameState: GameStateDocument,
-    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number; family?: string },
     reason: string,
   ) {
     const run = gameState.survivalRun as SurvivalRun;
     const speciesList = await this.speciesService.findAll();
+    const myFamily = resolveFamily(species);
     let stages: SurvivalStageResult[];
     let status: SurvivalSegmentStatus | 'duel';
     let nextState: SurvivalState;
     if (run.mode === 'direct') {
-      const segment = playSurvivalUntilElite(this.toSurvivalState(run));
+      const segment = playSurvivalUntilElite(this.toSurvivalState(run), Math.random, myFamily);
       stages = segment.stages;
       nextState = segment.state;
       status = segment.status === 'elite' ? 'duel' : 'dead';
     } else {
-      const segment = playSurvivalSegment(this.toSurvivalState(run));
+      const segment = playSurvivalSegment(this.toSurvivalState(run), Math.random, myFamily);
       stages = segment.stages;
       nextState = segment.state;
       status = segment.status;
@@ -2397,11 +2407,15 @@ export class GameStateService {
 
     if (status === 'duel') {
       // 다음 스테이지는 엘리트다. 직접 전투를 준비해서 저장하고, 행동을 고를 때까지 기다린다.
-      const d = startSurvivalEliteDuel(this.toSurvivalState(run));
-      const enemySpecies = pickRandomOfRarity(speciesList, d.speciesRarity, Math.random());
+      const d = startSurvivalEliteDuel(this.toSurvivalState(run), Math.random, myFamily);
+      const enemySpecies = d.enemyFamily
+        ? pickRandomOfRarityAndFamily(speciesList, d.speciesRarity, d.enemyFamily, Math.random())
+        : pickRandomOfRarity(speciesList, d.speciesRarity, Math.random());
       run.duel = {
         stage: d.stage,
         enemySpeciesId: enemySpecies.speciesId,
+        // 상성 보정을 적용한 전투면 적 계열이 들어 있다(저장되는 적 능력치는 보정이 반영된 값)
+        enemyFamily: d.enemyFamily ?? '',
         mineHp: d.mine.hp,
         enemyHpMax: d.enemyStats.hp,
         enemyAtk: d.enemyStats.atk,
@@ -2423,7 +2437,7 @@ export class GameStateService {
   // 실제로 이긴 스테이지는 이미 run.stage·run.hp에 반영돼 있어야 한다.
   private async concludeSurvivalSegment(
     gameState: GameStateDocument,
-    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    species: { speciesId: string; name: string; image?: string; filter?: string; rarity: number; family?: string },
     speciesList: Species[],
     reason: string,
     stages: SurvivalStageResult[],
@@ -2525,20 +2539,30 @@ export class GameStateService {
     };
   }
 
+  // 저장된 엘리트 직접 전투의 상성 규칙. 적 계열이 저장돼 있지 않으면(상성이 생기기 전에 시작한 전투) null이다.
+  private survivalDuelRules(mySpecies: { speciesId: string; family?: string }, duel: SurvivalDuel): BattleRulesView | null {
+    return duel.enemyFamily
+      ? describeBattleRules(resolveFamily(mySpecies), duel.enemyFamily as SpeciesFamily, null)
+      : null;
+  }
+
   private toSurvivalDuelView(
     gameState: GameStateDocument,
     run: SurvivalRun,
-    mySpecies: { speciesId: string; name: string; image?: string; filter?: string; rarity: number },
+    mySpecies: { speciesId: string; name: string; image?: string; filter?: string; rarity: number; family?: string },
     enemySpecies: Species | null,
   ) {
     const duel = run.duel;
     if (!duel) return null;
     const stats = getSurvivalStats(this.toSurvivalState(run));
     const info = getSurvivalEnemy(duel.stage);
+    // 상성이 적용된 전투(적 계열이 저장돼 있음)면 내 공격·방어에도 보정이 곱해져 있다. 상성이 생기기 전에 시작한 전투는 보정이 없다.
+    const rules = this.survivalDuelRules(mySpecies, duel);
     const enemy = enemySpecies ?? { speciesId: duel.enemySpeciesId, name: '엘리트', image: undefined, filter: '', rarity: info.speciesRarity };
     return {
       stage: duel.stage,
       isElite: true,
+      rules,
       ...this.duelCoreView(
         {
           speciesId: mySpecies.speciesId,
@@ -2546,8 +2570,11 @@ export class GameStateService {
           image: mySpecies.image,
           filter: mySpecies.filter ?? '',
           rarity: mySpecies.rarity,
-          stats: { hp: stats.maxHp, atk: stats.atk, def: stats.def },
+          stats: rules
+            ? scaleStatsByMultiplier({ hp: stats.maxHp, atk: stats.atk, def: stats.def }, rules.mine.multiplier)
+            : { hp: stats.maxHp, atk: stats.atk, def: stats.def },
           level: run.level,
+          family: rules?.mine.family,
         },
         {
           speciesId: enemy.speciesId,
@@ -2557,6 +2584,7 @@ export class GameStateService {
           rarity: enemy.rarity,
           stats: { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef },
           level: duel.stage,
+          family: rules?.enemy.family,
         },
         info.patterns,
         this.toSurvivalDuelState(duel),
@@ -2582,7 +2610,10 @@ export class GameStateService {
 
       const info = getSurvivalEnemy(duel.stage);
       const stats = getSurvivalStats(this.toSurvivalState(run));
-      const mine: CombatStats = { hp: duel.mineHp, atk: stats.atk, def: stats.def };
+      const rules = this.survivalDuelRules(species, duel);
+      const mine: CombatStats = rules
+        ? scaleStatsByMultiplier({ hp: duel.mineHp, atk: stats.atk, def: stats.def }, rules.mine.multiplier)
+        : { hp: duel.mineHp, atk: stats.atk, def: stats.def };
       const enemyStats: CombatStats = { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef };
       const state = this.toSurvivalDuelState(duel);
       const status = getDuelActionStates(state).find((a) => a.id === action)!;
@@ -2645,6 +2676,8 @@ export class GameStateService {
         hpAfter,
         won,
         log,
+        enemyFamily: rules?.enemy.family,
+        rules,
       };
       const outcome: SurvivalSegmentStatus = !won ? 'dead' : stage >= SURVIVAL_MAX_STAGE ? 'cleared' : 'choose';
       const fixed = enemySpecies ? new Map<number, Species>([[stage, enemySpecies]]) : undefined;

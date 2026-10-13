@@ -11,7 +11,7 @@ export interface BattleEnvironmentInfo {
 
 // 한 전투에 적용된 규칙. 공격력·방어력에 곱해진 최종 배율(상성 ±3% + 환경 +3%)을 보여준다.
 export interface BattleRules {
-  environment: BattleEnvironmentInfo;
+  environment: BattleEnvironmentInfo | null; // 서바이벌은 환경이 없어서 null이다(상성만 적용)
   mine: { family: SpeciesFamily; matchup: FamilyMatchup; multiplier: number };
   enemy: { family: SpeciesFamily; multiplier: number };
 }
@@ -805,7 +805,9 @@ export interface SurvivalStageView {
     filter: string;
     rarity: number;
     stats: CombatStats;
+    family?: SpeciesFamily;
   };
+  rules?: BattleRules | null; // 이 스테이지에 적용된 계열 상성(공격·방어 배율)
   hpBefore: number;
   hpAfter: number;
   maxHp: number;
@@ -891,7 +893,7 @@ export interface DuelCoreView {
   patterns: BossPatternInfo[];
   mine: BattleFighter;
   enemy: BattleFighter;
-  rules?: BattleRules | null; // 서바이벌 엘리트 전투에는 없다
+  rules?: BattleRules | null; // 서바이벌 엘리트 전투는 상성만 있다(환경 null)
   maxTurns: number;
   state: {
     turn: number;

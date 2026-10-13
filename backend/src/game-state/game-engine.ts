@@ -1,5 +1,5 @@
 import { Species } from '../species/schemas/species.schema';
-import type { SpeciesFamily } from '../species/species.family';
+import { SPECIES_FAMILIES, resolveFamily, type SpeciesFamily } from '../species/species.family';
 import {
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
@@ -273,6 +273,18 @@ export function pickRandomOfRarity(
   const pool = speciesList.filter((s) => s.rarity === rarity);
   const index = Math.min(pool.length - 1, Math.floor(random * pool.length));
   return pool[index];
+}
+
+// 희귀도와 계열이 모두 맞는 종 중에서 고른다(서바이벌 적의 표시용). 맞는 종이 없으면 희귀도만 맞춘다.
+export function pickRandomOfRarityAndFamily(
+  speciesList: Species[],
+  rarity: number,
+  family: SpeciesFamily,
+  random: number,
+): Species {
+  const pool = speciesList.filter((s) => s.rarity === rarity && resolveFamily(s) === family);
+  if (pool.length === 0) return pickRandomOfRarity(speciesList, rarity, random);
+  return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
 }
 
 // ---- 야생 배틀 ----
@@ -1154,6 +1166,24 @@ export interface SurvivalStageResult {
   hpAfter: number; // 이긴 경우 스테이지 회복까지 반영한 값
   won: boolean;
   log: BattleTurn[];
+  // 계열 상성을 적용한 전투에만 있다(enemyStats는 그 보정까지 반영한 값이다). 내 식구 계열을 모르면 없다.
+  enemyFamily?: SpeciesFamily;
+  rules?: BattleRulesView | null;
+}
+
+// 스테이지 한 판의 양쪽 능력치를 준비한다. 내 계열을 알면 적 계열을 굴려서 상성 보정을 곱한다(HP는 그대로).
+function setUpSurvivalFight(
+  hp: number,
+  mine: { atk: number; def: number },
+  rolledEnemy: CombatStats,
+  myFamily: SpeciesFamily | undefined,
+  random: () => number,
+) {
+  const myStats: CombatStats = { hp, atk: mine.atk, def: mine.def };
+  if (!myFamily) return { myStats, enemyStats: rolledEnemy, enemyFamily: undefined, rules: undefined };
+  const enemyFamily = rollSurvivalEnemyFamily(random);
+  const applied = applyBattleRules(myStats, rolledEnemy, myFamily, enemyFamily, null);
+  return { myStats: applied.mine, enemyStats: applied.enemy, enemyFamily, rules: applied.rules };
 }
 
 export type SurvivalSegmentStatus = 'choose' | 'dead' | 'cleared';
@@ -1163,6 +1193,7 @@ export type SurvivalSegmentStatus = 'choose' | 'dead' | 'cleared';
 export function playSurvivalSegment(
   start: SurvivalState,
   random: () => number = Math.random,
+  myFamily?: SpeciesFamily,
 ): { state: SurvivalState; stages: SurvivalStageResult[]; status: SurvivalSegmentStatus } {
   const state: SurvivalState = { ...start, buffs: { ...start.buffs } };
   const stages: SurvivalStageResult[] = [];
@@ -1170,22 +1201,19 @@ export function playSurvivalSegment(
 
   for (let stage = state.stage + 1; stage <= SURVIVAL_MAX_STAGE; stage++) {
     const enemy = getSurvivalEnemy(stage);
-    const enemyStats = rollBossStats(enemy.stats, random);
     const hpBefore = state.hp;
-    const { winner, log } = simulateBossBattle(
-      { hp: hpBefore, atk: mine.atk, def: mine.def },
-      enemyStats,
-      enemy.patterns,
-      random,
-    );
+    const fight = setUpSurvivalFight(hpBefore, mine, rollBossStats(enemy.stats, random), myFamily, random);
+    const { winner, log } = simulateBossBattle(fight.myStats, fight.enemyStats, enemy.patterns, random);
     const base = {
       stage,
       isElite: enemy.isElite,
       patterns: enemy.patterns,
-      enemyStats,
+      enemyStats: fight.enemyStats,
       speciesRarity: enemy.speciesRarity,
       hpBefore,
       log,
+      enemyFamily: fight.enemyFamily,
+      rules: fight.rules,
     };
     if (winner !== 'me') {
       stages.push({ ...base, hpAfter: Math.max(0, myHpAfterBattle(log, hpBefore)), won: false });
@@ -1213,6 +1241,7 @@ export const SURVIVAL_MODES: readonly SurvivalMode[] = ['auto', 'direct'];
 export function playSurvivalUntilElite(
   start: SurvivalState,
   random: () => number = Math.random,
+  myFamily?: SpeciesFamily,
 ): { state: SurvivalState; stages: SurvivalStageResult[]; status: 'elite' | 'dead' } {
   const state: SurvivalState = { ...start, buffs: { ...start.buffs } };
   const stages: SurvivalStageResult[] = [];
@@ -1221,17 +1250,19 @@ export function playSurvivalUntilElite(
   for (let stage = state.stage + 1; stage <= SURVIVAL_MAX_STAGE; stage++) {
     const enemy = getSurvivalEnemy(stage);
     if (enemy.isElite) return { state, stages, status: 'elite' };
-    const enemyStats = rollBossStats(enemy.stats, random);
     const hpBefore = state.hp;
-    const { winner, log } = simulateBossBattle({ hp: hpBefore, atk: mine.atk, def: mine.def }, enemyStats, enemy.patterns, random);
+    const fight = setUpSurvivalFight(hpBefore, mine, rollBossStats(enemy.stats, random), myFamily, random);
+    const { winner, log } = simulateBossBattle(fight.myStats, fight.enemyStats, enemy.patterns, random);
     const base = {
       stage,
       isElite: false,
       patterns: enemy.patterns,
-      enemyStats,
+      enemyStats: fight.enemyStats,
       speciesRarity: enemy.speciesRarity,
       hpBefore,
       log,
+      enemyFamily: fight.enemyFamily,
+      rules: fight.rules,
     };
     if (winner !== 'me') {
       stages.push({ ...base, hpAfter: Math.max(0, myHpAfterBattle(log, hpBefore)), won: false });
@@ -1247,20 +1278,25 @@ export function playSurvivalUntilElite(
 }
 
 // 다음 스테이지(엘리트)와의 직접 전투를 준비한다. 내 HP는 이어받은 현재 HP로 시작하고, 적 능력치는 자동 모드와 같이 한 번 굴린다.
-export function startSurvivalEliteDuel(state: SurvivalState, random: () => number = Math.random) {
+export function startSurvivalEliteDuel(
+  state: SurvivalState,
+  random: () => number = Math.random,
+  myFamily?: SpeciesFamily,
+) {
   const stage = state.stage + 1;
   const enemy = getSurvivalEnemy(stage);
-  const enemyStats = rollBossStats(enemy.stats, random);
   const stats = getSurvivalStats(state);
-  const mine: CombatStats = { hp: state.hp, atk: stats.atk, def: stats.def };
+  const fight = setUpSurvivalFight(state.hp, stats, rollBossStats(enemy.stats, random), myFamily, random);
   return {
     stage,
     patterns: enemy.patterns,
     speciesRarity: enemy.speciesRarity,
-    enemyStats,
-    mine,
+    enemyStats: fight.enemyStats,
+    mine: fight.myStats,
     maxHp: stats.maxHp,
-    duelState: newBossDuelState(mine, enemyStats),
+    enemyFamily: fight.enemyFamily,
+    rules: fight.rules,
+    duelState: newBossDuelState(fight.myStats, fight.enemyStats),
   };
 }
 
@@ -1339,13 +1375,14 @@ export function rollWildEnvironment(random: number): BattleEnvironmentId {
 export function describeBattleRules(
   myFamily: SpeciesFamily,
   enemyFamily: SpeciesFamily,
-  environmentId: BattleEnvironmentId,
+  environmentId: BattleEnvironmentId | null,
 ) {
-  const environment = BATTLE_ENVIRONMENT_BY_ID.get(environmentId) ?? BATTLE_ENVIRONMENTS[0];
+  // null이면 환경이 없는 전투(서바이벌): 계열 상성만 적용된다.
+  const environment = environmentId === null ? null : (BATTLE_ENVIRONMENT_BY_ID.get(environmentId) ?? BATTLE_ENVIRONMENTS[0]);
   const matchup = getFamilyMatchup(myFamily, enemyFamily);
   const matchupBonus = matchup === 'advantage' ? FAMILY_MATCHUP_BONUS : matchup === 'disadvantage' ? -FAMILY_MATCHUP_BONUS : 0;
   const multiplierOf = (family: SpeciesFamily, bonus: number) =>
-    Math.round((1 + bonus + (environment.family === family ? ENVIRONMENT_BONUS : 0)) * 100) / 100;
+    Math.round((1 + bonus + (environment?.family === family ? ENVIRONMENT_BONUS : 0)) * 100) / 100;
   return {
     environment,
     mine: { family: myFamily, matchup, multiplier: multiplierOf(myFamily, matchupBonus) },
@@ -1361,15 +1398,29 @@ export function applyBattleRules(
   enemy: CombatStats,
   myFamily: SpeciesFamily,
   enemyFamily: SpeciesFamily,
-  environmentId: BattleEnvironmentId,
+  environmentId: BattleEnvironmentId | null,
 ) {
   const rules = describeBattleRules(myFamily, enemyFamily, environmentId);
-  const scale = (s: CombatStats, m: number): CombatStats => ({
+  return {
+    mine: scaleStatsByMultiplier(mine, rules.mine.multiplier),
+    enemy: scaleStatsByMultiplier(enemy, rules.enemy.multiplier),
+    rules,
+  };
+}
+
+// 공격력·방어력에 배율을 곱한다(HP는 그대로, 소수 둘째 자리까지 유지).
+export function scaleStatsByMultiplier(s: CombatStats, multiplier: number): CombatStats {
+  return {
     hp: s.hp,
-    atk: Math.round(s.atk * m * 100) / 100,
-    def: Math.round(s.def * m * 100) / 100,
-  });
-  return { mine: scale(mine, rules.mine.multiplier), enemy: scale(enemy, rules.enemy.multiplier), rules };
+    atk: Math.round(s.atk * multiplier * 100) / 100,
+    def: Math.round(s.def * multiplier * 100) / 100,
+  };
+}
+
+// 서바이벌 스테이지의 적 계열은 스테이지마다 무작위다(세 계열 같은 확률). 식구는 런 내내 한 마리라 미리 알아도 바꿀 수 없어서
+// 정해 둘 필요가 없고, 확률이 같으니 어떤 계열의 식구로 들어가도 평균은 같다.
+export function rollSurvivalEnemyFamily(random: () => number = Math.random): SpeciesFamily {
+  return SPECIES_FAMILIES[Math.min(SPECIES_FAMILIES.length - 1, Math.floor(random() * SPECIES_FAMILIES.length))];
 }
 
 // ---- 전설·신화 번식의 긴 오프라인 인정 ----

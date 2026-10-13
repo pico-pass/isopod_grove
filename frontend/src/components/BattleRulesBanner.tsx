@@ -19,9 +19,11 @@ export function BattleRulesBanner({ rules }: { rules: BattleRules }) {
         : `${mineInfo.icon} ${mineInfo.name} · ${enemyInfo.icon} ${enemyInfo.name}: 상성 없음`;
   return (
     <div className="rules-banner" role="note">
-      <p>
-        <b>{environment.name}</b> — {environment.description}
-      </p>
+      {environment && (
+        <p>
+          <b>{environment.name}</b> — {environment.description}
+        </p>
+      )}
       <p>
         <span className={`rules-matchup ${mine.matchup}`}>{matchupText}</span>
         <span className="rules-mult">

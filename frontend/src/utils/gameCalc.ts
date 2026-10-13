@@ -408,6 +408,15 @@ export const FAMILY_INFO: Record<SpeciesFamily, { name: string; icon: string }> 
 };
 export const FAMILY_BEATS: Record<SpeciesFamily, SpeciesFamily> = { fire: 'forest', forest: 'frost', frost: 'fire' };
 
+// 상성 배율을 공격력·방어력에 곱한 능력치(HP는 그대로). 서바이벌에서 스테이지마다 달라지는 내 능력치를 보여줄 때 쓴다.
+export function scaleStatsByMultiplier(s: CombatStats, multiplier: number): CombatStats {
+  return {
+    hp: s.hp,
+    atk: Math.round(s.atk * multiplier * 100) / 100,
+    def: Math.round(s.def * multiplier * 100) / 100,
+  };
+}
+
 export function getFamilyMatchup(mine: SpeciesFamily, enemy: SpeciesFamily): FamilyMatchup {
   if (FAMILY_BEATS[mine] === enemy) return 'advantage';
   if (FAMILY_BEATS[enemy] === mine) return 'disadvantage';

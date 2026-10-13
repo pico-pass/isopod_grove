@@ -207,6 +207,10 @@ export class SurvivalDuel {
   @Prop({ default: '' })
   enemySpeciesId: string;
 
+  // 이 전투의 적 계열(SpeciesFamily). 비어 있으면 상성이 생기기 전에 시작한 전투라 보정이 없다.
+  @Prop({ default: '' })
+  enemyFamily: string;
+
   // 이 전투를 시작할 때의 내 HP(이어받은 HP)
   @Prop({ required: true })
   mineHp: number;

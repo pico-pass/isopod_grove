@@ -18,12 +18,15 @@ import type {
 import {
   RARITIES,
   formatBonusPercent,
+  scaleStatsByMultiplier,
   formatNumber,
   getTotalPopulationBySpecies,
   hasBonuses,
   type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
+import { BattleRulesBanner } from './BattleRulesBanner';
+import { FamilyBadge } from './FamilyBadge';
 import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
@@ -308,9 +311,14 @@ export function SurvivalView({
               activeId={selected}
               disabled={busy}
               bonuses={equipmentBonuses}
+              familyRules={{ enemy: null, environment: null }}
               onPick={setSelected}
             />
           )}
+          <div className="info-banner">
+            🔥 불꽃 &gt; 🌿 숲 &gt; ❄️ 서리 &gt; 🔥 불꽃 상성이 적용돼요. 스테이지마다 적의 계열이 무작위로 정해지고, 내 식구가 이기는
+            계열이면 공격·방어 +3%, 지는 계열이면 −3%예요(같은 계열이면 그대로). 환경 효과는 없어요.
+          </div>
           {hasBonuses(equipmentBonuses) && (
             <div className="info-banner">
               🎒 장착 장비 — 공격력 {formatBonusPercent(equipmentBonuses.atk)} · 방어력 {formatBonusPercent(equipmentBonuses.def)} · HP{' '}
@@ -385,7 +393,9 @@ export function SurvivalView({
                   <strong>{st.stage}</strong>
                   <span className="survival-stage-enemy">
                     {st.isElite ? '👹 ' : ''}
-                    {st.enemy.name}
+                    {st.enemy.name} <FamilyBadge family={st.enemy.family} compact />
+                    {st.rules?.mine.matchup === 'advantage' && <small className="matchup-up"> ▲</small>}
+                    {st.rules?.mine.matchup === 'disadvantage' && <small className="matchup-down"> ▼</small>}
                     {st.isElite && st.patterns.length > 0 && <small> · {st.patterns.map((p) => p.name).join('+')}</small>}
                   </span>
                   <span className="survival-stage-hp">
@@ -402,8 +412,22 @@ export function SurvivalView({
               <p className="nav-caption">
                 {focus.stage}스테이지 {focus.isElite ? '엘리트 ' : ''}전투
               </p>
+              {focus.rules && <BattleRulesBanner rules={focus.rules} />}
               <div className="battle-vs">
-                <FighterCard fighter={segment.mine} label="내 식구" hp={myHp} acting={lastTurn?.attacker === 'me'} />
+                <FighterCard
+                  fighter={
+                    focus.rules
+                      ? {
+                          ...segment.mine,
+                          stats: scaleStatsByMultiplier(segment.mine.stats, focus.rules.mine.multiplier),
+                          family: focus.rules.mine.family,
+                        }
+                      : segment.mine
+                  }
+                  label="내 식구"
+                  hp={myHp}
+                  acting={lastTurn?.attacker === 'me'}
+                />
                 <span className="battle-vs-mark">VS</span>
                 <FighterCard
                   fighter={{ ...focus.enemy, level: focus.stage, levelLabel: `${focus.stage}스테이지` }}

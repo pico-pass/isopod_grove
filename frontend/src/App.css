@@ -3320,3 +3320,6 @@ main {
 }
 .battle-pick-family.advantage::after { content: ' ▲유리'; color: var(--lime); }
 .battle-pick-family.disadvantage::after { content: ' ▼불리'; color: var(--danger); }
+
+.survival-stage-enemy .matchup-up { color: var(--lime); }
+.survival-stage-enemy .matchup-down { color: var(--danger); }

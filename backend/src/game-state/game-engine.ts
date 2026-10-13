@@ -1,4 +1,5 @@
 import { Species } from '../species/schemas/species.schema';
+import type { SpeciesFamily } from '../species/species.family';
 import {
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
@@ -1272,6 +1273,103 @@ export function finishSurvivalEliteWin(state: SurvivalState, hpAfterBattle: numb
     stage: state.stage + 1,
     hp: Math.min(stats.maxHp, hpAfterBattle + Math.round(stats.maxHp * stats.healRate)),
   };
+}
+
+// ---- 계열 상성과 전투 환경 ----
+// 계열끼리 상성이 있다: 불꽃은 숲을 태우고, 숲은 서리를 뚫고 자라며, 서리는 불꽃을 꺼뜨린다(불꽃 > 숲 > 서리 > 불꽃).
+// 전투 환경은 한 계열을 편든다. 상성과 환경은 양쪽의 공격력·방어력에 곱해지는 보정으로 반영되고(HP는 그대로),
+// 자동 전투와 직접 전투가 똑같이 받는다. 보정은 작아 보여도 접전에서 승부를 가른다(같은 전력일 때 유리 약 66% · 불리 약 35%).
+export const FAMILY_BEATS: Record<SpeciesFamily, SpeciesFamily> = { fire: 'forest', forest: 'frost', frost: 'fire' };
+export const FAMILY_MATCHUP_BONUS = 0.03; // 상성이 유리하면 +3%, 불리하면 −3%
+export const ENVIRONMENT_BONUS = 0.03; // 환경이 편드는 계열은 +3%
+
+export type BattleEnvironmentId = 'plain' | 'volcano' | 'jungle' | 'tundra';
+export interface BattleEnvironmentInfo {
+  id: BattleEnvironmentId;
+  name: string;
+  description: string;
+  family: SpeciesFamily | null; // 이 환경이 편드는 계열(없으면 null)
+}
+export const BATTLE_ENVIRONMENTS: readonly BattleEnvironmentInfo[] = [
+  { id: 'plain', name: '평범한 땅', description: '누구도 유리하지 않은 평범한 전장이에요.', family: null },
+  {
+    id: 'volcano',
+    name: '화산 지대',
+    description: `뜨거운 열기가 올라와 🔥 불꽃 계열이 공격·방어 +${Math.round(ENVIRONMENT_BONUS * 100)}%예요.`,
+    family: 'fire',
+  },
+  {
+    id: 'jungle',
+    name: '울창한 숲',
+    description: `촉촉한 숲의 기운으로 🌿 숲 계열이 공격·방어 +${Math.round(ENVIRONMENT_BONUS * 100)}%예요.`,
+    family: 'forest',
+  },
+  {
+    id: 'tundra',
+    name: '서리 평원',
+    description: `차가운 서리가 내려 ❄️ 서리 계열이 공격·방어 +${Math.round(ENVIRONMENT_BONUS * 100)}%예요.`,
+    family: 'frost',
+  },
+];
+export const BATTLE_ENVIRONMENT_BY_ID = new Map(BATTLE_ENVIRONMENTS.map((e) => [e.id, e]));
+
+export type FamilyMatchup = 'advantage' | 'even' | 'disadvantage';
+
+export function getFamilyMatchup(mine: SpeciesFamily, enemy: SpeciesFamily): FamilyMatchup {
+  if (FAMILY_BEATS[mine] === enemy) return 'advantage';
+  if (FAMILY_BEATS[enemy] === mine) return 'disadvantage';
+  return 'even';
+}
+
+// 보스 타워 층의 환경: 층마다 정해져 있어서 미리 보고 식구를 고를 수 있다(평범 → 화산 → 숲 → 서리 순환).
+const BOSS_ENVIRONMENT_CYCLE: readonly BattleEnvironmentId[] = ['plain', 'volcano', 'jungle', 'tundra'];
+export function getBossEnvironment(floor: number): BattleEnvironmentId {
+  return BOSS_ENVIRONMENT_CYCLE[(Math.max(1, floor) - 1) % BOSS_ENVIRONMENT_CYCLE.length];
+}
+
+// 야생 배틀의 환경은 전투마다 무작위다(평범 40%, 나머지 셋이 20%씩).
+export function rollWildEnvironment(random: number): BattleEnvironmentId {
+  if (random < 0.4) return 'plain';
+  if (random < 0.6) return 'volcano';
+  if (random < 0.8) return 'jungle';
+  return 'tundra';
+}
+
+// 이 전투에 적용되는 규칙(환경, 양쪽 계열, 상성, 최종 공격·방어 배율). 화면에 보여주는 용도이고, 능력치에 곱하는 건 applyBattleRules다.
+export function describeBattleRules(
+  myFamily: SpeciesFamily,
+  enemyFamily: SpeciesFamily,
+  environmentId: BattleEnvironmentId,
+) {
+  const environment = BATTLE_ENVIRONMENT_BY_ID.get(environmentId) ?? BATTLE_ENVIRONMENTS[0];
+  const matchup = getFamilyMatchup(myFamily, enemyFamily);
+  const matchupBonus = matchup === 'advantage' ? FAMILY_MATCHUP_BONUS : matchup === 'disadvantage' ? -FAMILY_MATCHUP_BONUS : 0;
+  const multiplierOf = (family: SpeciesFamily, bonus: number) =>
+    Math.round((1 + bonus + (environment.family === family ? ENVIRONMENT_BONUS : 0)) * 100) / 100;
+  return {
+    environment,
+    mine: { family: myFamily, matchup, multiplier: multiplierOf(myFamily, matchupBonus) },
+    enemy: { family: enemyFamily, multiplier: multiplierOf(enemyFamily, -matchupBonus) },
+  };
+}
+export type BattleRulesView = ReturnType<typeof describeBattleRules>;
+
+// 양쪽 능력치에 상성·환경 보정(공격력·방어력)을 곱해서 돌려준다. 곱셈 결과는 소수 둘째 자리까지 유지한다
+// (정수로 반올림하면 능력치가 작을 때 3% 보정이 사라진다). HP는 그대로다.
+export function applyBattleRules(
+  mine: CombatStats,
+  enemy: CombatStats,
+  myFamily: SpeciesFamily,
+  enemyFamily: SpeciesFamily,
+  environmentId: BattleEnvironmentId,
+) {
+  const rules = describeBattleRules(myFamily, enemyFamily, environmentId);
+  const scale = (s: CombatStats, m: number): CombatStats => ({
+    hp: s.hp,
+    atk: Math.round(s.atk * m * 100) / 100,
+    def: Math.round(s.def * m * 100) / 100,
+  });
+  return { mine: scale(mine, rules.mine.multiplier), enemy: scale(enemy, rules.enemy.multiplier), rules };
 }
 
 // ---- 전설·신화 번식의 긴 오프라인 인정 ----

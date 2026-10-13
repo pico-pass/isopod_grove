@@ -1,10 +1,12 @@
-import type { GameState, Species } from '../api/types';
+import type { GameState, Species, SpeciesFamily } from '../api/types';
 import {
   applyStatBonuses,
   getBattleLevelProgress,
   getCombatBaseStats,
+  getFamilyMatchup,
   type StatBonuses,
 } from '../utils/gameCalc';
+import { FamilyBadge } from './FamilyBadge';
 import { SpeciesImage } from './SpeciesImage';
 
 export function SpeciesPickGrid({
@@ -13,6 +15,7 @@ export function SpeciesPickGrid({
   activeId,
   disabled,
   bonuses,
+  familyRules,
   onPick,
 }: {
   species: Species[];
@@ -20,6 +23,8 @@ export function SpeciesPickGrid({
   activeId: string;
   disabled: boolean;
   bonuses: StatBonuses;
+  // 계열 상성이 적용되는 전투(보스 타워·야생 배틀)에서만 준다. 상대 계열을 알면 유리·불리를, 환경이 편드는 계열을 알면 환경 보너스를 표시한다.
+  familyRules?: { enemy: SpeciesFamily | null; environment: SpeciesFamily | null };
   onPick: (speciesId: string) => void;
 }) {
   return (
@@ -44,6 +49,14 @@ export function SpeciesPickGrid({
             <small>
               ❤️{stats.hp} ⚔️{stats.atk} 🛡️{stats.def}
             </small>
+            {familyRules && sp.family && (
+              <small
+                className={`battle-pick-family ${familyRules.enemy ? getFamilyMatchup(sp.family, familyRules.enemy) : ''}`}
+              >
+                <FamilyBadge family={sp.family} />
+                {familyRules.environment === sp.family && ' · 환경 +3%'}
+              </small>
+            )}
           </button>
         );
       })}

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef } from 'react';
 import type { DuelActionId, DuelCoreView } from '../api/types';
 import { formatNumber } from '../utils/gameCalc';
+import { BattleRulesBanner } from './BattleRulesBanner';
 import { FighterCard } from './FighterCard';
 
 const ACTION_ICONS: Record<DuelActionId, string> = { attack: '⚔️', guard: '🛡️', strike: '💥', heal: '🌿' };
@@ -46,6 +47,8 @@ export function DuelPanel({
           {title} · {Math.min(state.turn, duel.maxTurns)} / {duel.maxTurns}턴
         </span>
       </div>
+
+      {duel.rules && <BattleRulesBanner rules={duel.rules} />}
 
       <div className="battle-vs">
         <FighterCard fighter={duel.mine} label="내 식구" hp={state.myHp} acting={lastTurn?.attacker === 'me'} />

@@ -3287,3 +3287,36 @@ main {
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* 계열 상성·전투 환경 */
+.family-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.family-badge.family-fire { color: #ff8a5c; }
+.family-badge.family-forest { color: #6fcf6a; }
+.family-badge.family-frost { color: #7cc4ff; }
+.rules-banner {
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  background: var(--panel2);
+  font-size: 0.82rem;
+}
+.rules-banner p {
+  margin: 2px 0;
+}
+.rules-matchup {
+  margin-right: 8px;
+  font-weight: 700;
+}
+.rules-matchup.advantage { color: var(--lime); }
+.rules-matchup.disadvantage { color: var(--danger); }
+.rules-mult b.up { color: var(--lime); }
+.rules-mult b.down { color: var(--danger); }
+.battle-pick-family {
+  font-size: 0.7rem;
+}
+.battle-pick-family.advantage::after { content: ' ▲유리'; color: var(--lime); }
+.battle-pick-family.disadvantage::after { content: ' ▼불리'; color: var(--danger); }

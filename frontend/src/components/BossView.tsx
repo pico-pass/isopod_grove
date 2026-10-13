@@ -32,6 +32,8 @@ import {
   type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
+import { BattleRulesBanner } from './BattleRulesBanner';
+import { FamilyBadge } from './FamilyBadge';
 import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
@@ -128,6 +130,7 @@ export function BossView({
   const totals = getTotalPopulationBySpecies(gameState);
   const owned = species.filter((sp) => (totals[sp.speciesId] || 0) > 0);
   const cleared = !!info && info.floor <= highest;
+  const environment = info?.environment ? (catalog?.rules?.environments.find((e) => e.id === info.environment) ?? null) : null;
   const equipmentIcon = (itemId: string) =>
     equipmentCatalog.find((e) => e.equipmentId === itemId)?.icon ?? '🎒';
 
@@ -259,6 +262,9 @@ export function BossView({
         👹 도전은 승패와 상관없이 하루 {BOSS_DAILY_ATTEMPTS}회이고, 전투 사이에는 {BOSS_COOLDOWN_MINUTES}분 쿨타임이 있어요. 깬 층의 바로 다음 층까지만 열리고, 처음 깰 때는 보상이 커요.
         도전을 모두 쓰면 💎로 추가 도전을 살 수 있고(하루 최대 {catalog?.extraAttemptCosts.length ?? 3}회, 살수록 비싸져요), 쿨타임은 💎로 건너뛸 수 있어요.
         이미 깬 층은 다시 도전해 골드(보스 층은 장비 복사본·다이아 확률)를 받을 수 있어요.
+        <br />
+        🌍 층마다 전투 환경이 정해져 있고(평범한 땅 → 화산 지대 → 울창한 숲 → 서리 평원 순), 환경이 편드는 계열은 공격·방어 +3%예요.
+        🔥 불꽃 &gt; 🌿 숲 &gt; ❄️ 서리 &gt; 🔥 불꽃 상성도 있어서 이기는 쪽 +3%, 지는 쪽 −3%예요. 식구를 고를 때 ▲유리/▼불리가 표시돼요.
       </div>
 
       <p className="nav-caption">난이도</p>
@@ -331,6 +337,15 @@ export function BossView({
                 ❤️{formatNumber(scaledStats?.hp ?? 0)} ⚔️{formatNumber(scaledStats?.atk ?? 0)} 🛡️{formatNumber(scaledStats?.def ?? 0)}{' '}
                 ({difficulty.name} ×{mult} · 전투마다 ±15% 편차)
               </small>
+              <small>
+                계열 <FamilyBadge family={info.species.family} />
+                {environment && (
+                  <>
+                    {' · '}🌍 {environment.name}
+                    {environment.family ? ` — ${environment.description}` : ''}
+                  </>
+                )}
+              </small>
             </div>
           </div>
           {info.patterns.length > 0 && (
@@ -382,6 +397,7 @@ export function BossView({
           activeId={selected}
           disabled={animating || fighting}
           bonuses={equipmentBonuses}
+          familyRules={{ enemy: info?.species?.family ?? null, environment: environment?.family ?? null }}
           onPick={setSelected}
         />
       )}
@@ -461,6 +477,7 @@ export function BossView({
                   : '🎉 승리!'
                 : '💧 패배...'}
           </div>
+          {result.rules && <BattleRulesBanner rules={result.rules} />}
           <div className="battle-vs">
             <FighterCard fighter={result.mine} label="내 식구" hp={myHp} acting={lastTurn?.attacker === 'me'} />
             <span className="battle-vs-mark">VS</span>

@@ -5,8 +5,10 @@ import type {
   CombatStats,
   EquipmentCatalogItem,
   EquipmentItemState,
+  FamilyMatchup,
   GameState,
   Species,
+  SpeciesFamily,
   Stats,
 } from '../api/types';
 
@@ -390,6 +392,26 @@ export function formatDuration(totalSeconds: number): string {
 
 export function formatNumber(n: number): string {
   return Math.floor(n).toLocaleString('ko-KR');
+}
+
+// 상성·환경 보정을 받은 공격력·방어력은 소수가 될 수 있어서 소수 첫째 자리까지만 보여준다(정수면 그대로).
+export function formatStat(n: number): string {
+  return String(Math.round(n * 10) / 10);
+}
+
+// ---- 계열 상성 ----
+// 백엔드(species.family.ts, game-engine.ts)에 같은 규칙이 있다. 화면 안내용이고, 실제 보정은 서버가 계산한다.
+export const FAMILY_INFO: Record<SpeciesFamily, { name: string; icon: string }> = {
+  fire: { name: '불꽃', icon: '🔥' },
+  forest: { name: '숲', icon: '🌿' },
+  frost: { name: '서리', icon: '❄️' },
+};
+export const FAMILY_BEATS: Record<SpeciesFamily, SpeciesFamily> = { fire: 'forest', forest: 'frost', frost: 'fire' };
+
+export function getFamilyMatchup(mine: SpeciesFamily, enemy: SpeciesFamily): FamilyMatchup {
+  if (FAMILY_BEATS[mine] === enemy) return 'advantage';
+  if (FAMILY_BEATS[enemy] === mine) return 'disadvantage';
+  return 'even';
 }
 
 // ---- 업적 진행도 계산 ----

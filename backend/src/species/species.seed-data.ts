@@ -1,3 +1,5 @@
+import { familyOf } from './species.family';
+
 // price: 희귀도별 분양 가격(G). 시드의 종별 price보다 우선하며, 서버 시작 시 모든 종에 적용된다.
 // ratePerMin: 희귀도별 마리당 분당 수익(G). 시드의 종별 rate보다 우선하며, 서버 시작 시 모든 종에 적용된다.
 // (DB의 rate는 초당 값이라 ratePerMin / 60으로 저장한다.)
@@ -26,9 +28,10 @@ export interface SpeciesSeed {
   image?: string;
   filter: string;
   description: string;
+  family: string;
 }
 
-export const SPECIES_SEED: SpeciesSeed[] = [
+const RAW_SPECIES_SEED: Omit<SpeciesSeed, 'family'>[] = [
   {
     speciesId: 'pandaKing',
     name: '쿠바리스 판다킹',
@@ -721,3 +724,6 @@ export const SPECIES_SEED: SpeciesSeed[] = [
       '샤이차니스파이키',
   },
 ];
+
+// 계열은 종 id로 정해진다(species.family.ts). 시드에 값을 일일이 적지 않고 여기서 붙인다.
+export const SPECIES_SEED: SpeciesSeed[] = RAW_SPECIES_SEED.map((s) => ({ ...s, family: familyOf(s.speciesId) }));

@@ -37,6 +37,10 @@ export class Species {
   @Prop({ default: 'none' })
   filter: string;
 
+  // 전투 계열('fire' 불꽃 / 'forest' 숲 / 'frost' 서리). 시드(species.family.ts)가 기준이다.
+  @Prop({ default: 'forest' })
+  family: string;
+
   @Prop({ required: true })
   description: string;
 }

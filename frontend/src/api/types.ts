@@ -1,7 +1,26 @@
+// 종의 계열. 보스 타워·야생 배틀의 상성과 환경 보정에 쓰인다(불꽃 > 숲 > 서리 > 불꽃).
+export type SpeciesFamily = 'fire' | 'forest' | 'frost';
+export type FamilyMatchup = 'advantage' | 'even' | 'disadvantage';
+
+export interface BattleEnvironmentInfo {
+  id: string;
+  name: string;
+  description: string;
+  family: SpeciesFamily | null; // 이 환경이 편드는 계열
+}
+
+// 한 전투에 적용된 규칙. 공격력·방어력에 곱해진 최종 배율(상성 ±3% + 환경 +3%)을 보여준다.
+export interface BattleRules {
+  environment: BattleEnvironmentInfo;
+  mine: { family: SpeciesFamily; matchup: FamilyMatchup; multiplier: number };
+  enemy: { family: SpeciesFamily; multiplier: number };
+}
+
 export interface Species {
   speciesId: string;
   name: string;
   latin: string;
+  family?: SpeciesFamily;
   rarity: number;
   price: number;
   basePrice: number;
@@ -477,6 +496,7 @@ export interface BattleFighter {
   rarity: number;
   stats: CombatStats;
   level: number;
+  family?: SpeciesFamily; // 상성이 적용되는 전투(보스 타워·야생 배틀)에서만 있다
 }
 
 export interface SpeciesLevelResult {
@@ -495,6 +515,7 @@ export interface BattleResponse {
   difficulty: number;
   mine: BattleFighter;
   enemy: BattleFighter;
+  rules?: BattleRules | null;
   log: BattleTurn[];
   reward: { coins: number; diamonds: number };
   speciesLevel: SpeciesLevelResult;
@@ -564,7 +585,9 @@ export interface BossFloorInfo {
     image?: string;
     filter: string;
     rarity: number;
+    family?: SpeciesFamily;
   } | null;
+  environment?: string; // BossCatalog.rules.environments의 id
   stats: CombatStats;
   patterns: BossPatternInfo[];
   rewards: {
@@ -597,6 +620,12 @@ export interface BossCatalog {
   // 쿨타임을 건너뛸 때 남은 이 초마다 💎1(올림)
   cooldownSkipSecondsPerDiamond: number;
   difficulties: BossDifficultyInfo[];
+  rules?: {
+    familyBeats: Record<SpeciesFamily, SpeciesFamily>;
+    matchupBonus: number;
+    environmentBonus: number;
+    environments: BattleEnvironmentInfo[];
+  };
   floors: BossFloorInfo[];
 }
 
@@ -836,6 +865,7 @@ export interface BossBattleResponse {
   patterns: BossPatternInfo[];
   mine: BattleFighter;
   enemy: BattleFighter;
+  rules?: BattleRules | null;
   log: BattleTurn[];
   reward: {
     coins: number;
@@ -861,6 +891,7 @@ export interface DuelCoreView {
   patterns: BossPatternInfo[];
   mine: BattleFighter;
   enemy: BattleFighter;
+  rules?: BattleRules | null; // 서바이벌 엘리트 전투에는 없다
   maxTurns: number;
   state: {
     turn: number;

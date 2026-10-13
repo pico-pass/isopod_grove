@@ -346,6 +346,10 @@ export class WildDuel {
   @Prop({ required: true })
   enemySpeciesId: string;
 
+  // 이 전투의 환경(BattleEnvironmentId). 비어 있으면 환경 규칙이 생기기 전에 시작한 전투라 보정이 없다.
+  @Prop({ default: '' })
+  environment: string;
+
   @Prop({ default: 1 })
   enemyLevel: number;
 
@@ -408,6 +412,10 @@ export class BossDuel {
 
   @Prop({ required: true })
   difficulty: string;
+
+  // 이 전투의 환경(BattleEnvironmentId). 비어 있으면 환경 규칙이 생기기 전에 시작한 전투라 보정이 없다.
+  @Prop({ default: '' })
+  environment: string;
 
   // 시작할 때의 전투 레벨(화면 표시용)
   @Prop({ default: 1 })

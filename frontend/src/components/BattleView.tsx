@@ -32,6 +32,8 @@ import {
   type StatBonuses,
 } from '../utils/gameCalc';
 import { hpAfter, useBattleReplay } from '../hooks/useBattleReplay';
+import { BattleRulesBanner } from './BattleRulesBanner';
+import { FamilyBadge } from './FamilyBadge';
 import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
@@ -245,6 +247,10 @@ export function BattleView({
           </div>
           <div className="info-banner">
             ⚔️ 고른 난이도 등급의 야생 개체와 붙어요. 난이도가 높을수록 상대가 강하지만 이기면 보상도 커요.
+            <br />
+            🌍 전투마다 환경이 무작위로 정해져요(평범한 땅 · 화산 지대 · 울창한 숲 · 서리 평원). 환경이 편드는 계열은 공격·방어 +3%예요. 또
+            🔥 불꽃 &gt; 🌿 숲 &gt; ❄️ 서리 &gt; 🔥 불꽃 순으로 상성이 있어서, 이기는 쪽은 +3%, 지는 쪽은 −3%예요. 어떤 상대·환경인지는 전투를
+            시작해야 알 수 있어요.
             {hasBonuses(equipmentBonuses) && (
               <>
                 <br />
@@ -316,6 +322,11 @@ export function BattleView({
                 <small>
                   ❤️{stats.hp} ⚔️{stats.atk} 🛡️{stats.def}
                 </small>
+                {mode === 'wild' && sp.family && (
+                  <small className="battle-pick-family">
+                    <FamilyBadge family={sp.family} />
+                  </small>
+                )}
               </button>
             );
           })}
@@ -378,6 +389,7 @@ export function BattleView({
           <div className={`battle-banner ${animating ? 'ongoing' : result.result}`}>
             {animating ? '⚔️ 전투 중...' : result.result === 'win' ? '🎉 승리!' : '💧 패배...'}
           </div>
+          {result.rules && <BattleRulesBanner rules={result.rules} />}
           <div className="battle-vs">
             <FighterCard fighter={result.mine} label="내 식구" hp={myHp} acting={lastTurn?.attacker === 'me'} />
             <span className="battle-vs-mark">VS</span>

@@ -18,6 +18,8 @@ import {
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
 import type {
+  BattleEnvironmentId,
+  BattleRulesView,
   BattleTurn,
   BoostKind,
   BossDuelState,
@@ -31,6 +33,8 @@ import type {
 } from './game-engine';
 import type { Species } from '../species/schemas/species.schema';
 import { SpeciesService } from '../species/species.service';
+import { resolveFamily } from '../species/species.family';
+import type { SpeciesFamily } from '../species/species.family';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
 import { AchievementsService } from '../achievements/achievements.service';
@@ -38,6 +42,10 @@ import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { RARITIES } from '../species/species.seed-data';
 import { CareAction } from './dto/care.dto';
 import {
+  applyBattleRules,
+  describeBattleRules,
+  getBossEnvironment,
+  rollWildEnvironment,
   BATTLE_ACCOUNT_XP_BY_RARITY,
   BATTLE_COOLDOWN_MS,
   BATTLE_MAX_TURNS,
@@ -204,6 +212,8 @@ export interface DuelFighterView {
   rarity: number;
   stats: CombatStats;
   level: number;
+  // 계열 상성이 적용되는 전투(보스 타워·야생 배틀)에서만 채운다
+  family?: SpeciesFamily;
 }
 
 @Injectable()
@@ -699,7 +709,21 @@ export class GameStateService {
     // 야생 개체 레벨은 내 종 레벨 기준 ±1. 내가 키울수록 상대도 같이 세진다.
     const enemyLevel = rollEnemyLevel(level);
     const enemy = rollCombatStats(enemySpecies.rarity, enemyLevel);
-    return { speciesId, mySpecies, enemySpecies, difficulty, level, enemyLevel, mine, enemy };
+    // 환경은 전투마다 무작위다. 계열 상성과 환경 보정은 여기서 한 번 능력치에 곱하고, 이후(자동·직접 전투 모두)는 그 값을 쓴다.
+    const environmentId = rollWildEnvironment(Math.random());
+    const applied = applyBattleRules(mine, enemy, resolveFamily(mySpecies), resolveFamily(enemySpecies), environmentId);
+    return {
+      speciesId,
+      mySpecies,
+      enemySpecies,
+      difficulty,
+      level,
+      enemyLevel,
+      mine: applied.mine,
+      enemy: applied.enemy,
+      rules: applied.rules as BattleRulesView | null,
+      environmentId,
+    };
   }
 
   // 야생 배틀 결과를 반영한다(경험치·보상·기록·응답). 자동 전투와 직접 전투가 똑같은 보상 규칙을 쓴다.
@@ -715,6 +739,7 @@ export class GameStateService {
       enemyLevel: number;
       mine: CombatStats;
       enemy: CombatStats;
+      rules: BattleRulesView | null;
     },
     won: boolean,
     log: BattleTurn[],
@@ -776,6 +801,7 @@ export class GameStateService {
         rarity: mySpecies.rarity,
         stats: mine,
         level: ctx.level,
+        family: resolveFamily(mySpecies),
       },
       enemy: {
         speciesId: enemySpecies.speciesId,
@@ -785,7 +811,9 @@ export class GameStateService {
         rarity: enemySpecies.rarity,
         stats: enemy,
         level: ctx.enemyLevel,
+        family: resolveFamily(enemySpecies),
       },
+      rules: ctx.rules,
       log,
       reward,
       speciesLevel: {
@@ -841,6 +869,10 @@ export class GameStateService {
       enemyLevel: duel.enemyLevel,
       mine: { hp: duel.mineHp, atk: duel.mineAtk, def: duel.mineDef } as CombatStats,
       enemy: { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef } as CombatStats,
+      // 환경이 없는 전투(계열 규칙이 생기기 전에 시작한 전투)는 규칙 없이 이어서 한다. 저장된 능력치에 보정이 없기 때문이다.
+      rules: duel.environment
+        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(enemySpecies), duel.environment as BattleEnvironmentId)
+        : null,
     };
   }
 
@@ -853,9 +885,11 @@ export class GameStateService {
       rarity: s.rarity,
       stats,
       level,
+      family: resolveFamily(s),
     });
     return {
       difficulty: ctx.difficulty,
+      rules: ctx.rules,
       ...this.duelCoreView(
         fighter(ctx.mySpecies, this.displayNameFor(gameState, ctx.speciesId, ctx.mySpecies.name), ctx.mine, ctx.level),
         fighter(ctx.enemySpecies, ctx.enemySpecies.name, ctx.enemy, ctx.enemyLevel),
@@ -883,6 +917,7 @@ export class GameStateService {
         speciesId,
         difficulty,
         enemySpeciesId: ctx.enemySpecies.speciesId,
+        environment: ctx.environmentId,
         enemyLevel: ctx.enemyLevel,
         level: ctx.level,
         mineHp: ctx.mine.hp,
@@ -1461,8 +1496,22 @@ export class GameStateService {
       computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
     );
     // 난이도 배율은 보스의 기준 능력치에 먼저 곱하고, 개체 편차(±15%)는 그 위에 붙는다.
-    const bossStats = rollBossStats(scaleBossStats(floor.stats, difficulty.multiplier));
-    return { speciesId, mySpecies, bossSpecies, floor, difficulty, level, mine, bossStats };
+    const rolledBoss = rollBossStats(scaleBossStats(floor.stats, difficulty.multiplier));
+    // 층의 환경과 계열 상성은 굴린 능력치 위에 곱한다(공격력·방어력만). 이후(자동·직접 전투 모두)는 보정된 값을 쓴다.
+    const environmentId = getBossEnvironment(floor.floor);
+    const applied = applyBattleRules(mine, rolledBoss, resolveFamily(mySpecies), resolveFamily(bossSpecies), environmentId);
+    return {
+      speciesId,
+      mySpecies,
+      bossSpecies,
+      floor,
+      difficulty,
+      level,
+      mine: applied.mine,
+      bossStats: applied.enemy,
+      rules: applied.rules as BattleRulesView | null,
+      environmentId,
+    };
   }
 
   // 보스 전투 결과를 반영한다(경험치·보상·기록·응답). 자동 전투와 직접 전투가 똑같은 보상 규칙을 쓴다.
@@ -1478,6 +1527,7 @@ export class GameStateService {
       level: number;
       mine: CombatStats;
       bossStats: CombatStats;
+      rules: BattleRulesView | null;
     },
     won: boolean,
     log: BattleTurn[],
@@ -1590,6 +1640,7 @@ export class GameStateService {
         rarity: mySpecies.rarity,
         stats: mine,
         level: ctx.level,
+        family: resolveFamily(mySpecies),
       },
       enemy: {
         speciesId: bossSpecies.speciesId,
@@ -1599,7 +1650,9 @@ export class GameStateService {
         rarity: bossSpecies.rarity,
         stats: bossStats,
         level: floor.floor,
+        family: resolveFamily(bossSpecies),
       },
+      rules: ctx.rules,
       log,
       reward,
       speciesLevel: {
@@ -1646,6 +1699,10 @@ export class GameStateService {
       level: duel.level,
       mine: { hp: duel.mineHp, atk: duel.mineAtk, def: duel.mineDef } as CombatStats,
       bossStats: { hp: duel.bossHpMax, atk: duel.bossAtk, def: duel.bossDef } as CombatStats,
+      // 환경이 없는 전투(계열 규칙이 생기기 전에 시작한 전투)는 규칙 없이 이어서 한다. 저장된 능력치에 보정이 없기 때문이다.
+      rules: duel.environment
+        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(bossSpecies), duel.environment as BattleEnvironmentId)
+        : null,
     };
   }
 
@@ -1688,10 +1745,12 @@ export class GameStateService {
       rarity: s.rarity,
       stats,
       level,
+      family: resolveFamily(s),
     });
     return {
       floor: ctx.floor.floor,
       isBoss: ctx.floor.isBoss,
+      rules: ctx.rules,
       difficulty: { id: ctx.difficulty.id, name: ctx.difficulty.name, multiplier: ctx.difficulty.multiplier },
       ...this.duelCoreView(
         fighter(ctx.mySpecies, this.displayNameFor(gameState, ctx.speciesId, ctx.mySpecies.name), ctx.mine, ctx.level),
@@ -1728,6 +1787,7 @@ export class GameStateService {
         speciesId,
         floor: floor.floor,
         difficulty: difficulty.id,
+        environment: ctx.environmentId,
         level: ctx.level,
         mineHp: ctx.mine.hp,
         mineAtk: ctx.mine.atk,

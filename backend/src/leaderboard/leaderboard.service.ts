@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GameState, GameStateDocument } from '../game-state/schemas/game-state.schema';
+import { PuzzleRecord, PuzzleRecordDocument } from '../game-state/schemas/puzzle-record.schema';
+import { RunnerRecord, RunnerRecordDocument } from '../game-state/schemas/runner-record.schema';
+import { PUZZLE_STAGES, getPuzzleDayKey, rankByLadder } from '../game-state/puzzle-engine';
+import { rankByDistance } from '../game-state/runner-engine';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { SpeciesService } from '../species/species.service';
 import {
@@ -54,6 +58,12 @@ export class LeaderboardService {
     private gameStateModel: Model<GameStateDocument>,
     private readonly usersService: UsersService,
     private readonly speciesService: SpeciesService,
+    // 오늘의 퍼즐 순위 전용. 끝자리에 둬서 기존 테스트 생성자 호출(3개 인자)이 깨지지 않게 한다.
+    @InjectModel(PuzzleRecord.name)
+    private puzzleRecordModel?: Model<PuzzleRecordDocument>,
+    // 콩 달리기 순위 전용(역시 끝자리).
+    @InjectModel(RunnerRecord.name)
+    private runnerRecordModel?: Model<RunnerRecordDocument>,
   ) {}
 
   async getLevelLeaderboard(requesterId: string): Promise<LeaderboardResult> {
@@ -64,6 +74,52 @@ export class LeaderboardService {
     const sorted = [...states].sort((a, b) => b.xp - a.xp);
     return this.buildResult(
       sorted.map((s) => ({ userId: s.userId, value: getLevel(s.xp) })),
+      requesterId,
+    );
+  }
+
+  // 오늘의 퍼즐: 오늘 많이 깬 단계 순, 같으면 깬 단계들의 최단 수 초과분이 적은 순. 같은 성적은 같은 순위(1, 1, 3)이고,
+  // 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다. 순위 번호가 겹치므로 줄 번호(index)가 아니라 계산한 순위를 그대로 쓴다.
+  async getPuzzleLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    if (!this.puzzleRecordModel) throw new Error('PuzzleRecord 모델이 연결되지 않았어요.');
+    const dayKey = getPuzzleDayKey();
+    const records = await this.puzzleRecordModel
+      .find({ dayKey, cleared: { $gte: 1 } }, { userId: 1, cleared: 1, excess: 1 })
+      .sort({ cleared: -1, excess: 1, reachedAt: 1 })
+      .lean<{ userId: Types.ObjectId; cleared: number; excess: number }[]>();
+    const ranks = rankByLadder(records);
+    return this.buildResult(
+      records.map((r, i) => ({
+        userId: r.userId,
+        value: r.cleared,
+        rank: ranks[i],
+        label: `${r.cleared}/${PUZZLE_STAGES}단계 · 초과 +${r.excess}수`,
+      })),
+      requesterId,
+    );
+  }
+
+  // 콩 달리기: 오늘 가장 멀리 달린 순. 같은 거리는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다.
+  async getRunnerLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+    if (!this.runnerRecordModel) throw new Error('RunnerRecord 모델이 연결되지 않았어요.');
+    const dayKey = getPuzzleDayKey();
+    const records = await this.runnerRecordModel
+      .find({ dayKey }, { userId: 1, bestMeters: 1, speciesId: 1 })
+      .sort({ bestMeters: -1, bestAt: 1 })
+      .lean<{ userId: Types.ObjectId; bestMeters: number; speciesId?: string }[]>();
+    const ranks = rankByDistance(records.map((r) => r.bestMeters));
+    // 기록을 세운 콩벌레도 함께 보여준다(희귀도마다 능력이 달라서 어떤 종으로 달렸는지가 중요하다).
+    const speciesName = new Map((await this.speciesService.findAll()).map((s) => [s.speciesId, s.name]));
+    return this.buildResult(
+      records.map((r, i) => {
+        const name = r.speciesId ? speciesName.get(r.speciesId) : undefined;
+        return {
+          userId: r.userId,
+          value: r.bestMeters,
+          rank: ranks[i],
+          label: `${r.bestMeters.toLocaleString('ko-KR')}m${name ? ` · ${name}` : ''}`,
+        };
+      }),
       requesterId,
     );
   }
@@ -165,7 +221,7 @@ export class LeaderboardService {
   }
 
   private async buildResult(
-    ranked: { userId: Types.ObjectId; value: number; label?: string }[],
+    ranked: { userId: Types.ObjectId; value: number; label?: string; rank?: number }[],
     requesterId: string,
   ): Promise<LeaderboardResult> {
     const top = ranked.slice(0, LEADERBOARD_LIMIT);
@@ -179,9 +235,10 @@ export class LeaderboardService {
     const userById = new Map(users.map((u) => [u._id.toString(), u]));
 
     const toEntry = (
-      r: { userId: Types.ObjectId; value: number; label?: string },
-      rank: number,
+      r: { userId: Types.ObjectId; value: number; label?: string; rank?: number },
+      fallbackRank: number,
     ): LeaderboardEntry => {
+      const rank = r.rank ?? fallbackRank;
       const id = r.userId.toString();
       const user = userById.get(id);
       return {

@@ -16,6 +16,39 @@ import {
   WildDuel,
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
+import { PuzzleRecord, PuzzleRecordDocument } from './schemas/puzzle-record.schema';
+import { RunnerRecord, RunnerRecordDocument } from './schemas/runner-record.schema';
+import {
+  RUNNER_ABILITIES_BY_RARITY,
+  RUNNER_AIR_JUMP_PERCENT,
+  RUNNER_INVULN_TICKS,
+  RUNNER_MAX_TICKS,
+  RUNNER_MILESTONES,
+  RUNNER_RUN_EXPIRE_MS,
+  RUNNER_TPS,
+  isRunnerTimePlausible,
+  isValidRunnerJumps,
+  simulateRunner,
+} from './runner-engine';
+import {
+  PUZZLE_MAX_MOVES,
+  PUZZLE_MILESTONES,
+  PUZZLE_RANK_REWARDS,
+  PUZZLE_STAGES,
+  PUZZLE_STAGE_STAR_SHARDS,
+  PUZZLE_STAR2_MARGIN,
+  addPuzzleRewards,
+  comparePuzzleScore,
+  computePuzzleScore,
+  getPreviousPuzzleDayKey,
+  getPuzzleDayKey,
+  getPuzzleRankReward,
+  getPuzzleResetAt,
+  getPuzzleStage,
+  getPuzzleStageRewardGain,
+  getPuzzleStars,
+  replayPuzzleMoves,
+} from './puzzle-engine';
 import { EQUIPMENT_BY_ID } from '../equipment/equipment.data';
 import type {
   BattleEnvironmentId,
@@ -231,6 +264,12 @@ export class GameStateService {
     // 친구 수 업적 조건 조회 전용. 끝자리에 둬서 기존 테스트 생성자 호출(6개 인자)이 깨지지 않게 한다.
     @InjectModel(Friendship.name)
     private friendshipModel: Model<FriendshipDocument>,
+    // 오늘의 퍼즐 기록 전용. 이것도 끝자리에 둬서 기존 테스트 생성자 호출(7개 인자)이 깨지지 않게 한다.
+    @InjectModel(PuzzleRecord.name)
+    private puzzleRecordModel?: Model<PuzzleRecordDocument>,
+    // 콩 달리기 기록 전용(역시 끝자리).
+    @InjectModel(RunnerRecord.name)
+    private runnerRecordModel?: Model<RunnerRecordDocument>,
   ) {}
 
   // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
@@ -243,6 +282,9 @@ export class GameStateService {
   private readonly shopInFlight = new Set<string>();
   private readonly expeditionInFlight = new Set<string>();
   private readonly wildDuelInFlight = new Set<string>();
+  // 오늘의 퍼즐 제출·보상 수령도 같은 이유로 막는다(같은 유저의 요청이 겹치면 보상이 두 번 지급될 수 있다).
+  private readonly puzzleInFlight = new Set<string>();
+  private readonly runnerInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -2684,6 +2726,432 @@ export class GameStateService {
       const outcome: SurvivalSegmentStatus = !won ? 'dead' : stage >= SURVIVAL_MAX_STAGE ? 'cleared' : 'choose';
       const fixed = enemySpecies ? new Map<number, Species>([[stage, enemySpecies]]) : undefined;
       return this.concludeSurvivalSegment(gameState, species, speciesList, '엘리트 직접 전투', [stageResult], outcome, rewards, fixed);
+    });
+  }
+
+  // ---- 오늘의 퍼즐 ----
+  // 판과 이동 검증은 puzzle-engine.ts의 순수 계산이다. 여기서는 기록(puzzle_records)·보상·순위를 다룬다.
+  private get puzzles(): Model<PuzzleRecordDocument> {
+    if (!this.puzzleRecordModel) throw new Error('PuzzleRecord 모델이 연결되지 않았어요.');
+    return this.puzzleRecordModel;
+  }
+
+  private async withPuzzleLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.puzzleInFlight.has(userId)) {
+      throw new BadRequestException('처리 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.puzzleInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.puzzleInFlight.delete(userId);
+    }
+  }
+
+  // 그날 이 유저의 기록. 한 단계도 못 깬 기록(단계가 생기기 전의 옛 기록 포함)은 없는 것으로 본다.
+  private async puzzleRecordOf(dayKey: string, userId: string) {
+    const rec = await this.puzzles
+      .findOne({ dayKey, userId: new Types.ObjectId(userId) })
+      .lean<{ stageBest?: number[]; cleared?: number; excess?: number }>();
+    if (!rec || !(rec.cleared && rec.cleared > 0)) return null;
+    const stageBest = Array.from({ length: PUZZLE_STAGES }, (_, i) => rec.stageBest?.[i] ?? 0);
+    return { stageBest, cleared: rec.cleared, excess: rec.excess ?? 0 };
+  }
+
+  // 그날 이 성적보다 나은 사람 수 + 1 = 순위(같은 성적은 같은 순위)와, 그날 한 단계라도 깬 사람 수
+  private async puzzleRankOf(dayKey: string, score: { cleared: number; excess: number }) {
+    const [better, participants] = await Promise.all([
+      this.puzzles.countDocuments({
+        dayKey,
+        $or: [{ cleared: { $gt: score.cleared } }, { cleared: score.cleared, excess: { $lt: score.excess } }],
+      }),
+      this.puzzles.countDocuments({ dayKey, cleared: { $gte: 1 } }),
+    ]);
+    return { rank: better + 1, participants };
+  }
+
+  // 어제 퍼즐을 푼 유저의 순위 보상. 어제 한 단계도 못 깼으면 null이다. 그날이 끝나서 기록이 더는 바뀌지 않으니 지금 계산해도 확정된 값이다.
+  private async puzzleYesterday(gameState: GameStateDocument, userId: string, today: string) {
+    const dayKey = getPreviousPuzzleDayKey(today);
+    const record = await this.puzzleRecordOf(dayKey, userId);
+    if (!record) return null;
+    const { rank, participants } = await this.puzzleRankOf(dayKey, record);
+    return {
+      dayKey,
+      cleared: record.cleared,
+      excess: record.excess,
+      rank,
+      participants,
+      diamonds: getPuzzleRankReward(rank),
+      claimed: gameState.puzzle?.rankClaimedDay === dayKey,
+    };
+  }
+
+  private puzzleView(dayKey: string, stage: number) {
+    const p = getPuzzleStage(dayKey, stage);
+    return { dayKey, stage, width: p.width, height: p.height, rocks: p.rocks, start: p.start, goal: p.goal, par: p.par };
+  }
+
+  // 오늘의 퍼즐 화면에 필요한 모든 것: 고른 단계의 판(기본은 지금 도전할 단계), 단계별 기록, 내 순위, 어제 순위 보상, 보상표.
+  // 아직 열리지 않은 단계의 판과 최단 수는 내려주지 않는다.
+  async getPuzzle(userId: string, stageParam?: number) {
+    const gameState = await this.getOrThrow(userId);
+    const dayKey = getPuzzleDayKey();
+    const record = await this.puzzleRecordOf(dayKey, userId);
+    const cleared = record?.cleared ?? 0;
+    const open = Math.min(cleared + 1, PUZZLE_STAGES); // 지금 도전할 수 있는 가장 높은 단계
+    const stage = stageParam ?? open;
+    if (!Number.isInteger(stage) || stage < 1 || stage > PUZZLE_STAGES) {
+      throw new BadRequestException('없는 단계예요.');
+    }
+    if (stage > open) throw new BadRequestException('앞 단계를 먼저 깨야 열려요.');
+    const progress = gameState.puzzle?.dayKey === dayKey ? gameState.puzzle : null;
+    const stages = Array.from({ length: PUZZLE_STAGES }, (_, i) => {
+      const n = i + 1;
+      const unlocked = n <= open;
+      const par = unlocked ? getPuzzleStage(dayKey, n).par : null;
+      const best = record?.stageBest[i] ?? 0;
+      return {
+        stage: n,
+        unlocked,
+        par,
+        bestMoves: best > 0 ? best : null,
+        stars: best > 0 && par !== null ? getPuzzleStars(par, best) : 0,
+        rewardedStars: progress?.stageStars?.[i] ?? 0,
+      };
+    });
+    let today: { cleared: number; excess: number; rank: number; participants: number } | null = null;
+    if (record) {
+      const { rank, participants } = await this.puzzleRankOf(dayKey, record);
+      today = { cleared: record.cleared, excess: record.excess, rank, participants };
+    }
+    return {
+      puzzle: this.puzzleView(dayKey, stage),
+      openStage: open,
+      allCleared: cleared >= PUZZLE_STAGES,
+      stages,
+      resetsAt: getPuzzleResetAt(dayKey),
+      maxMoves: PUZZLE_MAX_MOVES,
+      milestoneReached: progress?.milestone ?? 0,
+      today,
+      yesterday: await this.puzzleYesterday(gameState, userId, dayKey),
+      rules: {
+        stageCount: PUZZLE_STAGES,
+        star2Margin: PUZZLE_STAR2_MARGIN,
+        stageShards: PUZZLE_STAGE_STAR_SHARDS, // 인덱스 = 그 단계에서 딴 별 수, 값 = 받는 장비 조각(차액 지급)
+        milestones: PUZZLE_MILESTONES,
+        rankRewards: PUZZLE_RANK_REWARDS,
+      },
+    };
+  }
+
+  // 이동 기록을 제출한다. 서버가 시작 칸부터 그대로 굴려 보고 나뭇잎에 도착하면 그 단계 클리어로 인정한다.
+  // 그 단계의 최소 이동 수를 갱신하고, 새로 딴 별과 새로 달성한 단계 수만큼 보상을 준다.
+  async puzzleSubmit(userId: string, dayKey: string, stage: number, moves: string) {
+    return this.withPuzzleLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const today = getPuzzleDayKey();
+      if (dayKey !== today) {
+        throw new BadRequestException('퍼즐이 새로 바뀌었어요. 화면을 새로고침해 주세요.');
+      }
+      if (!Number.isInteger(stage) || stage < 1 || stage > PUZZLE_STAGES) {
+        throw new BadRequestException('없는 단계예요.');
+      }
+      const record = await this.puzzleRecordOf(today, userId);
+      const beforeScore = { cleared: record?.cleared ?? 0, excess: record?.excess ?? 0 };
+      if (stage > beforeScore.cleared + 1) throw new BadRequestException('앞 단계를 먼저 깨야 열려요.');
+
+      const puzzle = getPuzzleStage(today, stage);
+      const replay = replayPuzzleMoves(puzzle, moves);
+      if (!replay.ok) {
+        const reasons = {
+          format: '이동 기록이 올바르지 않아요.',
+          'too-long': `한 번에 최대 ${PUZZLE_MAX_MOVES}번까지 이동할 수 있어요.`,
+          'not-solved': '나뭇잎에 도착하지 못한 기록이에요.',
+          trailing: '나뭇잎에 도착한 뒤의 이동이 섞여 있어요.',
+        } as const;
+        throw new BadRequestException(reasons[replay.reason]);
+      }
+
+      // 기록: 이 단계에서 더 적은 수로 깼을 때만 갱신하고, 오늘의 성적(많이 깬 순 → 초과분이 적은 순)이 좋아지면 달성 시각을 새로 적는다.
+      const stageBest = record?.stageBest ?? Array.from({ length: PUZZLE_STAGES }, () => 0);
+      const previous = stageBest[stage - 1];
+      const improved = previous === 0 || replay.moves < previous;
+      if (improved) stageBest[stage - 1] = replay.moves;
+      const score = computePuzzleScore(today, stageBest);
+      const scoreImproved = comparePuzzleScore(score, beforeScore) < 0;
+      const now = new Date();
+      await this.puzzles.updateOne(
+        { dayKey: today, userId: new Types.ObjectId(userId) },
+        {
+          $set: {
+            stageBest,
+            cleared: score.cleared,
+            excess: score.excess,
+            expireAt: new Date(getPuzzleResetAt(today) + 45 * 24 * 60 * 60 * 1000),
+            ...(scoreImproved ? { reachedAt: now } : {}),
+          },
+          $inc: { solves: 1 },
+        },
+        { upsert: true },
+      );
+      const bestForStage = stageBest[stage - 1];
+
+      // 보상: 이 단계에서 이미 받은 별 보상보다 높은 별을 땄을 때만 차액을, 새로 달성한 단계 수 보너스를 한 번씩 준다.
+      // 받은 기록은 게임 상태와 한 번에 저장된다.
+      const stars = getPuzzleStars(puzzle.par, replay.moves);
+      const prev = gameState.puzzle;
+      const keepDay = prev?.dayKey === today;
+      const stageStars = Array.from({ length: PUZZLE_STAGES }, (_, i) => (keepDay ? (prev?.stageStars?.[i] ?? 0) : 0));
+      let milestone = keepDay ? (prev?.milestone ?? 0) : 0;
+      const stageReward = getPuzzleStageRewardGain(stageStars[stage - 1], stars);
+      if (stars > stageStars[stage - 1]) stageStars[stage - 1] = stars;
+      const newMilestones = PUZZLE_MILESTONES.filter((m) => m.stages <= score.cleared && m.stages > milestone);
+      for (const m of newMilestones) milestone = Math.max(milestone, m.stages);
+      const reward = newMilestones.reduce((sum, m) => addPuzzleRewards(sum, m.reward), stageReward);
+      gameState.explorationTickets += reward.explorationTickets;
+      gameState.equipmentShards = (gameState.equipmentShards || 0) + reward.equipmentShards;
+      gameState.diamonds += reward.diamonds;
+      gameState.puzzle = { dayKey: today, stageStars, milestone, rankClaimedDay: prev?.rankClaimedDay ?? '' };
+
+      const rewardText = [
+        reward.explorationTickets ? `🎟️ 탐색권 ${reward.explorationTickets}장` : '',
+        reward.equipmentShards ? `🔩 장비 조각 ${reward.equipmentShards}개` : '',
+        reward.diamonds ? `💎 ${reward.diamonds}개` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const message = `오늘의 퍼즐 ${stage}단계 클리어! ${replay.moves}수 ${'★'.repeat(stars)}${rewardText ? ` — ${rewardText}` : ''}${
+        newMilestones.length ? ` (🎉 ${newMilestones[newMilestones.length - 1].stages}단계 달성 보너스 포함)` : ''
+      }${!improved ? ` (이 단계 최고 기록은 ${bestForStage}수예요)` : ''}`;
+      if (improved || rewardText) this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+
+      const { rank, participants } = await this.puzzleRankOf(today, score);
+      return {
+        gameState,
+        message,
+        stage,
+        moves: replay.moves,
+        stars,
+        par: puzzle.par,
+        improved,
+        stageBest: bestForStage,
+        bestStars: getPuzzleStars(puzzle.par, bestForStage),
+        cleared: score.cleared,
+        excess: score.excess,
+        nextStage: score.cleared >= PUZZLE_STAGES ? null : score.cleared + 1,
+        allCleared: score.cleared >= PUZZLE_STAGES,
+        rank,
+        participants,
+        reward,
+        stageReward,
+        milestones: newMilestones,
+      };
+    });
+  }
+
+  // 어제 퍼즐 순위 보상을 받는다(어제 한 단계라도 깬 사람만, 한 번만). 어제보다 오래된 보상은 받을 수 없다.
+  async puzzleClaimRank(userId: string) {
+    return this.withPuzzleLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const yesterday = await this.puzzleYesterday(gameState, userId, getPuzzleDayKey());
+      if (!yesterday) throw new BadRequestException('어제 퍼즐을 깬 기록이 없어요.');
+      if (yesterday.claimed) throw new BadRequestException('이미 어제 순위 보상을 받았어요.');
+      if (yesterday.diamonds <= 0) throw new BadRequestException('받을 수 있는 순위 보상이 없어요.');
+      gameState.diamonds += yesterday.diamonds;
+      const prev = gameState.puzzle;
+      gameState.puzzle = {
+        dayKey: prev?.dayKey ?? '',
+        stageStars: prev?.stageStars ? [...prev.stageStars] : [],
+        milestone: prev?.milestone ?? 0,
+        rankClaimedDay: yesterday.dayKey,
+      };
+      const message = `어제 퍼즐 ${yesterday.rank}위 보상! 💎 ${yesterday.diamonds}개`;
+      this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+      return { gameState, message, diamonds: yesterday.diamonds, rank: yesterday.rank };
+    });
+  }
+
+  // ---- 콩 달리기 ----
+  // 게임 진행은 클라이언트가 그리지만, 점수는 서버가 점프한 틱 목록으로 같은 시뮬레이션(runner-engine.ts)을 처음부터 다시 돌려서 정한다.
+  private get runners(): Model<RunnerRecordDocument> {
+    if (!this.runnerRecordModel) throw new Error('RunnerRecord 모델이 연결되지 않았어요.');
+    return this.runnerRecordModel;
+  }
+
+  private async withRunnerLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.runnerInFlight.has(userId)) {
+      throw new BadRequestException('처리 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.runnerInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.runnerInFlight.delete(userId);
+    }
+  }
+
+  // 그날 이 기록보다 멀리 달린 사람 수 + 1 = 순위(같은 거리는 같은 순위)와 그날 달린 사람 수
+  private async runnerRankOf(dayKey: string, bestMeters: number) {
+    const [better, participants] = await Promise.all([
+      this.runners.countDocuments({ dayKey, bestMeters: { $gt: bestMeters } }),
+      this.runners.countDocuments({ dayKey }),
+    ]);
+    return { rank: better + 1, participants };
+  }
+
+  private runnerProgressOf(gameState: GameStateDocument) {
+    const p = gameState.runner;
+    return {
+      run: p?.run
+        ? { seed: p.run.seed, startedAt: p.run.startedAt, speciesId: p.run.speciesId ?? '', rarity: p.run.rarity ?? 0 }
+        : null,
+      dayKey: p?.dayKey ?? '',
+      milestone: p?.milestone ?? 0,
+      bestMeters: p?.bestMeters ?? 0,
+    };
+  }
+
+  // 콩 달리기 화면에 필요한 것: 오늘의 기록과 순위, 최고 기록, 오늘 받은 보너스, 규칙
+  async getRunner(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const dayKey = getPuzzleDayKey();
+    const progress = this.runnerProgressOf(gameState);
+    const record = await this.runners
+      .findOne({ dayKey, userId: new Types.ObjectId(userId) })
+      .lean<{ bestMeters: number }>();
+    const today = record ? { bestMeters: record.bestMeters, ...(await this.runnerRankOf(dayKey, record.bestMeters)) } : null;
+    return {
+      dayKey,
+      today,
+      bestMeters: progress.bestMeters,
+      milestoneReached: progress.dayKey === dayKey ? progress.milestone : 0,
+      resetsAt: getPuzzleResetAt(dayKey),
+      rules: {
+        tps: RUNNER_TPS,
+        maxTicks: RUNNER_MAX_TICKS,
+        milestones: RUNNER_MILESTONES,
+        abilities: RUNNER_ABILITIES_BY_RARITY, // 인덱스 = 희귀도
+        invulnTicks: RUNNER_INVULN_TICKS,
+        airJumpPercent: RUNNER_AIR_JUMP_PERCENT,
+      },
+    };
+  }
+
+  // 새로 달리기를 시작한다. 내보낼 콩벌레(가지고 있는 종)를 고르면, 서버가 시드를 정해서 주고(곰팡이 배치가 매번 달라진다)
+  // 시작 시각과 그 콩벌레의 희귀도(= 능력)를 적어 둔다. 끝내지 않은 이전 판이 있으면 버린다(기록되지 않는다).
+  async runnerStart(userId: string, speciesId: string) {
+    return this.withRunnerLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const species = await this.speciesService.findOne(speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      if (!(this.totalOf(gameState, speciesId) > 0)) {
+        throw new BadRequestException('아직 만나지 못한 식구예요.');
+      }
+      const seed = randomBytes(4).readUInt32BE(0);
+      const prev = this.runnerProgressOf(gameState);
+      gameState.runner = { ...prev, run: { seed, startedAt: Date.now(), speciesId, rarity: species.rarity } };
+      await gameState.save();
+      return { seed, maxTicks: RUNNER_MAX_TICKS, speciesId, rarity: species.rarity };
+    });
+  }
+
+  // 달리기를 마친다. 점프한 틱 목록으로 서버가 처음부터 다시 돌려서 거리를 정하고, 실제로 흐른 시간보다 긴 기록은 거절한다.
+  async runnerFinish(userId: string, jumps: number[]) {
+    return this.withRunnerLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const progress = this.runnerProgressOf(gameState);
+      const run = progress.run;
+      if (!run) throw new BadRequestException('진행 중인 달리기가 없어요. 새로 시작해 주세요.');
+      const now = Date.now();
+      const elapsed = now - run.startedAt;
+      if (elapsed > RUNNER_RUN_EXPIRE_MS) {
+        gameState.runner = { ...progress, run: null };
+        await gameState.save();
+        throw new BadRequestException('시작한 지 너무 오래된 달리기라 무효예요. 새로 시작해 주세요.');
+      }
+      if (!isValidRunnerJumps(jumps)) throw new BadRequestException('점프 기록이 올바르지 않아요.');
+      const result = simulateRunner(run.seed, jumps, run.rarity);
+      if (!isRunnerTimePlausible(result.ticks, elapsed)) {
+        throw new BadRequestException('기록이 실제로 달린 시간보다 길어요. 다시 달려 주세요.');
+      }
+
+      // 기록: 오늘 최고 기록(미터)을 넘었을 때만 갱신한다.
+      const today = getPuzzleDayKey();
+      const uid = new Types.ObjectId(userId);
+      const meters = result.meters;
+      const before = await this.runners.findOne({ dayKey: today, userId: uid }).lean<{ bestMeters: number }>();
+      const expireAt = new Date(getPuzzleResetAt(today) + 45 * 24 * 60 * 60 * 1000);
+      if (!before) {
+        await this.runners.create({ dayKey: today, userId: uid, bestMeters: meters, bestAt: new Date(now), speciesId: run.speciesId, runs: 1, expireAt });
+      } else {
+        await this.runners.updateOne({ dayKey: today, userId: uid }, { $inc: { runs: 1 } });
+        if (meters > before.bestMeters) {
+          await this.runners.updateOne({ dayKey: today, userId: uid }, { $set: { bestMeters: meters, bestAt: new Date(now), speciesId: run.speciesId } });
+        }
+      }
+      const bestToday = Math.max(meters, before?.bestMeters ?? 0);
+      const improved = !before || meters > before.bestMeters;
+
+      // 보상: 오늘 최고 기록이 새로 닿은 거리 보너스를 한 번씩 준다. 받은 기록은 게임 상태와 한 번에 저장된다.
+      const reachedCount = RUNNER_MILESTONES.filter((m) => m.meters <= bestToday).length;
+      const alreadyCount = progress.dayKey === today ? progress.milestone : 0;
+      const newMilestones = RUNNER_MILESTONES.slice(alreadyCount, reachedCount);
+      const reward = newMilestones.reduce(
+        (sum, m) => ({
+          explorationTickets: sum.explorationTickets + m.reward.explorationTickets,
+          equipmentShards: sum.equipmentShards + m.reward.equipmentShards,
+          diamonds: sum.diamonds + m.reward.diamonds,
+        }),
+        { explorationTickets: 0, equipmentShards: 0, diamonds: 0 },
+      );
+      gameState.explorationTickets += reward.explorationTickets;
+      gameState.equipmentShards = (gameState.equipmentShards || 0) + reward.equipmentShards;
+      gameState.diamonds += reward.diamonds;
+      const newAllTimeBest = meters > progress.bestMeters;
+      gameState.runner = {
+        run: null,
+        dayKey: today,
+        milestone: Math.max(alreadyCount, reachedCount),
+        bestMeters: Math.max(progress.bestMeters, meters),
+      };
+
+      const rewardText = [
+        reward.explorationTickets ? `🎟️ 탐색권 ${reward.explorationTickets}장` : '',
+        reward.equipmentShards ? `🔩 장비 조각 ${reward.equipmentShards}개` : '',
+        reward.diamonds ? `💎 ${reward.diamonds}개` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      const message = `콩 달리기 ${meters}m!${result.completed ? ' 🏆 끝까지 완주!' : ''}${newAllTimeBest ? ' 🆕 최고 기록!' : ''}${rewardText ? ` — ${rewardText}` : ''}`;
+      if (improved || rewardText) this.pushLog(gameState, 'trophy', message);
+      await gameState.save();
+
+      const { rank, participants } = await this.runnerRankOf(today, bestToday);
+      return {
+        gameState,
+        message,
+        meters,
+        ticks: result.ticks,
+        completed: result.completed,
+        speciesId: run.speciesId,
+        rarity: run.rarity,
+        shieldsUsed: result.shieldsUsed,
+        improved,
+        bestToday,
+        bestMeters: Math.max(progress.bestMeters, meters),
+        newAllTimeBest,
+        rank,
+        participants,
+        reward,
+        milestones: newMilestones,
+      };
     });
   }
 

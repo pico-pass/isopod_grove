@@ -3323,3 +3323,241 @@ main {
 
 .survival-stage-enemy .matchup-up { color: var(--lime); }
 .survival-stage-enemy .matchup-down { color: var(--danger); }
+
+/* 오늘의 퍼즐 */
+.puzzle-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.puzzle-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.puzzle-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--puzzle-cols, 8), 1fr);
+  width: min(100%, 420px);
+  aspect-ratio: 1;
+  background: var(--panel2);
+  border: 2px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  overflow: hidden;
+  touch-action: none; /* 보드를 밀어서 조작할 때 화면이 같이 스크롤되지 않게 */
+  user-select: none;
+}
+.puzzle-board.locked {
+  opacity: 0.85;
+}
+.puzzle-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1rem, 5vw, 1.6rem);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.puzzle-cell.rock {
+  background: rgba(0, 0, 0, 0.25);
+}
+.puzzle-cell.goal {
+  background: rgba(120, 200, 80, 0.18);
+}
+.puzzle-cell.start::after {
+  content: '';
+  width: 28%;
+  height: 28%;
+  border-radius: 50%;
+  border: 2px dashed var(--muted);
+}
+.puzzle-cell.visited {
+  background: rgba(124, 196, 255, 0.12);
+}
+.puzzle-bug {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.1rem, 5.5vw, 1.8rem);
+  pointer-events: none;
+  transition: left 0.18s ease-out, top 0.18s ease-out;
+}
+.puzzle-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-areas: '. up .' 'left down right';
+  gap: 6px;
+}
+.puzzle-key {
+  height: 48px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  background: var(--panel2);
+  color: inherit;
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+.puzzle-key:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.puzzle-key.up { grid-area: up; }
+.puzzle-key.left { grid-area: left; }
+.puzzle-key.down { grid-area: down; }
+.puzzle-key.right { grid-area: right; }
+.puzzle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.puzzle-moves {
+  letter-spacing: 0.1em;
+  word-break: break-all;
+  text-align: center;
+}
+.puzzle-result {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--lime);
+  border-radius: 12px;
+  background: var(--panel2);
+  text-align: center;
+}
+.puzzle-result p {
+  margin: 4px 0;
+}
+.puzzle-rewards {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.puzzle-yesterday p {
+  margin: 4px 0;
+}
+.puzzle-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.puzzle-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  background: var(--panel2);
+  color: inherit;
+  cursor: pointer;
+}
+.puzzle-stage small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.puzzle-stage.cleared {
+  border-color: var(--lime);
+}
+.puzzle-stage.active {
+  background: var(--panel);
+  outline: 2px solid var(--lime);
+}
+.puzzle-stage:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 콩 달리기 */
+.runner-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.runner-hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.runner-stage {
+  position: relative;
+  width: 100%;
+}
+.runner-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 1;
+  background: var(--panel2);
+  border-radius: 12px;
+  cursor: pointer;
+  touch-action: manipulation; /* 더블 탭 확대 방지 */
+  user-select: none;
+}
+.runner-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.runner-overlay > * {
+  pointer-events: auto;
+}
+.runner-start {
+  font-size: 1.1rem;
+  padding: 12px 22px;
+}
+.runner-banner {
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+.runner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.runner-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.runner-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 6px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: var(--panel2);
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.runner-pick img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+.runner-pick small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.25;
+}
+.runner-pick.active {
+  border-color: var(--lime);
+}
+.runner-pick:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

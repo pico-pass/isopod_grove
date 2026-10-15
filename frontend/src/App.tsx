@@ -16,6 +16,8 @@ import { BattleView } from './components/BattleView';
 import { PvpView } from './components/PvpView';
 import { BossView } from './components/BossView';
 import { SurvivalView } from './components/SurvivalView';
+import { PuzzleView } from './components/PuzzleView';
+import { RunnerView } from './components/RunnerView';
 import { BoostShopView } from './components/BoostShopView';
 import { ExpeditionView } from './components/ExpeditionView';
 import { EquipmentView } from './components/EquipmentView';
@@ -306,6 +308,27 @@ function App() {
               onRevive={() => runAction(() => api.survivalRevive())}
               onBuyAttempt={() => runAction(() => api.buySurvivalAttempt())}
               showToast={showToast}
+            />
+          )}
+          {view === 'runner' && (
+            <RunnerView
+              gameState={gameState}
+              species={displaySpecies}
+              onStart={(speciesId) => api.runnerStart(speciesId).catch((e: unknown) => {
+                showToast(e instanceof Error ? e.message : '달리기를 시작하지 못했어요.', true);
+                return null;
+              })}
+              onFinish={(jumps) => runAction(() => api.runnerFinish(jumps))}
+              showToast={showToast}
+              onOpenProfile={setProfileTarget}
+            />
+          )}
+          {view === 'puzzle' && (
+            <PuzzleView
+              onSubmit={(dayKey, stage, moves) => runAction(() => api.puzzleSubmit(dayKey, stage, moves))}
+              onClaimRank={() => runAction(() => api.puzzleClaimRank())}
+              showToast={showToast}
+              onOpenProfile={setProfileTarget}
             />
           )}
           {view === 'pvp' && (

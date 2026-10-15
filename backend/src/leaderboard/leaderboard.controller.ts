@@ -29,6 +29,16 @@ export class LeaderboardController {
     return this.leaderboardService.getSurvivalLeaderboard(user.userId);
   }
 
+  @Get('runner')
+  runner(@CurrentUser() user: AuthenticatedUser) {
+    return this.leaderboardService.getRunnerLeaderboard(user.userId);
+  }
+
+  @Get('puzzle')
+  puzzle(@CurrentUser() user: AuthenticatedUser) {
+    return this.leaderboardService.getPuzzleLeaderboard(user.userId);
+  }
+
   @Get('pvp')
   pvp(@CurrentUser() user: AuthenticatedUser) {
     return this.leaderboardService.getPvpLeaderboard(user.userId);

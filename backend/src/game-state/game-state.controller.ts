@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
@@ -25,6 +25,9 @@ import { ExpeditionDto } from './dto/expedition.dto';
 import { RenameTerrariumDto } from './dto/rename-terrarium.dto';
 import { SetSpeciesLockDto } from './dto/set-species-lock.dto';
 import { BossDuelActDto } from './dto/boss-duel-act.dto';
+import { PuzzleSubmitDto } from './dto/puzzle-submit.dto';
+import { RunnerFinishDto } from './dto/runner-finish.dto';
+import { RunnerStartDto } from './dto/runner-start.dto';
 import { BattleDuelStartDto } from './dto/battle-duel-start.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
@@ -132,6 +135,36 @@ export class GameStateController {
   @Get('boss/duel')
   bossDuel(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.getBossDuel(user.userId);
+  }
+
+  @Get('puzzle')
+  getPuzzle(@CurrentUser() user: AuthenticatedUser, @Query('stage') stage?: string) {
+    return this.gameStateService.getPuzzle(user.userId, stage === undefined ? undefined : Number(stage));
+  }
+
+  @Post('puzzle/submit')
+  puzzleSubmit(@CurrentUser() user: AuthenticatedUser, @Body() dto: PuzzleSubmitDto) {
+    return this.gameStateService.puzzleSubmit(user.userId, dto.dayKey, dto.stage, dto.moves);
+  }
+
+  @Get('runner')
+  getRunner(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getRunner(user.userId);
+  }
+
+  @Post('runner/start')
+  runnerStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: RunnerStartDto) {
+    return this.gameStateService.runnerStart(user.userId, dto.speciesId);
+  }
+
+  @Post('runner/finish')
+  runnerFinish(@CurrentUser() user: AuthenticatedUser, @Body() dto: RunnerFinishDto) {
+    return this.gameStateService.runnerFinish(user.userId, dto.jumps);
+  }
+
+  @Post('puzzle/claim-rank')
+  puzzleClaimRank(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.puzzleClaimRank(user.userId);
   }
 
   @Post('boss/duel/start')

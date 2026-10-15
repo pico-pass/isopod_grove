@@ -16,6 +16,8 @@ export const NAVIGABLE_VIEWS: readonly ViewKey[] = [
   'battle',
   'boss',
   'survival',
+  'puzzle',
+  'runner',
   'pvp',
   'equipment',
   'journal',

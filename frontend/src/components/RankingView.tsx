@@ -32,7 +32,7 @@ function RankRow({
   );
 }
 
-function RankingList({
+export function RankingList({
   result,
   loading,
   valueOf,

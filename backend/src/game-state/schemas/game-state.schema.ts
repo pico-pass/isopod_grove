@@ -480,6 +480,67 @@ export class BossDuel {
 }
 export const BossDuelSchema = SchemaFactory.createForClass(BossDuel);
 
+// 오늘의 퍼즐 진행. 별 보상과 순위 보상을 받은 기록을 게임 상태와 한 번에 저장해서, 보상이 중복되거나 빠지지 않게 한다.
+// 기록(최소 이동 수)과 순위는 puzzle_records 컬렉션에 따로 있다.
+@Schema({ _id: false })
+export class PuzzleProgress {
+  // stageStars·milestone이 가리키는 퍼즐 날짜(YYYY-MM-DD)
+  @Prop({ default: '' })
+  dayKey: string;
+
+  // 그날 단계마다 이미 받은 별 보상 단계(인덱스 = 단계 - 1, 0~3). 더 높은 별을 따면 차액만 받는다.
+  @Prop({ type: [Number], default: [] })
+  stageStars: number[];
+
+  // 그날 이미 받은 단계 달성 보너스 중 가장 높은 단계 수(0이면 아직 없음)
+  @Prop({ default: 0 })
+  milestone: number;
+
+  // 순위 보상을 받은 퍼즐 날짜(YYYY-MM-DD)
+  @Prop({ default: '' })
+  rankClaimedDay: string;
+}
+export const PuzzleProgressSchema = SchemaFactory.createForClass(PuzzleProgress);
+
+// 콩 달리기: 지금 달리는 중인 판. 시작할 때 서버가 시드와 시작 시각을 적어 두고, 끝날 때 이 시드로 점프 기록을 다시 돌려 점수를 정한다.
+@Schema({ _id: false })
+export class RunnerRun {
+  @Prop({ required: true })
+  seed: number;
+
+  @Prop({ required: true })
+  startedAt: number;
+
+  // 이 판에 내보낸 콩벌레(종)와 그 희귀도(능력이 희귀도로 정해진다). 시작할 때 서버가 정해 두고 끝날 때 그대로 쓴다.
+  @Prop({ default: '' })
+  speciesId: string;
+
+  @Prop({ default: 0 })
+  rarity: number;
+}
+export const RunnerRunSchema = SchemaFactory.createForClass(RunnerRun);
+
+// 콩 달리기 진행. 오늘의 보너스 수령 기록을 게임 상태와 한 번에 저장해서 중복 지급이 없게 한다. 오늘의 최고 기록·순위는 runner_records에 있다.
+@Schema({ _id: false })
+export class RunnerProgress {
+  // 지금 달리는 판(없으면 null)
+  @Prop({ type: RunnerRunSchema, default: null })
+  run: RunnerRun | null;
+
+  // milestone이 가리키는 날짜(YYYY-MM-DD, 한국 시간)
+  @Prop({ default: '' })
+  dayKey: string;
+
+  // 그날 이미 받은 거리 보너스 개수(RUNNER_MILESTONES의 앞에서부터 센다)
+  @Prop({ default: 0 })
+  milestone: number;
+
+  // 지금까지의 최고 기록(미터)
+  @Prop({ default: 0 })
+  bestMeters: number;
+}
+export const RunnerProgressSchema = SchemaFactory.createForClass(RunnerProgress);
+
 // 골드로 산 부스트 한 종류의 유효 시간대(ms). 같은 종류를 다시 사면 until이 늘어난다.
 @Schema({ _id: false })
 export class ActiveBoost {
@@ -585,6 +646,12 @@ export class GameState {
   // 골드로 산 부스트(종류별 하나). 만료된 항목은 다음에 살 때 정리된다.
   @Prop({ type: [ActiveBoostSchema], default: [] })
   boosts: ActiveBoost[];
+
+  @Prop({ type: PuzzleProgressSchema, default: () => ({}) })
+  puzzle: PuzzleProgress;
+
+  @Prop({ type: RunnerProgressSchema, default: () => ({}) })
+  runner: RunnerProgress;
 
   // 전설 이상이 마지막으로 나온 뒤 뽑은 횟수(천장 계산용)
   @Prop({ default: 0, min: 0 })

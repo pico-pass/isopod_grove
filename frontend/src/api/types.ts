@@ -983,3 +983,159 @@ export interface ActionResult {
   births?: number;
   earned?: number;
 }
+
+// ---- 오늘의 퍼즐 "굴러라 콩벌레" ----
+export type PuzzleMove = 'U' | 'D' | 'L' | 'R';
+
+export interface PuzzleCell {
+  x: number;
+  y: number;
+}
+
+export interface PuzzleBoardInfo {
+  dayKey: string; // YYYY-MM-DD(한국 시간)
+  stage: number; // 1~10
+  width: number;
+  height: number;
+  rocks: PuzzleCell[];
+  start: PuzzleCell;
+  goal: PuzzleCell; // 나뭇잎
+  par: number; // 이 판의 최단 이동 수
+}
+
+export interface PuzzleRewardInfo {
+  explorationTickets: number;
+  equipmentShards: number;
+  diamonds: number;
+}
+
+// 단계별 오늘의 기록. 아직 열리지 않은 단계는 par가 null이다.
+export interface PuzzleStageSummary {
+  stage: number;
+  unlocked: boolean;
+  par: number | null;
+  bestMoves: number | null;
+  stars: number; // 오늘 이 단계에서 딴 가장 높은 별(못 깼으면 0)
+  rewardedStars: number; // 이미 보상을 받은 별 단계
+}
+
+export interface PuzzleMilestoneInfo {
+  stages: number; // 오늘 N단계까지 깼을 때
+  reward: PuzzleRewardInfo;
+}
+
+export interface PuzzleInfo {
+  puzzle: PuzzleBoardInfo; // 고른 단계의 판(기본은 지금 도전할 단계)
+  openStage: number; // 지금 도전할 수 있는 가장 높은 단계
+  allCleared: boolean;
+  stages: PuzzleStageSummary[];
+  resetsAt: number; // 다음 퍼즐이 나오는 시각(ms)
+  maxMoves: number;
+  milestoneReached: number; // 오늘 이미 받은 단계 달성 보너스 중 가장 높은 단계
+  today: { cleared: number; excess: number; rank: number; participants: number } | null;
+  yesterday: {
+    dayKey: string;
+    cleared: number;
+    excess: number;
+    rank: number;
+    participants: number;
+    diamonds: number; // 받을 수 있는 순위 보상(0이면 없음)
+    claimed: boolean;
+  } | null;
+  rules: {
+    stageCount: number;
+    star2Margin: number;
+    stageShards: number[]; // 인덱스 = 그 단계에서 딴 별 수, 값 = 받는 장비 조각(차액 지급)
+    milestones: PuzzleMilestoneInfo[];
+    rankRewards: { maxRank: number; diamonds: number }[];
+  };
+}
+
+export interface PuzzleSubmitResponse {
+  gameState: GameState;
+  message: string;
+  stage: number;
+  moves: number;
+  stars: number;
+  par: number;
+  improved: boolean; // 이 단계 최고 기록을 갱신했는지
+  stageBest: number;
+  bestStars: number;
+  cleared: number; // 오늘 이어서 깬 단계 수
+  excess: number; // 깬 단계들의 최단 수 초과분 합
+  nextStage: number | null; // 다음에 도전할 단계(모두 깼으면 null)
+  allCleared: boolean;
+  rank: number;
+  participants: number;
+  reward: PuzzleRewardInfo; // 이번에 새로 받은 보상 합계(없으면 모두 0)
+  stageReward: PuzzleRewardInfo;
+  milestones: PuzzleMilestoneInfo[]; // 이번에 새로 달성한 단계 달성 보너스
+}
+
+export interface PuzzleClaimResponse {
+  gameState: GameState;
+  message: string;
+  diamonds: number;
+  rank: number;
+}
+
+// ---- 콩 달리기 ----
+export interface RunnerRewardInfo {
+  explorationTickets: number;
+  equipmentShards: number;
+  diamonds: number;
+}
+
+export interface RunnerMilestoneInfo {
+  meters: number; // 오늘 최고 기록이 이 거리에 닿으면
+  reward: RunnerRewardInfo;
+}
+
+export interface RunnerInfo {
+  dayKey: string;
+  today: { bestMeters: number; rank: number; participants: number } | null;
+  bestMeters: number; // 지금까지의 최고 기록
+  milestoneReached: number; // 오늘 이미 받은 거리 보너스 개수
+  resetsAt: number;
+  rules: {
+    tps: number;
+    maxTicks: number;
+    milestones: RunnerMilestoneInfo[];
+    abilities: RunnerAbilityInfo[]; // 인덱스 = 희귀도
+    invulnTicks: number;
+    airJumpPercent: number;
+  };
+}
+
+// 콩벌레(종)의 희귀도에 따른 능력
+export interface RunnerAbilityInfo {
+  shields: number; // 곰팡이에 부딪혀도 버티는 횟수
+  jumpBoostPercent: number; // 점프력 +%
+  airJumps: number; // 공중에서 더 뛸 수 있는 횟수
+}
+
+export interface RunnerStartResponse {
+  seed: number;
+  maxTicks: number;
+  speciesId: string;
+  rarity: number;
+}
+
+export interface RunnerFinishResponse {
+  gameState: GameState;
+  message: string;
+  meters: number;
+  ticks: number;
+  completed: boolean; // 쓰러지지 않고 끝까지(6분) 달렸는가
+  speciesId: string;
+  rarity: number;
+  shieldsUsed: number; // 곰팡이를 막아 준 껍질 수
+  improved: boolean; // 오늘 최고 기록을 갱신했는지
+  bestToday: number;
+  bestMeters: number;
+  newAllTimeBest: boolean;
+  rank: number;
+  participants: number;
+  reward: RunnerRewardInfo;
+  milestones: RunnerMilestoneInfo[];
+}

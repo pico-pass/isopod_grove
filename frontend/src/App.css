@@ -3561,3 +3561,68 @@ main {
   opacity: 0.6;
   cursor: default;
 }
+
+/* 콩 달리기 순위: 기록을 세운 콩벌레 */
+.ranking-species {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  max-width: 40%;
+}
+.ranking-species img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.ranking-species small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.74rem;
+}
+@media (max-width: 520px) {
+  .ranking-species small {
+    display: none; /* 좁은 화면에서는 그림만 보이고, 이름은 길게 눌렀을 때 툴팁으로 */
+  }
+}
+
+/* 콩 달리기 점프 버튼(휴대폰용) */
+.runner-jump {
+  width: 100%;
+  min-height: 72px;
+  border-radius: 16px;
+  border: 2px solid var(--lime);
+  background: var(--panel2);
+  color: inherit;
+  font-size: 1.4rem;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.runner-jump.live {
+  background: var(--lime);
+  color: #111b19;
+}
+.runner-jump:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.runner-jump:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  .runner-jump {
+    min-height: 88px;
+    font-size: 1.6rem;
+  }
+}
+.runner-canvas {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}

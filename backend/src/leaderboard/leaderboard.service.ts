@@ -29,6 +29,16 @@ export interface LeaderboardEntry {
   value: number;
   // 값 대신 보여줄 문구(보스 타워의 "어려움 12층" 같은 것). 없으면 화면이 value로 만든다.
   label?: string;
+  // 그 기록을 세운 콩벌레(콩 달리기 순위). 그림과 이름, 희귀도를 화면이 그대로 그린다.
+  species?: LeaderboardSpecies;
+}
+
+export interface LeaderboardSpecies {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
 }
 
 export interface LeaderboardResult {
@@ -108,16 +118,17 @@ export class LeaderboardService {
       .sort({ bestMeters: -1, bestAt: 1 })
       .lean<{ userId: Types.ObjectId; bestMeters: number; speciesId?: string }[]>();
     const ranks = rankByDistance(records.map((r) => r.bestMeters));
-    // 기록을 세운 콩벌레도 함께 보여준다(희귀도마다 능력이 달라서 어떤 종으로 달렸는지가 중요하다).
-    const speciesName = new Map((await this.speciesService.findAll()).map((s) => [s.speciesId, s.name]));
+    // 기록을 세운 콩벌레도 함께 내려준다(희귀도마다 능력이 달라서 어떤 종으로 달렸는지가 중요하다). 종 정보가 없는 옛 기록은 거리만.
+    const speciesById = new Map((await this.speciesService.findAll()).map((s) => [s.speciesId, s]));
     return this.buildResult(
       records.map((r, i) => {
-        const name = r.speciesId ? speciesName.get(r.speciesId) : undefined;
+        const sp = r.speciesId ? speciesById.get(r.speciesId) : undefined;
         return {
           userId: r.userId,
           value: r.bestMeters,
           rank: ranks[i],
-          label: `${r.bestMeters.toLocaleString('ko-KR')}m${name ? ` · ${name}` : ''}`,
+          label: `${r.bestMeters.toLocaleString('ko-KR')}m`,
+          ...(sp ? { species: { speciesId: sp.speciesId, name: sp.name, image: sp.image, filter: sp.filter, rarity: sp.rarity } } : {}),
         };
       }),
       requesterId,
@@ -221,7 +232,7 @@ export class LeaderboardService {
   }
 
   private async buildResult(
-    ranked: { userId: Types.ObjectId; value: number; label?: string; rank?: number }[],
+    ranked: { userId: Types.ObjectId; value: number; label?: string; rank?: number; species?: LeaderboardSpecies }[],
     requesterId: string,
   ): Promise<LeaderboardResult> {
     const top = ranked.slice(0, LEADERBOARD_LIMIT);
@@ -235,7 +246,7 @@ export class LeaderboardService {
     const userById = new Map(users.map((u) => [u._id.toString(), u]));
 
     const toEntry = (
-      r: { userId: Types.ObjectId; value: number; label?: string; rank?: number },
+      r: { userId: Types.ObjectId; value: number; label?: string; rank?: number; species?: LeaderboardSpecies },
       fallbackRank: number,
     ): LeaderboardEntry => {
       const rank = r.rank ?? fallbackRank;
@@ -249,6 +260,7 @@ export class LeaderboardService {
         isMe: id === requesterId,
         value: r.value,
         ...(r.label ? { label: r.label } : {}),
+        ...(r.species ? { species: r.species } : {}),
       };
     };
 

@@ -222,6 +222,8 @@ export interface LeaderboardEntry {
   value: number;
   // 값 대신 보여줄 문구(보스 타워의 "어려움 12층" 같은 것)
   label?: string;
+  // 그 기록을 세운 콩벌레(콩 달리기 순위에만 있다)
+  species?: { speciesId: string; name: string; image?: string; filter: string; rarity: number };
 }
 
 export interface LeaderboardResult {

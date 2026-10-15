@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { LeaderboardEntry, LeaderboardResult } from '../api/types';
-import { formatNumber } from '../utils/gameCalc';
+import { RARITIES, formatNumber } from '../utils/gameCalc';
+import { SpeciesImage } from './SpeciesImage';
 
 type RankingTab = 'level' | 'income' | 'pvp' | 'boss' | 'survival';
 
@@ -27,6 +28,12 @@ function RankRow({
         {entry.displayName}
         {entry.isMe && <span className="ranking-me-badge">나</span>}
       </span>
+      {entry.species && (
+        <span className="ranking-species" title={`${entry.species.name} (${RARITIES[entry.species.rarity]?.name ?? ''})`}>
+          <SpeciesImage species={entry.species} style={{ filter: entry.species.filter }} />
+          <small style={{ color: RARITIES[entry.species.rarity]?.color }}>{entry.species.name}</small>
+        </span>
+      )}
       <strong className="ranking-value">{valueLabel}</strong>
     </button>
   );

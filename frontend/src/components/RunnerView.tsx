@@ -244,6 +244,12 @@ export function RunnerView({
   }, [changePhase, selected]);
 
   const pressJump = useCallback(() => {
+    // 휴대폰에서는 살짝 진동으로 눌렸다는 걸 알려 준다(지원하지 않는 기기에서는 무시).
+    try {
+      navigator.vibrate?.(8);
+    } catch {
+      // 진동을 쓸 수 없어도 게임에는 영향이 없다.
+    }
     const g = game.current;
     if (phaseRef.current === 'running') {
       if (g.paused) {
@@ -492,7 +498,7 @@ export function RunnerView({
       </div>
 
       <div className="info-banner">
-        ⌨️ <b>스페이스 · ↑ · W</b> 또는 <b>화면을 탭</b>하면 점프해요. 곰팡이에 닿으면 끝이에요. 곰팡이 배치는 달릴 때마다 달라지고, 멀리
+        ⌨️ <b>스페이스 · ↑ · W</b>, <b>화면 탭</b>, 또는 아래의 <b>🦘 점프 버튼</b>을 누르면 점프해요. 곰팡이에 닿으면 끝이에요. 곰팡이 배치는 달릴 때마다 달라지고, 멀리
         달릴수록 곰팡이가 넓고 촘촘해져요. 점수는 서버가 점프 기록을 다시 돌려서 정해요.
       </div>
 
@@ -560,15 +566,37 @@ export function RunnerView({
           </div>
         </div>
 
-        {phase === 'over' && !submitting && (
+        {/* 점프 버튼: 휴대폰에서 엄지로 누르기 쉽게 크게 만들고, 손가락이 닿는 순간(pointerdown) 바로 반응한다. 멈춰 있을 때는 시작/다시 달리기 버튼이 된다. */}
+        <button
+          className={`runner-jump${running && !paused ? ' live' : ''}`}
+          disabled={phase === 'starting' || submitting || (!running && !selected)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            pressJump();
+          }}
+          onKeyDown={(e) => {
+            // 키보드로 이 버튼을 눌러도 위의 전역 단축키(스페이스)와 겹쳐 두 번 처리되지 않게 한다.
+            if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
+          }}
+          aria-label="점프"
+        >
+          {phase === 'starting'
+            ? '준비 중...'
+            : submitting
+              ? '기록 확인 중...'
+              : running
+                ? paused
+                  ? '▶ 계속하기'
+                  : '🦘 점프!'
+                : phase === 'over'
+                  ? '🔁 다시 달리기'
+                  : '▶ 달리기 시작'}
+        </button>
+
+        {phase === 'over' && !submitting && pending && (
           <div className="runner-actions">
-            {pending && (
-              <button className="button primary" onClick={() => void submit(pending)}>
-                기록 다시 보내기
-              </button>
-            )}
-            <button className="button primary" onClick={() => void startRun()}>
-              🔁 다시 달리기
+            <button className="button primary" onClick={() => void submit(pending)}>
+              기록 다시 보내기
             </button>
           </div>
         )}

@@ -18,6 +18,8 @@ import {
   slidePuzzle,
 } from '../utils/puzzle';
 import { RankingList } from './RankingView';
+import { RankingLimitPicker } from './RankingLimitPicker';
+import { loadRankingLimit, saveRankingLimit, type RankingLimit } from '../utils/rankingLimit';
 
 const SWIPE_MIN_PX = 28;
 const stars = (n: number) => '★'.repeat(n);
@@ -54,17 +56,25 @@ export function PuzzleView({
   const [submitting, setSubmitting] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [ranking, setRanking] = useState<LeaderboardResult | null>(null);
+  const [rankingLimit, setRankingLimit] = useState<RankingLimit>(loadRankingLimit);
   const [now, setNow] = useState(() => Date.now());
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const boardRef = useRef<string>(''); // 지금 화면에 올라온 판(날짜#단계). 바뀌면 이동 기록을 비운다.
 
+  const rankingLimitRef = useRef(rankingLimit);
   const loadRanking = useCallback(async () => {
     try {
-      setRanking(await api.getPuzzleLeaderboard());
+      setRanking(await api.getPuzzleLeaderboard(rankingLimitRef.current));
     } catch {
       // 순위를 못 불러와도 퍼즐은 풀 수 있다.
     }
   }, []);
+  const changeRankingLimit = (limit: RankingLimit) => {
+    rankingLimitRef.current = limit;
+    setRankingLimit(limit);
+    saveRankingLimit(limit);
+    void loadRanking();
+  };
 
   // stage를 주면 그 단계의 판을, 안 주면 지금 도전할 단계의 판을 불러온다.
   const loadInfo = useCallback(
@@ -437,6 +447,7 @@ export function PuzzleView({
         <p className="footnote">
           많이 깬 단계 순이고, 같으면 최단 수 초과분이 적은 순이에요. 성적이 같으면 같은 순위이고 먼저 달성한 사람이 위에 보여요.
         </p>
+        <RankingLimitPicker value={rankingLimit} onChange={changeRankingLimit} />
         <RankingList result={ranking} loading={false} valueOf={(v) => `${v}단계`} onOpenProfile={onOpenProfile} />
       </section>
 

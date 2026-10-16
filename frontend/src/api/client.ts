@@ -45,6 +45,8 @@ import type {
   BossCatalog,
   BuyAttemptResponse,
   BuyBoostResponse,
+  DecorCatalog,
+  DecorKind,
   DismantleResponse,
   ExpeditionInfo,
   ExpeditionResponse,
@@ -68,6 +70,7 @@ import type {
   SurvivalStatus,
   TrainResponse,
   Upgrade,
+  VisitResult,
 } from './types';
 import { authStorage } from '../auth/authStorage';
 
@@ -104,6 +107,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const leaderboardPath = (name: string, limit?: number) => `/leaderboard/${name}${limit ? `?limit=${limit}` : ''}`;
+
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
 
@@ -117,12 +122,14 @@ export const api = {
   getUpgrades: () => request<Upgrade[]>('/upgrades'),
   getQuests: () => request<Quest[]>('/quests'),
   getAchievements: () => request<Achievement[]>('/achievements'),
-  getLevelLeaderboard: () => request<LeaderboardResult>('/leaderboard/level'),
-  getIncomeLeaderboard: () => request<LeaderboardResult>('/leaderboard/income'),
-  getPvpLeaderboard: () => request<LeaderboardResult>('/leaderboard/pvp'),
-  getBossLeaderboard: () => request<LeaderboardResult>('/leaderboard/boss'),
-  getSurvivalLeaderboard: () => request<LeaderboardResult>('/leaderboard/survival'),
-  getPuzzleLeaderboard: () => request<LeaderboardResult>('/leaderboard/puzzle'),
+  // limit: 보여줄 인원 수(20·50·100). 안 주면 서버 기본값(20명)이다.
+  getLevelLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('level', limit)),
+  getIncomeLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('income', limit)),
+  getPvpLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('pvp', limit)),
+  getBossLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('boss', limit)),
+  getSurvivalLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('survival', limit)),
+  getPuzzleLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('puzzle', limit)),
+  getLikesLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('likes', limit)),
 
   getGameState: () => request<GameState>('/game-state'),
   getPublicProfile: (userId: string) => request<PublicProfile>(`/game-state/profile/${userId}`),
@@ -137,6 +144,16 @@ export const api = {
   train: (speciesId: string, intensity: number, extreme?: boolean) =>
     post<TrainResponse>('/game-state/train', { speciesId, intensity, extreme }),
   getEquipmentCatalog: () => request<EquipmentCatalogItem[]>('/equipment'),
+  getDecorCatalog: () => request<DecorCatalog>('/decor'),
+  buyDecor: (decorId: string) => post<ActionResult>('/game-state/decor/buy', { decorId }),
+  // decorId를 안 주면 그 칸을 비운다. 소품은 index(0~3)로 칸을 가리킨다.
+  placeDecor: (terrariumId: string, kind: DecorKind, index: number | undefined, decorId?: string) =>
+    post<ActionResult>('/game-state/decor/place', { terrariumId, kind, index, decorId }),
+  setTerrariumPublic: (isPublic: boolean) => post<ActionResult>('/game-state/decor/public', { isPublic }),
+  getVisit: (userId: string) => request<VisitResult>(`/visit/${userId}`),
+  getRandomVisit: () => request<{ userId: string }>('/visit/random'),
+  setTerrariumLike: (ownerId: string, terrariumId: string, liked: boolean) =>
+    post<{ liked: boolean; likes: number }>(`/visit/${ownerId}/like`, { terrariumId, liked }),
   getBossCatalog: () => request<BossCatalog>('/boss'),
   getSurvivalInfo: () => request<SurvivalInfo>('/survival'),
   pullEquipment: (count: 1 | 10) =>
@@ -183,7 +200,7 @@ export const api = {
   getRunner: () => request<RunnerInfo>('/game-state/runner'),
   runnerStart: (speciesId: string) => post<RunnerStartResponse>('/game-state/runner/start', { speciesId }),
   runnerFinish: (jumps: number[]) => post<RunnerFinishResponse>('/game-state/runner/finish', { jumps }),
-  getRunnerLeaderboard: () => request<LeaderboardResult>('/leaderboard/runner'),
+  getRunnerLeaderboard: (limit?: number) => request<LeaderboardResult>(leaderboardPath('runner', limit)),
   getPuzzle: (stage?: number) => request<PuzzleInfo>(stage === undefined ? '/game-state/puzzle' : `/game-state/puzzle?stage=${stage}`),
   puzzleSubmit: (dayKey: string, stage: number, moves: string) =>
     post<PuzzleSubmitResponse>('/game-state/puzzle/submit', { dayKey, stage, moves }),

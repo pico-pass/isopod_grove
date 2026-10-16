@@ -5,6 +5,7 @@
 
 - 서비스 주소: <https://isopogrove.click>
 - 로그인: Google 계정
+- 업데이트 내역: [CHANGELOG.md](frontend/src/data/CHANGELOG.md) (날짜별·카테고리별, 게임 안 사이드바 '업데이트 내역'에서도 볼 수 있어요)
 
 ---
 
@@ -32,7 +33,8 @@
 - **숲 탐색**: 탐색할 때마다 같은 종 2마리를 만나요. 등급 확률이 낮고 비용이 계속 올라가요.
 - **원정**: 숲 탐색 비용의 수십~수백 배를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만나요. 신화는 천장이 있어요.
 - **분양 마켓**: 시세가 5분마다 ±25% 범위에서 오르내려요. 실수로 팔지 않도록 종을 잠글 수 있어요.
-- **사육장 이름**: 사육장마다 이름을 무료로 바꿀 수 있어요(최대 20자, 나에게만 보여요).
+- **사육장 이름**: 사육장마다 이름을 무료로 바꿀 수 있어요(최대 20자). 다른 유저가 사육장을 구경할 때도 이 이름이 보여요.
+- **사육장 꾸미기**: 골드로 배경·소품 장식 25종을 사서 사육장마다 배경 1개와 소품 4칸을 꾸며요. 계열(불꽃·숲·서리) 장식은 그 사육장에 사는 같은 계열 종의 번식을 빠르게 해요.
 - **업그레이드**: 사육장 확장, 바닥재(수익), 번식 쉼터(번식 시간), 자동 먹이 공급기, 자동 분무기.
 - **부스트 상점**: 골드를 내고 일정 시간 동안 수익·번식·전투 경험치를 2배로 만들어요.
 - **종 별명**: 내 화면에서만 보이는 별명을 지어줄 수 있어요.
@@ -46,9 +48,10 @@
 - **오늘의 퍼즐 "굴러라 콩벌레"**: 하루 10단계, 단계마다 새로운 10×10 슬라이드 퍼즐이 나오고 갈수록 어려워져요(모두에게 같은 순서). 방향을 고르면 바위나 벽에 부딪힐 때까지 굴러가고 🍃에 닿으면 도착이에요. 많이 깰수록·적은 수로 깰수록 높은 순위이고, 별점·단계 보너스·순위 보상이 있어요. 실시간이 아니라 언제든 천천히 풀 수 있어요.
 - **콩 달리기 "달려라 콩벌레"**: 가지고 있는 콩벌레 한 마리를 골라(그 종의 그림으로 달려요) 달리면서 곰팡이🦠를 점프로 피하는 러너 게임이에요. 희귀할수록 능력(껍질·점프력·더블 점프)이 많아요. 스페이스·↑·화면 탭·점프 버튼으로 점프하고, 갈수록 빨라지고 곰팡이가 넓어져요. 오늘 가장 멀리 달린 순위와 거리 보너스가 있어요. 점수는 서버가 점프 기록을 다시 돌려서 정해요.
 - **장비**: 다이아 뽑기(천장 있음), 레벨업(중복 획득 개수 필요), 각성, 슬롯 확장, 중복 분해·조각 레벨업, 세트 효과. 야생 배틀·투기장·보스 타워·서바이벌에 모두 적용돼요.
-- **업적 84종**과 **일일 퀘스트 4종**, **랭킹**(숲 레벨 · 분당 수익 · 투기장 레이팅 · 보스 타워 · 서바이벌, 그리고 퍼즐 화면의 오늘의 순위).
+- **업적 84종**과 **일일 퀘스트 4종**, **랭킹**(숲 레벨 · 분당 수익 · 투기장 레이팅 · 보스 타워 · 서바이벌, 그리고 퍼즐·콩 달리기 화면의 오늘의 순위). 모든 랭킹에서 **보기: 20명 / 50명 / 100명**을 고를 수 있고(마지막으로 고른 값을 기억해요), 내 순위가 보여주는 인원 밖이어도 따로 보여줘요.
 
 ### 소셜
+- **사육장 방문**: 다른 숲지기의 사육장(장식·식구)을 구경하고 사육장마다 ❤️ 좋아요를 눌러요(선물은 없어요). 인기 사육장 순위와 랜덤 방문이 있고, 내 사육장은 설정으로 비공개로 바꿀 수 있어요.
 - **친구**: 요청·수락·삭제, 하루 한 번 서로에게 다이아 선물(시스템이 지급하고 선물한 사람은 잃는 게 없어요), 접속 중 표시.
 - **친구 채팅**: 친구끼리 1:1 채팅, 읽음 표시, 내 메시지 삭제, 메시지 신고.
 - **공동 채팅방**: 자유방·질문방·문의방 3개 채널과 현재 접속자 목록.
@@ -87,7 +90,8 @@ isopod_grove/
 │       │   ├── puzzle-engine.ts 오늘의 퍼즐 판 생성·풀이·이동 검증·순위 계산(순수 계산)
 │       │   └── runner-engine.ts 콩 달리기 결정적 시뮬레이션·검증(순수 계산)
 │       ├── species/ upgrades/ quests/ achievements/   콘텐츠 데이터(시드)
-│       ├── equipment/ boss/     장비 카탈로그, 보스 층·서바이벌 규칙 안내
+│       ├── equipment/ boss/ decor/  장비 카탈로그, 보스 층·서바이벌 규칙 안내, 꾸미기 장식 카탈로그
+│       ├── visit/           사육장 방문·좋아요(terrarium_likes)
 │       ├── auth/ users/         Google 로그인, JWT, 사용자
 │       ├── friends/ friend-chat/ chat/ presence/   소셜
 │       ├── mail/ push/          우편함, 웹 푸시
@@ -98,7 +102,8 @@ isopod_grove/
 │   └── src/
 │       ├── components/      화면(사육장·마켓·전투·보스·서바이벌·장비·친구·우편함·관리자 …)
 │       ├── hooks/           useGameEngine(상태 로딩·주기 갱신), useBattleReplay
-│       ├── utils/           gameCalc.ts(서버 계산식의 프론트 사본), push.ts
+│       ├── utils/           gameCalc.ts(서버 계산식의 프론트 사본), push.ts, changelog.ts(업데이트 내역 파서)
+│       ├── data/            CHANGELOG.md(업데이트 내역 원본, 게임 안 화면이 그대로 읽어요)
 │       └── api/             API 클라이언트와 타입
 └── docker-compose.yml       백엔드 + 프론트엔드(nginx) 함께 실행
 ```
@@ -230,6 +235,13 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 - **종 잠금**: 마켓 카드의 🔓/🔒로 종을 잠그면 어느 사육장에서도 분양할 수 없어요(이사·번식·전투는 그대로). 도감에 있는 종만 잠글 수 있어요.
 - 업그레이드: 공간 확장(5단계) · 바닥재(수익 +25%/단계, 5단계) · 번식 쉼터(번식 시간 −12%/단계, 5단계) · 자동 먹이 공급기 · 자동 분무기.
 
+### 사육장 꾸미기와 방문
+- 장식은 **골드로 한 번 사면 계정에 영구히 남고**, 어느 사육장에든 무료로 옮겨 놓을 수 있어요. 배경(사육장마다 1개)과 소품(사육장마다 4칸, 같은 소품을 한 사육장에 두 개 놓을 수는 없어요)이 있어요.
+- 장식은 계열(불꽃·숲·서리) 장식과 꾸미기 전용으로 나뉘어요. 계열 장식은 그 사육장에서 **같은 계열 종의 번식 진행**을 빠르게 해요(배경 +2/4/6%, 소품 +1/2/3%, 일반/희귀/에픽). 한 사육장·한 계열의 최대는 +12%예요. 번식 촉진 부스트와는 곱해지고, 8시간을 넘는 자리 비움(전설·신화 번식)에도 적용돼요.
+- 가격(계열 장식): 배경 10,000 / 100,000 / 2,000,000 G, 소품 4,000 / 40,000 / 600,000 G. 꾸미기 전용은 절반이에요.
+- **방문**: 누구나 `GET visit/:userId`로 공개 사육장의 장식·식구(종·마릿수)를 볼 수 있어요. 골드·다이아 같은 자원과 종 별명은 보이지 않아요. 설정에서 비공개로 하면 나만 볼 수 있고, 인기 사육장 순위에서도 빠져요.
+- **좋아요**: 사육장마다 사람당 한 번(다시 누르면 취소)이에요. 내 사육장에는 누를 수 없어요. 받은 좋아요는 `terrarium_likes` 컬렉션을 세서 구하고, 보상은 없어요. 순위는 모든 사육장의 합계예요.
+
 ### 숲 탐색
 - 첫 탐색 **500 G**, 탐색할 때마다 다음 비용이 **25 G씩 올라가요**(매일 초기화되지 않아요). 탐색권으로 한 탐색도 횟수에 포함돼요.
 - **탐색권**은 골드로 살 수 없어요. 하루 1장 무료 충전(최대 5장까지), 일일 퀘스트·업적·우편 보상으로 얻어요. 탐색권을 쓰면 골드가 들지 않아요.
@@ -355,8 +367,10 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 | 부스트 상점 | `GET game-state/boosts`(가격표) · `POST game-state/boosts/buy` |
 | 장비 | `POST game-state/equipment/{pull, level-up, level-up-shards, dismantle, awaken, equip, expand-slot}` |
 | 원정 | `GET game-state/expedition`(가격표·천장) · `POST game-state/expedition` |
+| 꾸미기 | `GET decor`(장식 카탈로그) · `POST game-state/decor/{buy, place, public}` |
+| 사육장 방문 | `GET visit/random` · `GET visit/:userId` · `POST visit/:userId/like`(`terrariumId`, `liked`) |
 | 프로필 | `GET game-state/profile/:userId` |
-| 랭킹 | `GET leaderboard/{level, income, pvp, boss, survival, puzzle, runner}` |
+| 랭킹 | `GET leaderboard/{level, income, pvp, boss, survival, puzzle, runner, likes}[?limit=20|50|100]`(없거나 다른 값이면 20명) |
 | 친구 | `GET friends` · `GET friends/search` · `POST friends/{request, accept, decline, remove, gift}` |
 | 친구 채팅 | `GET friend-chat/unread` · `GET/POST friend-chat/:friendId/messages` · `DELETE friend-chat/:friendId/messages/:messageId` · `POST friend-chat/reports` |
 | 공동 채팅·접속 | `GET/POST chat/messages` · `GET presence/online` |
@@ -378,13 +392,17 @@ cd frontend && npm ci && npm run build   # VITE_API_URL=https://<도메인>/api
 | `game-state/game-engine.ts` | `frontend/src/utils/gameCalc.ts` |
 | `game-state/puzzle-engine.ts`(굴리기 규칙) | `frontend/src/utils/puzzle.ts` |
 | `game-state/runner-engine.ts`(콩 달리기 시뮬레이션) | `frontend/src/utils/runner.ts` (**한 틱도 어긋나면 안 돼요**) |
+| `decor/decor.data.ts`의 `getDecorBreedBonusPercent`·`normalizeDecorProps`(꾸미기 번식 보너스 계산, 장식 목록은 `GET /decor`) | `frontend/src/utils/decor.ts` |
 
 예: 탐색 비용(`EXPLORE_COST_*`), 장비 효과, 전투 스탯, 보스 난이도 진행도 필드, 업적 진행도 계산 등. 보스 층의 능력치·보상과 서바이벌의 규칙·버프 목록은 서버가 `GET /boss`, `GET /survival`로 내려줘서 프론트에 계산식이 없어요.
 
 ### 데이터의 기준
 - 종·업그레이드·퀘스트·업적은 **시드 파일이 기준**이에요. 서버가 시작될 때마다 DB에 덮어써요(upsert). 종의 분양가와 분당 수익은 `species.seed-data.ts`의 `RARITIES` 한 곳에서 정해요. 종의 계열(불꽃·숲·서리)은 `species.family.ts`의 매핑이 기준이고 시드에 같이 쓰여요.
-- 장비 카탈로그(`equipment/equipment.data.ts`)와 보스 층 정보(`getBossFloor`), 서바이벌 적 공식(`getSurvivalEnemy`)은 DB에 저장하지 않고 **코드가 기준**이에요.
+- 장식 카탈로그(`decor/decor.data.ts`)와 장비 카탈로그(`equipment/equipment.data.ts`)와 보스 층 정보(`getBossFloor`), 서바이벌 적 공식(`getSurvivalEnemy`)은 DB에 저장하지 않고 **코드가 기준**이에요.
 - 새 업적 통계를 추가하려면 `AchievementStatKey`(백엔드 스키마), `game-engine.ts`의 `getAchievementProgress`, 프론트 `types.ts`·`gameCalc.ts`, 업적 아이콘(`AchievementsView.tsx`)을 함께 고쳐요.
+
+### 업데이트 내역
+새 기능·밸런스·수정을 반영할 때 `frontend/src/data/CHANGELOG.md`에 **날짜 → 카테고리(✨ 신규 기능 / ⚖️ 밸런스 / 🐛 수정 / 🛠️ 기타) → 항목** 순서로 적어요. 같은 파일을 게임 안 사이드바 '업데이트 내역' 화면이 그대로 읽어서(형식은 `utils/changelog.ts` 참고) 프론트를 다시 빌드하면 반영돼요. 🛠️ 기타와 커밋 해시는 게임 화면에서 숨겨요. 새 날짜가 생기면 아직 못 본 유저의 사이드바에 NEW가 떠요.
 
 ### Mongoose 주의점
 - `@Prop({ type: Types.ObjectId })`로 선언한 필드는 스키마상 `Mixed`예요. 쿼리할 때 문자열 id를 그대로 쓰면 매칭되지 않으니 **항상 `new Types.ObjectId(id)`로 변환**해요.

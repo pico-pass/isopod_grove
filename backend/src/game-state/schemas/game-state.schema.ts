@@ -168,6 +168,13 @@ export class Terrarium {
   // key: speciesId, value: 번식 진행 시간(초)
   @Prop({ type: Map, of: Number, default: {} })
   breeding: Map<string, number>;
+
+  // 꾸미기: 배경 장식 id(빈 문자열이면 기본 사진 그대로)와 소품 칸(DECOR_PROP_SLOTS칸, 빈 칸은 ''). 옛 사육장은 필드가 없을 수 있다.
+  @Prop({ type: String, default: '' })
+  decorBackdrop: string;
+
+  @Prop({ type: [String], default: [] })
+  decorProps: string[];
 }
 export const TerrariumSchema = SchemaFactory.createForClass(Terrarium);
 
@@ -688,6 +695,14 @@ export class GameState {
 
   @Prop({ type: [LogEntrySchema], default: [] })
   logs: LogEntry[];
+
+  // 산 장식 id 목록(계정 공용, 어느 사육장에든 놓을 수 있다)
+  @Prop({ type: [String], default: [] })
+  decorOwned: string[];
+
+  // 다른 유저가 내 사육장을 방문해 볼 수 있는지(기본 공개). 꺼도 내 화면에는 영향이 없다.
+  @Prop({ default: true })
+  terrariumPublic: boolean;
 
   @Prop({ default: false })
   paused: boolean;

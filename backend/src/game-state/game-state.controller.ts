@@ -23,6 +23,9 @@ import { SurvivalChooseDto, SurvivalStartDto } from './dto/survival.dto';
 import { BuyBoostDto } from './dto/boost.dto';
 import { ExpeditionDto } from './dto/expedition.dto';
 import { RenameTerrariumDto } from './dto/rename-terrarium.dto';
+import { BuyDecorDto } from './dto/buy-decor.dto';
+import { PlaceDecorDto } from './dto/place-decor.dto';
+import { TerrariumPublicDto } from './dto/terrarium-public.dto';
 import { SetSpeciesLockDto } from './dto/set-species-lock.dto';
 import { BossDuelActDto } from './dto/boss-duel-act.dto';
 import { PuzzleSubmitDto } from './dto/puzzle-submit.dto';
@@ -287,6 +290,22 @@ export class GameStateController {
   @Post('terrariums/rename')
   renameTerrarium(@CurrentUser() user: AuthenticatedUser, @Body() dto: RenameTerrariumDto) {
     return this.gameStateService.renameTerrarium(user.userId, dto.terrariumId, dto.name);
+  }
+
+  // 사육장 꾸미기: 장식 구매·배치(카탈로그는 GET /decor)와 방문 공개 여부
+  @Post('decor/buy')
+  buyDecor(@CurrentUser() user: AuthenticatedUser, @Body() dto: BuyDecorDto) {
+    return this.gameStateService.buyDecor(user.userId, dto.decorId);
+  }
+
+  @Post('decor/place')
+  placeDecor(@CurrentUser() user: AuthenticatedUser, @Body() dto: PlaceDecorDto) {
+    return this.gameStateService.placeDecor(user.userId, dto.terrariumId, dto.kind, dto.index, dto.decorId);
+  }
+
+  @Post('decor/public')
+  setTerrariumPublic(@CurrentUser() user: AuthenticatedUser, @Body() dto: TerrariumPublicDto) {
+    return this.gameStateService.setTerrariumPublic(user.userId, dto.isPublic);
   }
 
   @Post('move')

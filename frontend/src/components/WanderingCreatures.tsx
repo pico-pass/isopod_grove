@@ -31,11 +31,14 @@ export function WanderingCreatures({
   speciesById,
   paused,
   onObserve,
+  readOnly = false,
 }: {
   population: Record<string, number>;
   speciesById: Map<string, Species>;
   paused: boolean;
-  onObserve: (speciesId: string) => void;
+  onObserve?: (speciesId: string) => void;
+  // 남의 사육장을 구경할 때: 눌러서 관찰하는 기능 없이 이름만 보여준다.
+  readOnly?: boolean;
 }) {
   // 종별 마릿수만큼 개체를 만든다. 마릿수가 많으면 MAX_VISIBLE까지만 그린다.
   const individuals = useMemo(() => {
@@ -78,12 +81,24 @@ export function WanderingCreatures({
         const sp = speciesById.get(speciesId);
         const pos = positions[key];
         if (!sp || !pos) return null;
+        if (readOnly) {
+          return (
+            <div
+              key={key}
+              className="creature readonly"
+              style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: size, height: size }}
+              title={sp.name}
+            >
+              <SpeciesImage species={sp} style={{ filter: sp.filter }} draggable={false} />
+            </div>
+          );
+        }
         return (
           <button
             key={key}
             className="creature"
             style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: size, height: size }}
-            onClick={() => onObserve(speciesId)}
+            onClick={() => onObserve?.(speciesId)}
             title={`${sp.name} 관찰하기`}
           >
             <SpeciesImage species={sp} style={{ filter: sp.filter }} draggable={false} />

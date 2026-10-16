@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { loadRankingLimit, saveRankingLimit, type RankingLimit } from '../utils/rankingLimit';
 import type {
   Achievement,
   ActionResult,
   BossCatalog,
+  DecorCatalog,
   EquipmentCatalogItem,
   FriendChatUnread,
   GameState,
@@ -30,6 +32,7 @@ export function useGameEngine(userKey: string | null) {
   const [quests, setQuests] = useState<Quest[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [equipmentCatalog, setEquipmentCatalog] = useState<EquipmentCatalogItem[]>([]);
+  const [decorCatalog, setDecorCatalog] = useState<DecorCatalog | null>(null);
   const [bossCatalog, setBossCatalog] = useState<BossCatalog | null>(null);
   const [levelLeaderboard, setLevelLeaderboard] = useState<LeaderboardResult | null>(null);
   const [incomeLeaderboard, setIncomeLeaderboard] = useState<LeaderboardResult | null>(null);
@@ -57,15 +60,20 @@ export function useGameEngine(userKey: string | null) {
     setToastState({ message, error: isError, key: toastKeyRef.current });
   }, []);
 
+  // 랭킹에서 보는 인원 수(20·50·100). 마지막으로 고른 값을 기억한다.
+  const [leaderboardLimit, setLeaderboardLimitState] = useState<RankingLimit>(loadRankingLimit);
+  const leaderboardLimitRef = useRef(leaderboardLimit);
+
   const reloadLeaderboards = useCallback(async () => {
     setLeaderboardLoading(true);
     try {
+      const limit = leaderboardLimitRef.current;
       const [lvl, inc, pvp, boss, survival, friendsResult] = await Promise.all([
-        api.getLevelLeaderboard(),
-        api.getIncomeLeaderboard(),
-        api.getPvpLeaderboard(),
-        api.getBossLeaderboard(),
-        api.getSurvivalLeaderboard(),
+        api.getLevelLeaderboard(limit),
+        api.getIncomeLeaderboard(limit),
+        api.getPvpLeaderboard(limit),
+        api.getBossLeaderboard(limit),
+        api.getSurvivalLeaderboard(limit),
         api.getFriends(),
       ]);
       setLevelLeaderboard(lvl);
@@ -80,6 +88,16 @@ export function useGameEngine(userKey: string | null) {
       setLeaderboardLoading(false);
     }
   }, [showToast]);
+
+  const changeLeaderboardLimit = useCallback(
+    (limit: RankingLimit) => {
+      leaderboardLimitRef.current = limit;
+      setLeaderboardLimitState(limit);
+      saveRankingLimit(limit);
+      void reloadLeaderboards();
+    },
+    [reloadLeaderboards],
+  );
 
   // 알림 확인 콜백(1분·15초 주기)이 항상 최신 설정을 보게 ref로도 들고 있는다.
   const prefsRef = useRef(notificationPrefs);
@@ -166,7 +184,7 @@ export function useGameEngine(userKey: string | null) {
 
     (async () => {
       try {
-        const [gs, sp, up, qu, ach, eq, boss] = await Promise.all([
+        const [gs, sp, up, qu, ach, eq, boss, decor] = await Promise.all([
           api.getGameState(),
           api.getSpecies(),
           api.getUpgrades(),
@@ -174,6 +192,7 @@ export function useGameEngine(userKey: string | null) {
           api.getAchievements(),
           api.getEquipmentCatalog(),
           api.getBossCatalog(),
+          api.getDecorCatalog(),
         ]);
         if (cancelled) return;
         setSpecies(sp);
@@ -182,6 +201,7 @@ export function useGameEngine(userKey: string | null) {
         setAchievements(ach);
         setEquipmentCatalog(eq);
         setBossCatalog(boss);
+        setDecorCatalog(decor);
 
         const lastSeenKey = `isopod-grove-last-seen-${userKey}`;
         const lastSeenRaw = localStorage.getItem(lastSeenKey);
@@ -259,6 +279,7 @@ export function useGameEngine(userKey: string | null) {
     quests,
     achievements,
     equipmentCatalog,
+    decorCatalog,
     bossCatalog,
     levelLeaderboard,
     incomeLeaderboard,
@@ -273,6 +294,8 @@ export function useGameEngine(userKey: string | null) {
     notificationPrefs,
     updateNotificationPrefs,
     leaderboardLoading,
+    leaderboardLimit,
+    changeLeaderboardLimit,
     reloadLeaderboards,
     loading,
     error,

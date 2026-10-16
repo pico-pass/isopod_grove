@@ -20,6 +20,8 @@ import { BossModule } from './boss/boss.module';
 import { MailModule } from './mail/mail.module';
 import { FriendChatModule } from './friend-chat/friend-chat.module';
 import { PushModule } from './push/push.module';
+import { DecorModule } from './decor/decor.module';
+import { VisitModule } from './visit/visit.module';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { PushModule } from './push/push.module';
     MailModule,
     FriendChatModule,
     PushModule,
+    DecorModule,
+    VisitModule,
   ],
   controllers: [AppController],
   providers: [AppService],

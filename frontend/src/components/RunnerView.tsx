@@ -25,6 +25,8 @@ import {
   type RunnerState,
 } from '../utils/runner';
 import { RankingList } from './RankingView';
+import { RankingLimitPicker } from './RankingLimitPicker';
+import { loadRankingLimit, saveRankingLimit, type RankingLimit } from '../utils/rankingLimit';
 import { FALLBACK_IMAGE, SpeciesImage } from './SpeciesImage';
 
 const VIEW_H = 300;
@@ -95,6 +97,8 @@ export function RunnerView({
 }) {
   const [info, setInfo] = useState<RunnerInfo | null>(null);
   const [ranking, setRanking] = useState<LeaderboardResult | null>(null);
+  const [rankingLimit, setRankingLimit] = useState<RankingLimit>(loadRankingLimit);
+  const rankingLimitRef = useRef(rankingLimit);
   const [phase, setPhase] = useState<Phase>('idle');
   const [paused, setPaused] = useState(false);
   const [hud, setHud] = useState({ meters: 0, level: 0, shields: 0, airJumps: 0 });
@@ -164,7 +168,7 @@ export function RunnerView({
   }, []);
   const loadRanking = useCallback(async () => {
     try {
-      setRanking(await api.getRunnerLeaderboard());
+      setRanking(await api.getRunnerLeaderboard(rankingLimitRef.current));
     } catch {
       // 순위를 못 불러와도 달릴 수 있다.
     }
@@ -182,6 +186,13 @@ export function RunnerView({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  const changeRankingLimit = (limit: RankingLimit) => {
+    rankingLimitRef.current = limit;
+    setRankingLimit(limit);
+    saveRankingLimit(limit);
+    void loadRanking();
+  };
 
   const pick = (speciesId: string) => {
     setPickedId(speciesId);
@@ -644,6 +655,7 @@ export function RunnerView({
       <section className="panel">
         <h3>오늘의 순위</h3>
         <p className="footnote">오늘 가장 멀리 달린 순이에요. 기록을 세운 콩벌레도 함께 보여요. 같은 거리는 같은 순위이고 먼저 달성한 사람이 위에 보여요. 한국 시간 자정에 새로 시작해요.</p>
+        <RankingLimitPicker value={rankingLimit} onChange={changeRankingLimit} />
         <RankingList result={ranking} loading={false} valueOf={(v) => `${v.toLocaleString('ko-KR')}m`} onOpenProfile={onOpenProfile} />
       </section>
 

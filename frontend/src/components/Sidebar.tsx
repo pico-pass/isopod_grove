@@ -10,6 +10,7 @@ export type ViewKey =
   | 'achievements'
   | 'ranking'
   | 'friends'
+  | 'visit'
   | 'mail'
   | 'battle'
   | 'boss'
@@ -19,6 +20,7 @@ export type ViewKey =
   | 'pvp'
   | 'equipment'
   | 'journal'
+  | 'changelog'
   | 'admin';
 
 const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
@@ -31,6 +33,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'achievements', label: '업적', icon: '🏆' },
   { key: 'ranking', label: '랭킹', icon: '📊' },
   { key: 'friends', label: '친구', icon: '🤝' },
+  { key: 'visit', label: '사육장 방문', icon: '🏡' },
   { key: 'mail', label: '우편함', icon: '📬' },
   { key: 'battle', label: '야생 배틀', icon: '⚔️' },
   { key: 'boss', label: '보스 타워', icon: '🗼' },
@@ -40,6 +43,7 @@ const NAV_ITEMS: { key: ViewKey; label: string; icon: string }[] = [
   { key: 'pvp', label: '투기장', icon: '🆚' },
   { key: 'equipment', label: '장비', icon: '🎒' },
   { key: 'journal', label: '사육 일지', icon: '📔' },
+  { key: 'changelog', label: '업데이트 내역', icon: '📜' },
 ];
 
 export function Sidebar({
@@ -51,6 +55,7 @@ export function Sidebar({
   claimableAchievements,
   mailBadge,
   friendChatBadge,
+  changelogNew,
   xp,
   isAdmin,
   mobileOpen,
@@ -64,6 +69,7 @@ export function Sidebar({
   claimableAchievements: number;
   mailBadge: number;
   friendChatBadge: number;
+  changelogNew: boolean;
   xp: number;
   isAdmin: boolean;
   mobileOpen: boolean;
@@ -119,6 +125,7 @@ export function Sidebar({
             )}
             {item.key === 'mail' && mailBadge > 0 && <span className="nav-count">{mailBadge}</span>}
             {item.key === 'friends' && friendChatBadge > 0 && <span className="nav-count">{friendChatBadge}</span>}
+            {item.key === 'changelog' && changelogNew && <span className="nav-new">NEW</span>}
           </button>
         ))}
       </nav>

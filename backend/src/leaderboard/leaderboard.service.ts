@@ -6,6 +6,7 @@ import { PuzzleRecord, PuzzleRecordDocument } from '../game-state/schemas/puzzle
 import { RunnerRecord, RunnerRecordDocument } from '../game-state/schemas/runner-record.schema';
 import { PUZZLE_STAGES, getPuzzleDayKey, rankByLadder } from '../game-state/puzzle-engine';
 import { rankByDistance } from '../game-state/runner-engine';
+import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { SpeciesService } from '../species/species.service';
 import {
@@ -18,7 +19,15 @@ import {
   isComfortable,
 } from '../game-state/game-engine';
 
-const LEADERBOARD_LIMIT = 20;
+// 랭킹에서 볼 수 있는 인원 수 선택지(기본은 20명). 화면에서 20·50·100명 중에 고른다.
+export const LEADERBOARD_LIMITS = [20, 50, 100] as const;
+export const DEFAULT_LEADERBOARD_LIMIT = 20;
+
+// ?limit= 값을 선택지 안의 숫자로 바꾼다. 없거나 선택지에 없는 값이면 기본값이다.
+export function parseLeaderboardLimit(raw: unknown): number {
+  const n = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+  return (LEADERBOARD_LIMITS as readonly number[]).includes(n) ? n : DEFAULT_LEADERBOARD_LIMIT;
+}
 
 export interface LeaderboardEntry {
   rank: number;
@@ -74,9 +83,12 @@ export class LeaderboardService {
     // 콩 달리기 순위 전용(역시 끝자리).
     @InjectModel(RunnerRecord.name)
     private runnerRecordModel?: Model<RunnerRecordDocument>,
+    // 사육장 좋아요 순위 전용(역시 끝자리).
+    @InjectModel(TerrariumLike.name)
+    private terrariumLikeModel?: Model<TerrariumLikeDocument>,
   ) {}
 
-  async getLevelLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getLevelLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     const states = await this.gameStateModel
       .find({}, { userId: 1, xp: 1 })
       .lean<Pick<LeanGameState, 'userId' | 'xp'>[]>();
@@ -85,12 +97,13 @@ export class LeaderboardService {
     return this.buildResult(
       sorted.map((s) => ({ userId: s.userId, value: getLevel(s.xp) })),
       requesterId,
+      limit,
     );
   }
 
   // 오늘의 퍼즐: 오늘 많이 깬 단계 순, 같으면 깬 단계들의 최단 수 초과분이 적은 순. 같은 성적은 같은 순위(1, 1, 3)이고,
   // 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다. 순위 번호가 겹치므로 줄 번호(index)가 아니라 계산한 순위를 그대로 쓴다.
-  async getPuzzleLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getPuzzleLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     if (!this.puzzleRecordModel) throw new Error('PuzzleRecord 모델이 연결되지 않았어요.');
     const dayKey = getPuzzleDayKey();
     const records = await this.puzzleRecordModel
@@ -106,11 +119,12 @@ export class LeaderboardService {
         label: `${r.cleared}/${PUZZLE_STAGES}단계 · 초과 +${r.excess}수`,
       })),
       requesterId,
+      limit,
     );
   }
 
   // 콩 달리기: 오늘 가장 멀리 달린 순. 같은 거리는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다.
-  async getRunnerLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getRunnerLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     if (!this.runnerRecordModel) throw new Error('RunnerRecord 모델이 연결되지 않았어요.');
     const dayKey = getPuzzleDayKey();
     const records = await this.runnerRecordModel
@@ -132,10 +146,33 @@ export class LeaderboardService {
         };
       }),
       requesterId,
+      limit,
     );
   }
 
-  async getPvpLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  // 인기 사육장: 받은 좋아요(모든 사육장 합계)가 많은 순. 같은 개수는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 그 개수에
+  // 닿은 사람이 위에 보인다. 사육장을 비공개로 해 둔 유저는 순위에서 뺀다(눌러도 방문할 수 없으므로).
+  async getLikesLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
+    if (!this.terrariumLikeModel) throw new Error('TerrariumLike 모델이 연결되지 않았어요.');
+    const rows = await this.terrariumLikeModel.aggregate<{ _id: Types.ObjectId; n: number; last: number }>([
+      { $group: { _id: '$ownerId', n: { $sum: 1 }, last: { $max: '$createdAt' } } },
+    ]);
+    const states = await this.gameStateModel
+      .find({ userId: { $in: rows.map((r) => r._id) } }, { userId: 1, terrariumPublic: 1 })
+      .lean<{ userId: Types.ObjectId; terrariumPublic?: boolean }[]>();
+    const hidden = new Set(states.filter((s) => s.terrariumPublic === false).map((s) => s.userId.toString()));
+    const ranked = rows
+      .filter((r) => !hidden.has(r._id.toString()))
+      .sort((a, b) => b.n - a.n || a.last - b.last || a._id.toString().localeCompare(b._id.toString()));
+    const ranks = rankByDistance(ranked.map((r) => r.n));
+    return this.buildResult(
+      ranked.map((r, i) => ({ userId: r._id, value: r.n, rank: ranks[i], label: `❤️ ${r.n.toLocaleString('ko-KR')}` })),
+      requesterId,
+      limit,
+    );
+  }
+
+  async getPvpLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     const states = await this.gameStateModel
       .find({}, { userId: 1, pvpRating: 1 })
       .lean<{ userId: Types.ObjectId; pvpRating: number }[]>();
@@ -144,12 +181,13 @@ export class LeaderboardService {
     return this.buildResult(
       sorted.map((s) => ({ userId: s.userId, value: s.pvpRating })),
       requesterId,
+      limit,
     );
   }
 
   // 보스 타워 기록. 난이도마다 깬 층이 따로라서, 능력치 배율을 층으로 환산한 "난이도 환산 층"으로 줄을 세우고
   // 화면에는 그 사람의 가장 높은 기록을 "어려움 12층"처럼 보여준다. 한 번도 안 깬 유저는 순위에 올리지 않는다.
-  async getBossLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getBossLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     const projection: Record<string, 1> = { userId: 1 };
     for (const field of Object.values(BOSS_PROGRESS_FIELD)) projection[`stats.${field}`] = 1;
     const states = await this.gameStateModel
@@ -169,11 +207,11 @@ export class LeaderboardService {
       })
       .filter((r): r is { userId: Types.ObjectId; value: number; label: string } => r !== null)
       .sort((a, b) => b.value - a.value);
-    return this.buildResult(ranked, requesterId);
+    return this.buildResult(ranked, requesterId, limit);
   }
 
   // 서바이벌 최고 스테이지. 한 번도 도달하지 못한(0) 유저는 순위에 올리지 않는다.
-  async getSurvivalLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getSurvivalLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     const states = await this.gameStateModel
       .find({}, { userId: 1, 'stats.highestSurvivalStage': 1 })
       .lean<{ userId: Types.ObjectId; stats?: { highestSurvivalStage?: number } }[]>();
@@ -181,10 +219,10 @@ export class LeaderboardService {
       .map((s) => ({ userId: s.userId, value: s.stats?.highestSurvivalStage || 0 }))
       .filter((r) => r.value > 0)
       .sort((a, b) => b.value - a.value);
-    return this.buildResult(ranked, requesterId);
+    return this.buildResult(ranked, requesterId, limit);
   }
 
-  async getIncomeLeaderboard(requesterId: string): Promise<LeaderboardResult> {
+  async getIncomeLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
     const speciesList = await this.speciesService.findAll();
     const rateById = new Map(speciesList.map((s) => [s.speciesId, s.rate]));
 
@@ -199,7 +237,7 @@ export class LeaderboardService {
       }))
       .sort((a, b) => b.value - a.value);
 
-    return this.buildResult(sorted, requesterId);
+    return this.buildResult(sorted, requesterId, limit);
   }
 
   // 사육장마다 환경(먹이/습도/온도)에 따른 쾌적 여부를 반영해 초당 수익을 더한다.
@@ -234,8 +272,9 @@ export class LeaderboardService {
   private async buildResult(
     ranked: { userId: Types.ObjectId; value: number; label?: string; rank?: number; species?: LeaderboardSpecies }[],
     requesterId: string,
+    limit = DEFAULT_LEADERBOARD_LIMIT,
   ): Promise<LeaderboardResult> {
-    const top = ranked.slice(0, LEADERBOARD_LIMIT);
+    const top = ranked.slice(0, limit);
     const requesterIndex = ranked.findIndex(
       (r) => r.userId.toString() === requesterId,
     );
@@ -269,7 +308,7 @@ export class LeaderboardService {
       requesterIndex >= 0
         ? {
             ...toEntry(ranked[requesterIndex], requesterIndex + 1),
-            inTop: requesterIndex < LEADERBOARD_LIMIT,
+            inTop: requesterIndex < limit,
           }
         : null;
 

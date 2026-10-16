@@ -67,6 +67,13 @@ import type {
 import type { Species } from '../species/schemas/species.schema';
 import { SpeciesService } from '../species/species.service';
 import { resolveFamily } from '../species/species.family';
+import {
+  DECOR_PROP_SLOTS,
+  findDecor,
+  getDecorBreedFactors,
+  normalizeDecorProps,
+  type DecorKind,
+} from '../decor/decor.data';
 import type { SpeciesFamily } from '../species/species.family';
 import { UpgradesService } from '../upgrades/upgrades.service';
 import { QuestsService } from '../quests/quests.service';
@@ -377,6 +384,10 @@ export class GameStateService {
       if (claim.matchedCount !== 1) longOfflineSeconds = 0;
     }
     gameState.lastTickAt = nowMs;
+    // 꾸미기 장식이 사육장의 같은 계열 종에게 주는 번식 진행 배율(사육장 id → 계열별 배율)
+    const decorFactors = new Map(
+      gameState.terrariums.map((t) => [t.terrariumId, getDecorBreedFactors(t.decorBackdrop, t.decorProps)] as const),
+    );
     let remaining = totalSeconds;
     // 부스트는 시간대로 저장돼 있어서, 이번에 처리하는 구간([지금 - 처리 시간, 지금])과 겹친 부분에만 배율을 적용한다.
     const windowStartMs = Date.now() - totalSeconds * 1000;
@@ -446,9 +457,10 @@ export class GameStateService {
             getBaseBreedSeconds(species.rarity),
             nurseryLevel,
           );
+          const decorFactor = decorFactors.get(terrarium.terrariumId)?.[resolveFamily(species)] ?? 1;
           const progressed = Math.min(
             limit,
-            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor,
+            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor * decorFactor,
           );
           terrarium.breeding.set(species.speciesId, progressed);
           if (progressed >= limit && capacityLeft > 0) {
@@ -480,9 +492,10 @@ export class GameStateService {
           const current = terrarium.population.get(species.speciesId) || 0;
           if (current < 2) continue;
           const limit = getBreedInterval(getBaseBreedSeconds(species.rarity), nurseryLevel);
+          const decorFactor = decorFactors.get(terrarium.terrariumId)?.[resolveFamily(species)] ?? 1;
           const result = advanceBreeding(
             terrarium.breeding.get(species.speciesId) || 0,
-            longOfflineSeconds * longFactor,
+            longOfflineSeconds * longFactor * decorFactor,
             limit,
             capacityLeft,
           );
@@ -584,6 +597,8 @@ export class GameStateService {
       temperature: 24,
       population: new Map(),
       breeding: new Map(),
+      decorBackdrop: '',
+      decorProps: [],
     });
     this.pushLog(
       gameState,
@@ -2000,6 +2015,91 @@ export class GameStateService {
     } finally {
       this.shopInFlight.delete(userId);
     }
+  }
+
+  // 장식을 산다(골드, 계정에 영구히 남는다). 이미 가진 장식은 다시 살 수 없다.
+  async buyDecor(userId: string, decorId: string) {
+    const item = findDecor(decorId);
+    if (!item) {
+      throw new BadRequestException('존재하지 않는 장식이에요.');
+    }
+    if (this.shopInFlight.has(userId)) {
+      throw new BadRequestException('구매를 처리하는 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.shopInFlight.add(userId);
+    try {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const owned = gameState.decorOwned ?? [];
+      if (owned.includes(decorId)) {
+        throw new BadRequestException('이미 가지고 있는 장식이에요.');
+      }
+      if (gameState.coins < item.price) {
+        throw new BadRequestException(`골드가 부족해요. ${item.price.toLocaleString('ko-KR')} G가 필요해요.`);
+      }
+      gameState.coins -= item.price;
+      gameState.decorOwned = [...owned, decorId];
+      const message = `${item.icon} ${item.name}을(를) 샀어요. (-${item.price.toLocaleString('ko-KR')} G)`;
+      this.pushLog(gameState, 'coins', message);
+      await gameState.save();
+      return { gameState, message, price: item.price };
+    } finally {
+      this.shopInFlight.delete(userId);
+    }
+  }
+
+  // 사육장 한 칸에 장식을 놓거나(decorId) 비운다(decorId 없음). 무료이고, 산 장식만 놓을 수 있다.
+  // 배경은 사육장마다 하나, 소품은 DECOR_PROP_SLOTS칸이며 같은 소품을 한 사육장에 두 개 놓을 수 없다.
+  async placeDecor(userId: string, terrariumId: string, kind: DecorKind, index: number | undefined, decorId: string | undefined) {
+    if (kind !== 'backdrop' && kind !== 'prop') {
+      throw new BadRequestException('알 수 없는 장식 칸이에요.');
+    }
+    if (kind === 'prop' && !(Number.isInteger(index) && (index as number) >= 0 && (index as number) < DECOR_PROP_SLOTS)) {
+      throw new BadRequestException(`소품은 1~${DECOR_PROP_SLOTS}번 칸에 놓을 수 있어요.`);
+    }
+    const item = decorId ? findDecor(decorId) : undefined;
+    if (decorId && !item) {
+      throw new BadRequestException('존재하지 않는 장식이에요.');
+    }
+    if (item && item.kind !== kind) {
+      throw new BadRequestException(kind === 'backdrop' ? '배경 칸에는 배경 장식만 놓을 수 있어요.' : '소품 칸에는 소품만 놓을 수 있어요.');
+    }
+    if (this.shopInFlight.has(userId)) {
+      throw new BadRequestException('처리 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.shopInFlight.add(userId);
+    try {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const terrarium = this.getTerrarium(gameState, terrariumId);
+      if (item && !(gameState.decorOwned ?? []).includes(item.decorId)) {
+        throw new BadRequestException('아직 가지고 있지 않은 장식이에요.');
+      }
+      if (kind === 'backdrop') {
+        terrarium.decorBackdrop = item?.decorId ?? '';
+      } else {
+        const props = normalizeDecorProps(terrarium.decorProps);
+        if (item && props.some((id, i) => id === item.decorId && i !== index)) {
+          throw new BadRequestException('이 사육장에는 이미 놓여 있는 소품이에요.');
+        }
+        props[index as number] = item?.decorId ?? '';
+        terrarium.decorProps = props;
+      }
+      const message = item ? `${item.icon} ${item.name}을(를) "${terrarium.name}"에 놓았어요.` : `"${terrarium.name}"의 장식을 치웠어요.`;
+      await gameState.save();
+      return { gameState, message };
+    } finally {
+      this.shopInFlight.delete(userId);
+    }
+  }
+
+  // 다른 유저가 내 사육장을 방문해 볼 수 있는지 정한다(무료). 꺼도 내 화면과 이미 받은 좋아요에는 영향이 없다.
+  async setTerrariumPublic(userId: string, isPublic: boolean) {
+    const gameState = await this.getOrThrow(userId);
+    gameState.terrariumPublic = isPublic;
+    const message = isPublic ? '이제 다른 유저가 내 사육장을 구경할 수 있어요.' : '이제 내 사육장은 나만 볼 수 있어요.';
+    await gameState.save();
+    return { gameState, message };
   }
 
   private bossAttemptLimit(gameState: GameStateDocument) {

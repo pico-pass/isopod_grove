@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { GameState, Quest, Species, Terrarium } from '../api/types';
+import type { DecorItem, GameState, Quest, Species, Terrarium } from '../api/types';
 import { WanderingCreatures } from './WanderingCreatures';
+import { TerrariumDecorLayer } from './TerrariumDecorLayer';
+import { DecorModal } from './DecorModal';
+import { getDecorBreedBonusPercent } from '../utils/decor';
 import {
   EXPLORE_COST_STEP,
   MAX_TERRARIUMS,
@@ -102,6 +105,12 @@ export function HabitatView({
   onCollect,
   onExplore,
   onClaim,
+  decorCatalog,
+  decorTierNames,
+  onBuyDecor,
+  onPlaceDecor,
+  onSetTerrariumPublic,
+  onVisitMine,
 }: {
   gameState: GameState;
   terrarium: Terrarium;
@@ -116,8 +125,15 @@ export function HabitatView({
   onCollect: () => void;
   onExplore: (useTicket?: boolean) => void;
   onClaim: (questId: string) => void;
+  decorCatalog: DecorItem[];
+  decorTierNames: string[];
+  onBuyDecor: (decorId: string) => Promise<unknown>;
+  onPlaceDecor: (terrariumId: string, kind: 'backdrop' | 'prop', index: number | undefined, decorId?: string) => Promise<unknown>;
+  onSetTerrariumPublic: (isPublic: boolean) => Promise<unknown>;
+  onVisitMine: () => void;
 }) {
   const [now, setNow] = useState(0);
+  const [decorOpen, setDecorOpen] = useState(false);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -240,6 +256,7 @@ export function HabitatView({
           <div className={`terrarium${gameState.paused ? ' is-paused' : ''}`}>
             <img className="terrain-image" src="/assets/terrarium.webp" alt="이끼와 낙엽이 있는 작은 숲 사육장" />
             <div className="terrain-shade" />
+            <TerrariumDecorLayer catalog={decorCatalog} backdropId={terrarium.decorBackdrop} propIds={terrarium.decorProps} />
             <div className="scene-top">
               <TerrariumNameBadge
                 key={terrarium.terrariumId}
@@ -248,6 +265,9 @@ export function HabitatView({
                 disabled={gameState.paused}
                 onRename={(name) => onRenameTerrarium(terrarium.terrariumId, name)}
               />
+              <button className="decor-open-btn" onClick={() => setDecorOpen(true)} title="사육장 꾸미기">
+                🎨 꾸미기
+              </button>
             </div>
             <WanderingCreatures
               key={terrarium.terrariumId}
@@ -351,6 +371,9 @@ export function HabitatView({
               const interval = getBreedInterval(getBaseBreedSeconds(sp.rarity), nurseryLevel);
               const progress = Math.min(interval, terrarium.breeding[id] || 0);
               const ratio = interval > 0 ? progress / interval : 0;
+              // 꾸미기 장식이 같은 계열 종에게 주는 번식 속도 증가(서버 advance와 같은 규칙)
+              const decorPercent = getDecorBreedBonusPercent(decorCatalog, terrarium.decorBackdrop, terrarium.decorProps, sp.family ?? 'forest');
+              const breedSpeed = breedBoost * (1 + decorPercent / 100);
               const breedStatus =
                 residents < 2
                   ? '번식하려면 2마리 이상 필요해요'
@@ -358,7 +381,7 @@ export function HabitatView({
                     ? '환경이 좋지 않아 번식이 멈췄어요'
                     : count >= capacity
                       ? '공간이 가득 차서 기다리는 중이에요'
-                      : `다음 새끼까지 ${formatDuration((interval - progress) / breedBoost)}${breedBoost > 1 ? ` ⚡×${breedBoost}` : ''}`;
+                      : `다음 새끼까지 ${formatDuration((interval - progress) / breedSpeed)}${breedBoost > 1 ? ` ⚡×${breedBoost}` : ''}${decorPercent > 0 ? ` 🎨+${decorPercent}%` : ''}`;
               const breedActive = residents >= 2 && canBreed && count < capacity;
               return (
                 <div key={id} className="resident">
@@ -474,6 +497,22 @@ export function HabitatView({
           </div>
         </aside>
       </div>
+      {decorOpen && (
+        <DecorModal
+          gameState={gameState}
+          terrarium={terrarium}
+          catalog={decorCatalog}
+          tierNames={decorTierNames}
+          onBuy={onBuyDecor}
+          onPlace={(kind, index, decorId) => onPlaceDecor(terrarium.terrariumId, kind, index, decorId)}
+          onSetPublic={onSetTerrariumPublic}
+          onVisitMine={() => {
+            setDecorOpen(false);
+            onVisitMine();
+          }}
+          onClose={() => setDecorOpen(false)}
+        />
+      )}
     </section>
   );
 }

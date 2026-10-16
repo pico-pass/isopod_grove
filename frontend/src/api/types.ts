@@ -107,6 +107,68 @@ export interface Terrarium {
   temperature: number;
   population: Record<string, number>;
   breeding: Record<string, number>;
+  // 꾸미기: 배경 장식 id(없으면 '')와 소품 칸(4칸, 빈 칸은 ''). 예전 데이터에는 없을 수 있다.
+  decorBackdrop?: string;
+  decorProps?: string[];
+}
+
+export type DecorKind = 'backdrop' | 'prop';
+
+export interface DecorItem {
+  decorId: string;
+  kind: DecorKind;
+  name: string;
+  icon: string;
+  tier: 0 | 1 | 2; // 일반 / 희귀 / 에픽
+  family: SpeciesFamily | null; // 같은 계열 종의 번식을 빠르게 한다(null이면 꾸미기 전용)
+  price: number;
+  breedBonusPercent: number;
+  description: string;
+  tint?: [string, string]; // 배경만: 사육장 사진 위에 덮는 그라데이션 색
+}
+
+export interface DecorCatalog {
+  propSlots: number;
+  tierNames: string[];
+  items: DecorItem[];
+}
+
+export interface VisitResident {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+  family: SpeciesFamily;
+  count: number;
+}
+
+export interface VisitTerrarium {
+  terrariumId: string;
+  name: string;
+  backdrop: string;
+  props: string[];
+  total: number;
+  residents: VisitResident[];
+  likes: number;
+  likedByMe: boolean;
+}
+
+export interface VisitLiker {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  terrariumName: string;
+  at: number;
+}
+
+export interface VisitResult {
+  owner: { userId: string; displayName: string; avatarUrl?: string; profileMessage?: string; level: number };
+  isMe: boolean;
+  isPublic: boolean;
+  terrariums: VisitTerrarium[];
+  totalLikes: number;
+  recentLikers: VisitLiker[];
 }
 
 export type EquipmentCategory = 'weapon' | 'armor' | 'charm';
@@ -160,6 +222,9 @@ export interface GameState {
   expeditionPity?: number;
   // 골드로 산 부스트(종류별 하나). 예전 데이터에는 없을 수 있다.
   boosts?: ActiveBoost[];
+  // 산 장식 id(계정 공용)와 사육장 방문 공개 여부(기본 공개). 예전 데이터에는 없을 수 있다.
+  decorOwned?: string[];
+  terrariumPublic?: boolean;
   terrariums: Terrarium[];
   discovered: string[];
   upgrades: Record<string, number>;

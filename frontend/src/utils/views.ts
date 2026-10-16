@@ -12,6 +12,7 @@ export const NAVIGABLE_VIEWS: readonly ViewKey[] = [
   'achievements',
   'ranking',
   'friends',
+  'visit',
   'mail',
   'battle',
   'boss',
@@ -21,4 +22,5 @@ export const NAVIGABLE_VIEWS: readonly ViewKey[] = [
   'pvp',
   'equipment',
   'journal',
+  'changelog',
 ];

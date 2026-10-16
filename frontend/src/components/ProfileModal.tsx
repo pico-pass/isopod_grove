@@ -16,6 +16,7 @@ export function ProfileModal({
   onClose,
   onSetNickname,
   onSetProfileMessage,
+  onVisit,
   notificationPrefs,
   onUpdateNotificationPrefs,
   showToast,
@@ -29,6 +30,7 @@ export function ProfileModal({
   onClose: () => void;
   onSetNickname: (nickname: string) => void;
   onSetProfileMessage: (message: string) => void;
+  onVisit: (userId: string) => void;
   notificationPrefs: NotificationPrefs;
   onUpdateNotificationPrefs: (patch: Partial<NotificationPrefs>) => void;
   showToast: (message: string, isError?: boolean) => void;
@@ -239,6 +241,10 @@ export function ProfileModal({
             <span>업적 달성</span>
           </div>
         </div>
+
+        <button className="button secondary full profile-visit" onClick={() => onVisit(data.userId)}>
+          🏡 {isSelf ? '내 사육장 보기' : '사육장 구경하기'}
+        </button>
 
         {isSelf && (
           <NotificationSettings prefs={notificationPrefs} onChange={onUpdateNotificationPrefs} showToast={showToast} />

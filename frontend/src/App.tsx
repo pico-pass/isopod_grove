@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from './api/client';
 import { useAuth } from './auth/useAuth';
 import { useGameEngine } from './hooks/useGameEngine';
@@ -26,6 +26,8 @@ import { MailView } from './components/MailView';
 import { ProfileModal } from './components/ProfileModal';
 import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
+import { ChangelogView } from './components/ChangelogView';
+import { VisitView } from './components/VisitView';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
 import {
@@ -35,6 +37,7 @@ import {
   getPopulationCount,
 } from './utils/gameCalc';
 import { releasePushOnLogout, syncPushSubscription } from './utils/push';
+import { hasUnseenChangelog, loadSeenChangelogDate, saveSeenChangelogDate } from './utils/changelog';
 import './App.css';
 
 // 푸시 알림을 눌러 열었을 때 주소 조각(#friends, #mail)으로 처음 보여줄 화면을 정한다.
@@ -56,6 +59,7 @@ function App() {
     quests,
     achievements,
     equipmentCatalog,
+    decorCatalog,
     bossCatalog,
     levelLeaderboard,
     incomeLeaderboard,
@@ -70,6 +74,8 @@ function App() {
     notificationPrefs,
     updateNotificationPrefs,
     leaderboardLoading,
+    leaderboardLimit,
+    changeLeaderboardLimit,
     reloadLeaderboards,
     loading,
     error,
@@ -81,6 +87,21 @@ function App() {
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
+  // 사육장 방문 화면에서 구경 중인 유저(없으면 인기 사육장 목록)
+  const [visitTarget, setVisitTarget] = useState<string | null>(null);
+  const openVisit = useCallback((userId: string | null) => {
+    setVisitTarget(userId);
+    if (userId) {
+      setView('visit');
+      setProfileTarget(null);
+    }
+  }, []);
+  // 업데이트 내역 화면에서 마지막으로 확인한 최신 날짜(사이드바의 NEW 표시 기준, 이 브라우저에만 기억)
+  const [changelogSeen, setChangelogSeen] = useState<string | null>(loadSeenChangelogDate);
+  const markChangelogSeen = useCallback((latest: string) => {
+    saveSeenChangelogDate(latest);
+    setChangelogSeen(latest);
+  }, []);
 
   // 이미 열려 있는 창에서 푸시 알림을 눌렀을 때 서비스 워커가 보내는 "이 화면으로 이동" 메시지를 받는다.
   useEffect(() => {
@@ -169,11 +190,15 @@ function App() {
       <div className="app-shell">
         <Sidebar
           view={view}
-          onChange={setView}
+          onChange={(v) => {
+            if (v === 'visit') setVisitTarget(null); // 사이드바로 들어오면 목록부터 보여준다
+            setView(v);
+          }}
           populationCount={totalPopulation}
           claimableAchievements={claimableAchievements}
           mailBadge={mailSummary.badge}
           friendChatBadge={friendChatUnread.total}
+          changelogNew={hasUnseenChangelog(changelogSeen)}
           discoveredCount={gameState.discovered.length}
           speciesTotal={species.length}
           xp={gameState.xp}
@@ -202,6 +227,12 @@ function App() {
               onCollect={() => runAction(() => api.collect())}
               onExplore={(useTicket) => runAction(() => api.explore(terrarium.terrariumId, useTicket))}
               onClaim={(questId) => runAction(() => api.claim(questId))}
+              decorCatalog={decorCatalog?.items ?? []}
+              decorTierNames={decorCatalog?.tierNames ?? []}
+              onBuyDecor={(decorId) => runAction(() => api.buyDecor(decorId))}
+              onPlaceDecor={(terrariumId, kind, index, decorId) => runAction(() => api.placeDecor(terrariumId, kind, index, decorId))}
+              onSetTerrariumPublic={(isPublic) => runAction(() => api.setTerrariumPublic(isPublic))}
+              onVisitMine={() => openVisit(user._id)}
             />
           )}
           {view === 'collection' && (
@@ -263,6 +294,8 @@ function App() {
               bossLeaderboard={bossLeaderboard}
               survivalLeaderboard={survivalLeaderboard}
               loading={leaderboardLoading}
+              limit={leaderboardLimit}
+              onChangeLimit={changeLeaderboardLimit}
               onRefresh={reloadLeaderboards}
               onOpenProfile={setProfileTarget}
             />
@@ -381,7 +414,18 @@ function App() {
               onOpenProfile={setProfileTarget}
             />
           )}
+          {view === 'visit' && (
+            <VisitView
+              targetUserId={visitTarget}
+              species={species}
+              decorCatalog={decorCatalog?.items ?? []}
+              onVisit={openVisit}
+              onOpenProfile={setProfileTarget}
+              showToast={showToast}
+            />
+          )}
           {view === 'journal' && <JournalView gameState={gameState} />}
+          {view === 'changelog' && <ChangelogView seenDate={changelogSeen} onSeen={markChangelogSeen} />}
           {view === 'admin' && user.isAdmin && <AdminView />}
         </main>
       </div>
@@ -408,6 +452,7 @@ function App() {
               .then((updated) => setUser(updated))
               .catch((e) => showToast(e instanceof Error ? e.message : '메시지 변경에 실패했어요.', true))
           }
+          onVisit={openVisit}
           showToast={showToast}
         />
       )}

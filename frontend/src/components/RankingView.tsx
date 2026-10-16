@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { LeaderboardEntry, LeaderboardResult } from '../api/types';
 import { RARITIES, formatNumber } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
+import { RankingLimitPicker } from './RankingLimitPicker';
+import type { RankingLimit } from '../utils/rankingLimit';
 
 type RankingTab = 'level' | 'income' | 'pvp' | 'boss' | 'survival';
 
@@ -78,6 +80,8 @@ export function RankingView({
   bossLeaderboard,
   survivalLeaderboard,
   loading,
+  limit,
+  onChangeLimit,
   onRefresh,
   onOpenProfile,
 }: {
@@ -87,6 +91,8 @@ export function RankingView({
   bossLeaderboard: LeaderboardResult | null;
   survivalLeaderboard: LeaderboardResult | null;
   loading: boolean;
+  limit: RankingLimit; // 보여줄 인원 수(20·50·100)
+  onChangeLimit: (limit: RankingLimit) => void;
   onRefresh: () => void;
   onOpenProfile: (userId: string) => void;
 }) {
@@ -122,6 +128,8 @@ export function RankingView({
           서바이벌
         </button>
       </div>
+
+      <RankingLimitPicker value={limit} onChange={onChangeLimit} disabled={loading} />
 
       <section className="panel">
         {tab === 'level' && (

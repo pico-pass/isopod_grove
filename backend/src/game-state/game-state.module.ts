@@ -11,6 +11,7 @@ import { UsersModule } from '../users/users.module';
 import { Friendship, FriendshipSchema } from '../friends/schemas/friendship.schema';
 import { PuzzleRecord, PuzzleRecordSchema } from './schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordSchema } from './schemas/runner-record.schema';
+import { TerrariumLike, TerrariumLikeSchema } from '../visit/schemas/terrarium-like.schema';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RunnerRecord, RunnerRecordSchema } from './schemas/runner-record.schema
       { name: Friendship.name, schema: FriendshipSchema },
       { name: PuzzleRecord.name, schema: PuzzleRecordSchema },
       { name: RunnerRecord.name, schema: RunnerRecordSchema },
+      { name: TerrariumLike.name, schema: TerrariumLikeSchema },
     ]),
     SpeciesModule,
     UpgradesModule,

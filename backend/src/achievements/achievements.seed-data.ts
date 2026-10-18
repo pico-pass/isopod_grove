@@ -284,6 +284,58 @@ const STAT_TIERS: StatTier[] = [
       { target: 100, reward: 10000, diamondReward: 40 },
     ],
   },
+  // 사육장 꾸미기·방문: 장식은 산 목록과 사육장 배치에서, 좋아요는 terrarium_likes에 남아 있는 개수에서 센다.
+  {
+    statKey: 'decorOwned',
+    icon: 'palette',
+    label: '인테리어 수집가',
+    descriptionOf: (t) => `꾸미기 장식 ${t}개 모으기`,
+    tiers: [
+      { target: 3, reward: 1000, diamondReward: 5 },
+      { target: 10, reward: 5000, diamondReward: 15 },
+      { target: 25, reward: 30000, ticketReward: 5, diamondReward: 50 },
+    ],
+  },
+  {
+    statKey: 'epicDecor',
+    icon: 'crown',
+    label: '에픽 인테리어',
+    descriptionOf: (t) => `에픽 등급 꾸미기 장식 ${t}개 모으기`,
+    tiers: [
+      { target: 1, reward: 3000, diamondReward: 10 },
+      { target: 4, reward: 12000, diamondReward: 25 },
+      { target: 8, reward: 40000, diamondReward: 60 },
+    ],
+  },
+  {
+    statKey: 'decorFilled',
+    icon: 'palette',
+    label: '빈틈없는 사육장',
+    descriptionOf: (t) => `사육장 하나의 배경과 소품 칸 ${t}칸을 모두 채우기`,
+    tiers: [{ target: 5, reward: 8000, ticketReward: 2, diamondReward: 20 }],
+  },
+  {
+    statKey: 'likesReceived',
+    icon: 'lovely',
+    label: '인기 숲지기',
+    descriptionOf: (t) => `내 사육장이 받은 좋아요 ${t}개`,
+    tiers: [
+      { target: 5, reward: 1000, diamondReward: 5 },
+      { target: 20, reward: 5000, diamondReward: 10 },
+      { target: 50, reward: 20000, diamondReward: 25 },
+    ],
+  },
+  {
+    statKey: 'likesGiven',
+    icon: 'wave',
+    label: '따뜻한 방문자',
+    descriptionOf: (t) => `다른 숲지기의 사육장에 좋아요 ${t}번 누르기`,
+    tiers: [
+      { target: 3, reward: 500, diamondReward: 3 },
+      { target: 15, reward: 2000, diamondReward: 8 },
+      { target: 40, reward: 6000, diamondReward: 15 },
+    ],
+  },
 ];
 
 // 단계 표기(I, II, III, IV…). 4단계 이상에서 'IIII'가 되지 않게 로마 숫자를 따로 둔다.

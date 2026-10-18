@@ -6,10 +6,14 @@ import { getLevel } from '../game-state/game-engine';
 import { findDecor, normalizeDecorProps } from '../decor/decor.data';
 import { resolveFamily, type SpeciesFamily } from '../species/species.family';
 import { SpeciesService } from '../species/species.service';
+import { PushService } from '../push/push.service';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { TerrariumLike, TerrariumLikeDocument } from './schemas/terrarium-like.schema';
 
 export const RECENT_LIKERS_LIMIT = 10;
+// 같은 사람이 같은 주인에게 보내는 좋아요 푸시 알림 간격. 좋아요를 취소했다 다시 눌러 알림을 반복해서 울리는 것을 막는다.
+export const LIKE_PUSH_COOLDOWN_MS = 60 * 60 * 1000;
+const LIKE_PUSH_MAP_LIMIT = 5000;
 
 export interface VisitResident {
   speciesId: string;
@@ -61,7 +65,12 @@ export class VisitService {
     private likeModel: Model<TerrariumLikeDocument>,
     private readonly usersService: UsersService,
     private readonly speciesService: SpeciesService,
+    // 새 좋아요 푸시 알림 전용(끝자리라 테스트·다른 호출은 없이도 만들 수 있다).
+    private readonly pushService?: PushService,
   ) {}
+
+  // 좋아요 알림을 마지막으로 보낸 시각(`누른 사람:주인` → ms). pm2 fork 한 프로세스라 메모리로 충분하다.
+  private readonly likePushSentAt = new Map<string, number>();
 
   private toObjectId(id: string): Types.ObjectId {
     if (!Types.ObjectId.isValid(id)) throw new NotFoundException('존재하지 않는 유저예요.');
@@ -199,21 +208,65 @@ export class VisitService {
       if (!(state.terrariums ?? []).some((t) => t.terrariumId === terrariumId)) {
         throw new NotFoundException('존재하지 않는 사육장이에요.');
       }
+      let created = false;
       try {
-        await this.likeModel.updateOne(
+        const res = await this.likeModel.updateOne(
           { ownerId: ownerOid, terrariumId, likerId: requesterOid },
           { $setOnInsert: { createdAt: Date.now() } },
           { upsert: true },
         );
+        created = res.upsertedCount === 1;
       } catch (e) {
         // 같은 사람이 동시에 두 번 보내면 유니크 인덱스에 걸릴 수 있다. 이미 눌린 것이므로 성공으로 본다.
         if ((e as { code?: number }).code !== 11000) throw e;
+      }
+      // 새로 눌린 좋아요만 알린다(이미 눌려 있던 것을 또 보낸 요청은 알리지 않는다). 알림은 기다리지 않는다.
+      if (created) {
+        const terrariumName = (state.terrariums ?? []).find((t) => t.terrariumId === terrariumId)?.name ?? '';
+        void this.notifyLike(requesterId, ownerId, terrariumName);
       }
     } else {
       await this.likeModel.deleteOne({ ownerId: ownerOid, terrariumId, likerId: requesterOid });
     }
     const likes = await this.likeModel.countDocuments({ ownerId: ownerOid, terrariumId });
     return { liked, likes };
+  }
+
+  // 사육장 주인에게 푸시 알림을 보낸다("사육장 좋아요" 알림을 꺼 둔 유저는 PushService가 건너뛴다).
+  // 같은 사람이 같은 주인에게는 LIKE_PUSH_COOLDOWN_MS에 한 번만 보내고, 알림 실패는 좋아요에 영향을 주지 않는다.
+  async notifyLike(likerId: string, ownerId: string, terrariumName: string, now = Date.now()): Promise<boolean> {
+    if (!this.pushService) return false;
+    const key = `${likerId}:${ownerId}`;
+    const last = this.likePushSentAt.get(key);
+    if (last !== undefined && now - last < LIKE_PUSH_COOLDOWN_MS) return false;
+    this.likePushSentAt.set(key, now);
+    if (this.likePushSentAt.size > LIKE_PUSH_MAP_LIMIT) {
+      for (const [k, at] of this.likePushSentAt) if (now - at >= LIKE_PUSH_COOLDOWN_MS) this.likePushSentAt.delete(k);
+    }
+    try {
+      const liker = await this.usersService.findById(likerId);
+      const name = liker ? effectiveDisplayName(liker) : '누군가';
+      const where = terrariumName ? `“${terrariumName}”` : '내 사육장';
+      await this.pushService.sendToUser(
+        ownerId,
+        { title: '❤️ 사육장 좋아요', body: `${name}님이 ${where}을(를) 좋아해요`, view: 'visit-me', tag: `like-${ownerId}` },
+        'terrariumLike',
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // 업적·알림용 요약: 내 사육장이 지금 받은 좋아요 수와 내가 지금 누르고 있는 좋아요 수
+  async getSummary(userId: string) {
+    if (!Types.ObjectId.isValid(userId)) return { received: 0, given: 0 };
+    const me = new Types.ObjectId(userId);
+    const [received, given] = await Promise.all([
+      this.likeModel.countDocuments({ ownerId: me }),
+      this.likeModel.countDocuments({ likerId: me }),
+    ]);
+    return { received, given };
   }
 
   // 아무 사육장이나 구경하러 간다: 나를 뺀 공개 사육장 주인 중에서 한 명. 식구가 있는 유저만 고르고,

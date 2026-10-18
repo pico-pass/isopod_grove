@@ -253,6 +253,16 @@ export class SurvivalDuel {
   @Prop({ default: 0 })
   strikeCooldown: number;
 
+  // 계열 기술: 다시 쓸 수 있을 때까지 남은 턴, 상대에게 걸린 화상(불꽃)·속박(숲)이 남은 턴
+  @Prop({ default: 0 })
+  skillCooldown: number;
+
+  @Prop({ default: 0 })
+  burnTurns: number;
+
+  @Prop({ default: 0 })
+  rootTurns: number;
+
   // 회복은 한 구간(엘리트와 엘리트 사이)에 한 번만 쓸 수 있다
   @Prop({ default: false })
   healUsed: boolean;
@@ -405,6 +415,16 @@ export class WildDuel {
   @Prop({ default: 0 })
   strikeCooldown: number;
 
+  // 계열 기술: 다시 쓸 수 있을 때까지 남은 턴, 상대에게 걸린 화상(불꽃)·속박(숲)이 남은 턴
+  @Prop({ default: 0 })
+  skillCooldown: number;
+
+  @Prop({ default: 0 })
+  burnTurns: number;
+
+  @Prop({ default: 0 })
+  rootTurns: number;
+
   @Prop({ default: false })
   healUsed: boolean;
 
@@ -474,6 +494,16 @@ export class BossDuel {
 
   @Prop({ default: 0 })
   strikeCooldown: number;
+
+  // 계열 기술: 다시 쓸 수 있을 때까지 남은 턴, 상대에게 걸린 화상(불꽃)·속박(숲)이 남은 턴
+  @Prop({ default: 0 })
+  skillCooldown: number;
+
+  @Prop({ default: 0 })
+  burnTurns: number;
+
+  @Prop({ default: 0 })
+  rootTurns: number;
 
   @Prop({ default: false })
   healUsed: boolean;

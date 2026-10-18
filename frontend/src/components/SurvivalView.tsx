@@ -31,6 +31,7 @@ import { FamilyBadge } from './FamilyBadge';
 import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
+import { battleLogLabel, battleLogValue } from '../utils/battleLog';
 
 const BUFF_ICONS: Record<string, string> = { atk: '⚔️', def: '🛡️', hp: '❤️', heal: '🌿', regen: '💧' };
 const NO_EXTRA: ExtraAttemptInfo = { bought: 0, max: 0, nextCost: null };
@@ -347,7 +348,7 @@ export function SurvivalView({
           </div>
           <p className="footnote">
             🎮 엘리트 직접 전투로 입장하면 일반 스테이지는 자동으로 깨고, 보스 패턴이 붙는 엘리트와는 매 턴 행동(공격·방어 태세·강력한
-            일격·회복)을 직접 골라 싸워요. 보상과 규칙은 자동 진행과 같고, 회복은 엘리트와 엘리트 사이(한 구간)에 한 번만 쓸 수 있어요.
+            일격·회복·계열 기술)을 직접 골라 싸워요. 보상과 규칙은 자동 진행과 같고, 회복은 엘리트와 엘리트 사이(한 구간)에 한 번만 쓸 수 있어요.
           </p>
           {attemptsLeft <= 0 && extra.nextCost !== null && (
             <button
@@ -447,8 +448,8 @@ export function SurvivalView({
                 {visibleLog.map((turn, i) => (
                   <div key={i}>
                     <div className={`battle-log-row ${turn.attacker}`}>
-                      <span>{turn.attacker === 'me' ? '내 공격' : '적 공격'}</span>
-                      <span>-{formatNumber(turn.damage)}</span>
+                      <span>{battleLogLabel(turn, '적 공격')}</span>
+                      <span>{battleLogValue(turn)}</span>
                       <span>남은 HP {formatNumber(turn.remainingHp)}</span>
                     </div>
                     {turn.note && <div className="battle-log-note">{turn.note}</div>}

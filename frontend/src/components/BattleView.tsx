@@ -37,6 +37,7 @@ import { FamilyBadge } from './FamilyBadge';
 import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
+import { battleLogLabel, battleLogValue } from '../utils/battleLog';
 
 type Mode = 'wild' | 'train';
 
@@ -360,7 +361,7 @@ export function BattleView({
             )}
           </div>
           <p className="footnote">
-            🎮 직접 전투는 매 턴 행동(공격·방어 태세·강력한 일격·회복)을 직접 골라요. 보상은 자동 전투와 똑같고, 공격만 고르면 자동 전투와
+            🎮 직접 전투는 매 턴 행동(공격·방어 태세·강력한 일격·회복·계열 기술)을 직접 골라요. 보상은 자동 전투와 똑같고, 공격만 고르면 자동 전투와
             같은 결과가 나와요. 일격과 회복을 어느 타이밍에 쓰느냐가 승부를 갈라요.
           </p>
         </>
@@ -403,8 +404,8 @@ export function BattleView({
           <div className="battle-log" ref={logRef}>
             {visibleLog.map((turn, i) => (
               <div key={i} className={`battle-log-row ${turn.attacker}`}>
-                <span>{turn.attacker === 'me' ? (turn.damage === 0 && turn.note ? '내 행동' : '내 공격') : '상대 공격'}</span>
-                <span>{turn.attacker === 'me' && turn.damage === 0 && turn.note ? '—' : `-${formatNumber(turn.damage)}`}</span>
+                <span>{battleLogLabel(turn, '상대 공격')}</span>
+                <span>{battleLogValue(turn)}</span>
                 <span>남은 HP {formatNumber(turn.remainingHp)}</span>
               </div>
             ))}

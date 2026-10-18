@@ -828,14 +828,83 @@ export function simulateBossBattle(
 // 자동 전투와 같은 능력치·패턴·보상으로, 매 턴 플레이어가 행동을 고른다. 서버가 전투 상태를 들고 한 턴씩 진행하고,
 // '공격'만 계속 고르면 자동 전투(simulateBossBattle)와 같은 규칙이다. 보스 패턴 중 강타·웅크리기는 턴 번호로 정해져서
 // 그 턴이 오기 전에 미리 예고해 줄 수 있고, 플레이어는 예고를 보고 방어하거나 힘을 모아 대응한다.
-export type DuelAction = 'attack' | 'guard' | 'strike' | 'heal';
-export const DUEL_ACTIONS: readonly DuelAction[] = ['attack', 'guard', 'strike', 'heal'];
+export type DuelAction = 'attack' | 'guard' | 'strike' | 'heal' | 'skill';
+export const DUEL_ACTIONS: readonly DuelAction[] = ['attack', 'guard', 'strike', 'heal', 'skill'];
 export const DUEL_GUARD_TAKEN_MULT = 0.5; // 방어 태세를 취한 턴에 받는 피해
 export const DUEL_CHARGE_MULT = 1.5; // 방어로 모은 힘: 다음 공격(강력한 일격 포함)의 피해 배율
 export const DUEL_STRIKE_MULT = 1.5; // 강력한 일격의 피해 배율
 export const DUEL_STRIKE_COOLDOWN = 3; // 쓴 뒤 3으로 시작해 턴이 끝날 때마다 1씩 줄고, 0이 되면 다시 쓴다(2턴 쉰다)
 export const DUEL_STRIKE_RECKLESS_MULT = 1.4; // 강력한 일격을 쓴 턴에 받는 피해(무리한 공격)
 export const DUEL_HEAL_RATIO = 0.2; // 회복: 최대 HP의 20%, 한 전투에 한 번
+
+// ---- 계열 기술 ----
+// 내 식구의 계열마다 직접 전투에서만 쓸 수 있는 기술이 하나 있다(자동 전투·투기장에는 없다). 기술은 약한 공격(피해 배율 hit)을 하면서
+// 계열마다 다른 효과를 건다. 쓰고 나면 cooldown턴이 지나야 다시 쓸 수 있다(쓴 턴 포함, 일격과 같은 방식). 희귀도가 높을수록 효과가 세다.
+//   불꽃 '불길'      상대에게 화상 DUEL_SKILL_BURN_TURNS턴: 매 턴이 끝날 때 내 평균 공격 피해 × burnRate가 들어간다.
+//   숲   '뿌리 감기' 상대를 DUEL_SKILL_ROOT_TURNS턴 동안 속박: 상대의 공격력이 rootCut만큼 줄어든다(이번 턴 상대 행동부터).
+//   서리 '빙결'      이번 턴 상대가 아무것도 하지 못한다(공격·재생·분노 모두 건너뛴다).
+// 수치는 시뮬레이션으로 맞췄다(자동 전투 승률이 50%인 조건에서 기술 없이 숙련된 직접 전투가 +15%p일 때, 기술을 잘 쓰면 +7~10%p 더,
+// 무작위로 고르면 ±3%p 안). 세 계열의 세기가 비슷하도록 서리는 쉬는 시간이 가장 길다. 값을 바꾸면 scratchpad/sim-skill.js로 다시 확인한다.
+export const DUEL_SKILL_COOLDOWN: Record<SpeciesFamily, number> = { fire: 4, forest: 5, frost: 7 };
+export const DUEL_SKILL_HIT_MULT: Record<SpeciesFamily, readonly number[]> = {
+  fire: [0.5, 0.5, 0.5, 0.5, 0.5],
+  forest: [0.5, 0.5, 0.5, 0.5, 0.5],
+  frost: [0.4, 0.45, 0.5, 0.55, 0.6], // 서리는 효과가 고정이라 희귀도가 높을수록 공격이 강해진다
+};
+export const DUEL_SKILL_BURN_TURNS = 3;
+export const DUEL_SKILL_BURN_RATE: readonly number[] = [0.3, 0.33, 0.36, 0.4, 0.45];
+export const DUEL_SKILL_ROOT_TURNS = 3;
+export const DUEL_SKILL_ROOT_CUT: readonly number[] = [0.18, 0.2, 0.22, 0.25, 0.28];
+
+export interface DuelSkillContext {
+  family: SpeciesFamily;
+  rarity: number; // 내 식구의 희귀도(0~4)
+}
+
+export interface DuelSkillInfo {
+  id: 'skill';
+  family: SpeciesFamily;
+  name: string;
+  description: string;
+  cooldown: number;
+}
+
+const SKILL_ICON: Record<SpeciesFamily, string> = { fire: '🔥', forest: '🌿', frost: '❄️' };
+
+const clampRarity = (rarity: number) => Math.max(0, Math.min(4, Math.round(rarity) || 0));
+
+export function getDuelSkillInfo(skill: DuelSkillContext): DuelSkillInfo {
+  const r = clampRarity(skill.rarity);
+  const cooldown = DUEL_SKILL_COOLDOWN[skill.family];
+  const hit = Math.round(DUEL_SKILL_HIT_MULT[skill.family][r] * 100);
+  const rest = `피해 ${hit}%의 공격을 하면서`;
+  const wait = ` 쓰고 나면 ${cooldown - 1}턴 쉬어야 해요.`;
+  if (skill.family === 'fire') {
+    return {
+      id: 'skill',
+      family: 'fire',
+      name: '불길',
+      description: `${rest} 상대에게 화상을 걸어요. ${DUEL_SKILL_BURN_TURNS}턴 동안 턴이 끝날 때마다 피해가 들어가요(평범한 공격 한 번의 ${Math.round(DUEL_SKILL_BURN_RATE[r] * 100)}%).${wait}`,
+      cooldown,
+    };
+  }
+  if (skill.family === 'forest') {
+    return {
+      id: 'skill',
+      family: 'forest',
+      name: '뿌리 감기',
+      description: `${rest} 상대를 뿌리로 묶어요. ${DUEL_SKILL_ROOT_TURNS}턴 동안 상대의 공격력이 ${Math.round(DUEL_SKILL_ROOT_CUT[r] * 100)}% 줄어요.${wait}`,
+      cooldown,
+    };
+  }
+  return {
+    id: 'skill',
+    family: 'frost',
+    name: '빙결',
+    description: `${rest} 상대를 얼려요. 이번 턴 상대는 아무것도 하지 못해요(보스의 강타 턴에 쓰면 막을 수 있어요).${wait}`,
+    cooldown,
+  };
+}
 
 export interface DuelActionInfo {
   id: DuelAction;
@@ -859,6 +928,11 @@ export const DUEL_ACTION_INFO: readonly DuelActionInfo[] = [
     name: '회복',
     description: `이번 턴 공격을 쉬고 최대 HP의 ${Math.round(DUEL_HEAL_RATIO * 100)}%를 회복해요. 한 전투에 한 번만 쓸 수 있어요.`,
   },
+  {
+    id: 'skill',
+    name: '계열 기술',
+    description: '내 식구의 계열에 따라 불꽃은 불길(화상), 숲은 뿌리 감기(상대 약화), 서리는 빙결(상대 행동 봉쇄)을 써요. 직접 전투에서만 쓸 수 있어요.',
+  },
 ];
 
 export interface BossDuelState {
@@ -869,10 +943,25 @@ export interface BossDuelState {
   charged: boolean; // 방어로 힘을 모았는지(다음 공격이 강해진다)
   strikeCooldown: number; // 0이면 강력한 일격을 쓸 수 있다
   healUsed: boolean;
+  // 계열 기술: 0이면 쓸 수 있다 / 상대에게 걸린 화상·속박이 남은 턴. 기술이 생기기 전에 저장된 전투에는 없을 수 있다.
+  skillCooldown?: number;
+  burnTurns?: number;
+  rootTurns?: number;
 }
 
 export function newBossDuelState(mine: CombatStats, boss: CombatStats): BossDuelState {
-  return { turn: 1, myHp: mine.hp, bossHp: boss.hp, enraged: false, charged: false, strikeCooldown: 0, healUsed: false };
+  return {
+    turn: 1,
+    myHp: mine.hp,
+    bossHp: boss.hp,
+    enraged: false,
+    charged: false,
+    strikeCooldown: 0,
+    healUsed: false,
+    skillCooldown: 0,
+    burnTurns: 0,
+    rootTurns: 0,
+  };
 }
 
 // 이번 턴에 보스가 하려는 일. 패턴이 턴 번호로 정해지는 것만 미리 알 수 있다.
@@ -897,6 +986,9 @@ export function getDuelActionStates(state: BossDuelState): { id: DuelAction; ava
     if (id === 'heal' && state.healUsed) {
       return { id, available: false, reason: '이미 썼어요' };
     }
+    if (id === 'skill' && (state.skillCooldown ?? 0) > 0) {
+      return { id, available: false, reason: `${state.skillCooldown}턴 뒤에 쓸 수 있어요` };
+    }
     return { id, available: true };
   });
 }
@@ -916,14 +1008,32 @@ export function playDuelTurn(
   action: DuelAction,
   random: () => number = Math.random,
   // healCapHp: 회복의 기준이 되는 내 최대 HP. 처음 HP가 최대보다 낮은 채로 시작하는 전투(서바이벌)에서 쓴다. 기본은 mine.hp.
-  opts: { healCapHp?: number } = {},
+  // skill: 내 식구의 계열 기술(계열·희귀도). 없으면 기술 행동은 일반 공격으로 처리한다(서버는 고를 수 없는 상태로 막는다).
+  opts: { healCapHp?: number; skill?: DuelSkillContext } = {},
 ): DuelTurnResult {
   const has = (p: BossPattern) => patterns.includes(p);
   const turn = start.turn;
   let { myHp, bossHp, enraged, charged, strikeCooldown, healUsed } = start;
+  let skillCooldown = start.skillCooldown ?? 0;
+  let burnTurns = start.burnTurns ?? 0;
+  let rootTurns = start.rootTurns ?? 0;
+  const skill = opts.skill;
+  if (action === 'skill' && !skill) action = 'attack';
+  const rarity = skill ? clampRarity(skill.rarity) : 0;
   const turns: BattleTurn[] = [];
   const finish = (winner: 'me' | 'enemy' | null): DuelTurnResult => ({
-    state: { turn: turn + 1, myHp, bossHp, enraged, charged, strikeCooldown: Math.max(0, strikeCooldown - 1), healUsed },
+    state: {
+      turn: turn + 1,
+      myHp,
+      bossHp,
+      enraged,
+      charged,
+      strikeCooldown: Math.max(0, strikeCooldown - 1),
+      healUsed,
+      skillCooldown: Math.max(0, skillCooldown - 1),
+      burnTurns,
+      rootTurns,
+    },
     turns,
     winner,
   });
@@ -932,14 +1042,20 @@ export function playDuelTurn(
   const myNotes: string[] = [];
   let braced = false; // 방어 태세
   let reckless = false; // 강력한 일격
+  let frozen = false; // 빙결로 이번 턴 상대가 행동하지 못한다
   const myTurn: BattleTurn = { turn, attacker: 'me', damage: 0, remainingHp: bossHp };
-  if (action === 'attack' || action === 'strike') {
+  if (action === 'attack' || action === 'strike' || action === 'skill') {
     let toBoss = rollDamage(mine.atk, boss.def, random);
     if (action === 'strike') {
       toBoss = Math.round(toBoss * DUEL_STRIKE_MULT);
       strikeCooldown = DUEL_STRIKE_COOLDOWN;
       reckless = true;
       myNotes.push('💥 강력한 일격!');
+    }
+    if (action === 'skill' && skill) {
+      toBoss = Math.max(1, Math.round(toBoss * DUEL_SKILL_HIT_MULT[skill.family][rarity]));
+      skillCooldown = DUEL_SKILL_COOLDOWN[skill.family];
+      myNotes.push(`${SKILL_ICON[skill.family]} ${getDuelSkillInfo(skill).name}!`);
     }
     if (charged) {
       toBoss = Math.round(toBoss * DUEL_CHARGE_MULT);
@@ -964,6 +1080,18 @@ export function playDuelTurn(
       myTurn.myHp = myHp;
       myNotes.push(`🌵 가시갑옷! ${reflected} 반사`);
     }
+    if (action === 'skill' && skill) {
+      if (skill.family === 'fire') {
+        burnTurns = DUEL_SKILL_BURN_TURNS;
+        myNotes.push('🔥 상대에게 불이 붙었어요');
+      } else if (skill.family === 'forest') {
+        rootTurns = DUEL_SKILL_ROOT_TURNS;
+        myNotes.push('🌿 상대가 뿌리에 묶였어요');
+      } else {
+        frozen = true;
+        myNotes.push('❄️ 상대가 얼어붙었어요');
+      }
+    }
   } else if (action === 'guard') {
     braced = true;
     charged = true;
@@ -981,30 +1109,41 @@ export function playDuelTurn(
   if (myHp <= 0) return finish('enemy');
 
   // ---- 보스 행동 ---- (자동 전투와 같은 순서: 재생 → 분노 → 공격)
+  // 빙결로 얼어붙은 턴에는 아무것도 하지 못한다. 속박(뿌리 감기) 중에는 공격력이 줄어든다.
   const bossNotes: string[] = [];
   let healedHp: number | undefined;
-  if (has('regen') && bossHp < boss.hp) {
-    const heal = Math.max(1, Math.round(boss.hp * BOSS_REGEN_RATIO));
-    bossHp = Math.min(boss.hp, bossHp + heal);
-    healedHp = bossHp;
-    bossNotes.push(`💚 재생! +${heal}`);
-  }
-  if (has('enrage') && !enraged && bossHp <= boss.hp * BOSS_ENRAGE_HP_RATIO) {
-    enraged = true;
-    bossNotes.push('🔥 분노! 공격력이 올라갔어요');
-  }
-  let toMe = rollDamage(enraged ? boss.atk * BOSS_ENRAGE_ATK_MULT : boss.atk, mine.def, random);
-  if (has('heavy') && turn % BOSS_HEAVY_EVERY === 0) {
-    toMe = Math.round(toMe * BOSS_HEAVY_MULT);
-    bossNotes.push('💥 강타!');
-  }
-  if (braced) {
-    toMe = Math.max(1, Math.round(toMe * DUEL_GUARD_TAKEN_MULT));
-    bossNotes.push('🛡️ 방어 태세로 피해가 줄었어요');
-  }
-  if (reckless) {
-    toMe = Math.round(toMe * DUEL_STRIKE_RECKLESS_MULT);
-    bossNotes.push('⚠️ 무리한 공격이라 더 아프게 맞았어요');
+  let toMe = 0;
+  if (frozen) {
+    bossNotes.push('❄️ 얼어붙어서 아무것도 하지 못했어요');
+  } else {
+    if (has('regen') && bossHp < boss.hp) {
+      const heal = Math.max(1, Math.round(boss.hp * BOSS_REGEN_RATIO));
+      bossHp = Math.min(boss.hp, bossHp + heal);
+      healedHp = bossHp;
+      bossNotes.push(`💚 재생! +${heal}`);
+    }
+    if (has('enrage') && !enraged && bossHp <= boss.hp * BOSS_ENRAGE_HP_RATIO) {
+      enraged = true;
+      bossNotes.push('🔥 분노! 공격력이 올라갔어요');
+    }
+    let bossAtk = enraged ? boss.atk * BOSS_ENRAGE_ATK_MULT : boss.atk;
+    if (rootTurns > 0) {
+      bossAtk *= 1 - DUEL_SKILL_ROOT_CUT[rarity];
+      bossNotes.push('🌿 뿌리에 묶여 공격이 약해졌어요');
+    }
+    toMe = rollDamage(bossAtk, mine.def, random);
+    if (has('heavy') && turn % BOSS_HEAVY_EVERY === 0) {
+      toMe = Math.round(toMe * BOSS_HEAVY_MULT);
+      bossNotes.push('💥 강타!');
+    }
+    if (braced) {
+      toMe = Math.max(1, Math.round(toMe * DUEL_GUARD_TAKEN_MULT));
+      bossNotes.push('🛡️ 방어 태세로 피해가 줄었어요');
+    }
+    if (reckless) {
+      toMe = Math.round(toMe * DUEL_STRIKE_RECKLESS_MULT);
+      bossNotes.push('⚠️ 무리한 공격이라 더 아프게 맞았어요');
+    }
   }
   myHp = Math.max(0, myHp - toMe);
   const bossTurn: BattleTurn = { turn, attacker: 'enemy', damage: toMe, remainingHp: myHp };
@@ -1012,6 +1151,23 @@ export function playDuelTurn(
   if (bossNotes.length) bossTurn.note = bossNotes.join(' · ');
   turns.push(bossTurn);
   if (myHp <= 0) return finish('enemy');
+
+  // ---- 턴이 끝날 때 ---- 화상 피해(내 평균 공격 피해 × 비율)를 입히고, 속박 턴을 줄인다.
+  if (burnTurns > 0) {
+    const meanHit = rollDamage(mine.atk, boss.def, () => 0.5);
+    const tick = Math.max(1, Math.round(meanHit * DUEL_SKILL_BURN_RATE[rarity]));
+    bossHp = Math.max(0, bossHp - tick);
+    burnTurns--;
+    turns.push({
+      turn,
+      attacker: 'me',
+      damage: tick,
+      remainingHp: bossHp,
+      note: `🔥 화상! ${burnTurns > 0 ? `${burnTurns}턴 더 타요` : '불이 꺼졌어요'}`,
+    });
+    if (bossHp <= 0) return finish('me');
+  }
+  if (rootTurns > 0) rootTurns--;
 
   // 턴 수를 모두 쓰면 남은 체력 "비율"로 판정한다(자동 전투와 같다).
   if (turn >= BATTLE_MAX_TURNS) return finish(myHp / mine.hp >= bossHp / boss.hp ? 'me' : 'enemy');
@@ -1592,7 +1748,12 @@ export interface AchievementProgressInput {
     | 'highestBossFloor'
     | 'bossWins'
     | 'bestPvpWinStreak'
-    | 'highestSurvivalStage';
+    | 'highestSurvivalStage'
+    | 'decorOwned'
+    | 'epicDecor'
+    | 'decorFilled'
+    | 'likesReceived'
+    | 'likesGiven';
   target?: number;
   rarity?: number;
 }
@@ -1603,6 +1764,10 @@ export interface AchievementSubject {
   friendsCount: number;
   nicknamesCount: number;
   equipment: EquipmentSummary;
+  // 꾸미기 장식 요약과 사육장 좋아요 수(받은 것·준 것). 값이 없는 호출은 0으로 본다.
+  decor?: { owned: number; epic: number; bestFilled: number };
+  likesReceived?: number;
+  likesGiven?: number;
   stats: {
     births: number;
     sold: number;
@@ -1680,6 +1845,16 @@ export function getAchievementProgress(
       return { progress: subject.stats[achievement.statKey], target };
     case 'highestSurvivalStage':
       return { progress: subject.stats.highestSurvivalStage ?? 0, target };
+    case 'decorOwned':
+      return { progress: subject.decor?.owned ?? 0, target };
+    case 'epicDecor':
+      return { progress: subject.decor?.epic ?? 0, target };
+    case 'decorFilled':
+      return { progress: subject.decor?.bestFilled ?? 0, target };
+    case 'likesReceived':
+      return { progress: subject.likesReceived ?? 0, target };
+    case 'likesGiven':
+      return { progress: subject.likesGiven ?? 0, target };
     default:
       return { progress: 0, target };
   }

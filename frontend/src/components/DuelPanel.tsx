@@ -1,10 +1,13 @@
 import { Fragment, useEffect, useRef } from 'react';
 import type { DuelActionId, DuelCoreView } from '../api/types';
+import { battleLogLabel, battleLogValue } from '../utils/battleLog';
+import { FAMILY_LABELS } from '../utils/decor';
 import { formatNumber } from '../utils/gameCalc';
 import { BattleRulesBanner } from './BattleRulesBanner';
 import { FighterCard } from './FighterCard';
 
-const ACTION_ICONS: Record<DuelActionId, string> = { attack: '⚔️', guard: '🛡️', strike: '💥', heal: '🌿' };
+// 계열 기술(skill)의 아이콘은 내 식구의 계열을 따른다(🔥/🌿/❄️).
+const ACTION_ICONS: Record<Exclude<DuelActionId, 'skill'>, string> = { attack: '⚔️', guard: '🛡️', strike: '💥', heal: '💚' };
 
 // 진행 중인 직접 전투 화면(보스 타워·야생 배틀·서바이벌 엘리트가 같이 쓴다). 서버가 보낸 상태·예고·행동 목록을 그대로 보여주고,
 // 고른 행동을 돌려준다. onForfeit을 주지 않으면 포기 버튼은 없다(서바이벌은 런 화면의 '여기서 마치기'를 쓴다).
@@ -65,7 +68,10 @@ export function DuelPanel({
         {state.charged && <span className="mail-chip">⚡ 힘을 모았어요 (다음 공격 강화)</span>}
         {state.enraged && <span className="mail-chip duel-danger">🔥 상대 분노 중</span>}
         {state.strikeCooldown > 0 && <span className="mail-chip">💥 일격 {state.strikeCooldown}턴 뒤</span>}
-        {state.healUsed && <span className="mail-chip">🌿 회복 사용함</span>}
+        {state.healUsed && <span className="mail-chip">💚 회복 사용함</span>}
+        {(state.skillCooldown ?? 0) > 0 && <span className="mail-chip">✨ 기술 {state.skillCooldown}턴 뒤</span>}
+        {(state.burnTurns ?? 0) > 0 && <span className="mail-chip">🔥 상대 화상 {state.burnTurns}턴</span>}
+        {(state.rootTurns ?? 0) > 0 && <span className="mail-chip">🌿 상대 속박 {state.rootTurns}턴</span>}
         {patternNames && <span className="mail-chip">패턴: {patternNames}</span>}
       </div>
 
@@ -85,7 +91,7 @@ export function DuelPanel({
             onClick={() => onAct(a.id)}
           >
             <strong>
-              {ACTION_ICONS[a.id]} {a.name}
+              {a.id === 'skill' ? FAMILY_LABELS[a.family ?? duel.mine.family ?? 'forest'].icon : ACTION_ICONS[a.id]} {a.name}
             </strong>
             <small>{a.available ? a.description : (a.reason ?? '지금은 쓸 수 없어요')}</small>
           </button>
@@ -98,9 +104,9 @@ export function DuelPanel({
           <Fragment key={i}>
             <div className={`battle-log-row ${turn.attacker}`}>
               <span>
-                {turn.turn}턴 · {turn.attacker === 'me' ? (turn.damage === 0 ? '내 행동' : '내 공격') : enemyAttackLabel}
+                {turn.turn}턴 · {battleLogLabel(turn, enemyAttackLabel)}
               </span>
-              <span>{turn.attacker === 'me' && turn.damage === 0 ? '—' : `-${formatNumber(turn.damage)}`}</span>
+              <span>{battleLogValue(turn)}</span>
               <span>남은 HP {formatNumber(turn.remainingHp)}</span>
             </div>
             {turn.note && <div className="battle-log-note">{turn.note}</div>}

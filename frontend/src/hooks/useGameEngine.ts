@@ -11,6 +11,7 @@ import type {
   GameState,
   LeaderboardResult,
   MailSummary,
+  VisitSummary,
   NotificationPrefs,
   Quest,
   Species,
@@ -47,7 +48,7 @@ export function useGameEngine(userKey: string | null) {
   // 친구 채팅의 안 읽은 메시지 수(친구별·전체). 사이드바 배지와 친구 목록에 쓴다.
   const [friendChatUnread, setFriendChatUnread] = useState<FriendChatUnread>({ total: 0, byFriend: {} });
   // 알림 종류별 켜기/끄기. 꺼 둔 종류는 화면 안의 알림(토스트)도 띄우지 않는다(서버는 푸시 알림도 같은 설정으로 거른다).
-  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({ friendChat: true, mail: true });
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({ friendChat: true, mail: true, terrariumLike: true });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToastState] = useState<ToastState | null>(null);
@@ -148,6 +149,31 @@ export function useGameEngine(userKey: string | null) {
     const id = setInterval(() => void refreshMailSummary(), 60_000);
     return () => clearInterval(id);
   }, [userKey, refreshMailSummary]);
+
+  // 사육장 좋아요 수(내가 받은 것·내가 누른 것). 업적 진행도에 쓰고, 받은 수가 늘면 알린다. 1분마다 새로 확인한다.
+  const [likeCounts, setLikeCounts] = useState<VisitSummary>({ received: 0, given: 0 });
+  const lastLikesReceivedRef = useRef<number | null>(null);
+  const refreshLikeCounts = useCallback(async () => {
+    try {
+      const summary = await api.getVisitSummary();
+      setLikeCounts(summary);
+      // 처음 불러올 때는 알리지 않고, 그 뒤로 받은 좋아요가 늘어났을 때만 알린다.
+      const before = lastLikesReceivedRef.current;
+      if (prefsRef.current.terrariumLike && before !== null && summary.received > before) {
+        showToast(`❤️ 누군가 내 사육장을 좋아해요! (+${summary.received - before})`);
+      }
+      lastLikesReceivedRef.current = summary.received;
+    } catch {
+      // 다음 주기에 다시 시도한다.
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!userKey) return;
+    Promise.resolve().then(() => refreshLikeCounts());
+    const id = setInterval(() => void refreshLikeCounts(), 60_000);
+    return () => clearInterval(id);
+  }, [userKey, refreshLikeCounts]);
 
   const lastFriendUnreadRef = useRef<number | null>(null);
   const refreshFriendChatUnread = useCallback(async () => {
@@ -287,6 +313,8 @@ export function useGameEngine(userKey: string | null) {
     bossLeaderboard,
     survivalLeaderboard,
     friendsCount,
+    likeCounts,
+    refreshLikeCounts,
     mailSummary,
     refreshMailSummary,
     friendChatUnread,

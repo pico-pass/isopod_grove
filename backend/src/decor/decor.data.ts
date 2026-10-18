@@ -114,6 +114,30 @@ export function normalizeDecorProps(raw: readonly string[] | null | undefined): 
   return out;
 }
 
+// 업적용 요약: 가진 장식 수, 그중 에픽 수, 한 사육장에 가장 많이 채운 칸 수(배경 1 + 소품 4 = 최대 5).
+// 가진 장식은 줄지 않고 칸 수는 "한 번이라도 달성" 조건으로 쓴다. 프론트(utils/decor.ts)에도 같은 함수가 있다.
+export interface DecorSummary {
+  owned: number;
+  epic: number;
+  bestFilled: number;
+}
+
+export function summarizeDecor(
+  ownedIds: readonly string[] | null | undefined,
+  terrariums: readonly { decorBackdrop?: string | null; decorProps?: readonly string[] | null }[] | null | undefined,
+): DecorSummary {
+  const owned = new Set((ownedIds ?? []).filter((id) => DECOR_BY_ID.has(id)));
+  let epic = 0;
+  for (const id of owned) if (DECOR_BY_ID.get(id)?.tier === 2) epic++;
+  let bestFilled = 0;
+  for (const t of terrariums ?? []) {
+    const backdrop = t.decorBackdrop ? findDecor(t.decorBackdrop) : undefined;
+    const filled = (backdrop?.kind === 'backdrop' ? 1 : 0) + normalizeDecorProps(t.decorProps).filter((id) => id !== '').length;
+    bestFilled = Math.max(bestFilled, filled);
+  }
+  return { owned: owned.size, epic, bestFilled };
+}
+
 // 이 사육장의 장식이 같은 계열 종에게 주는 번식 속도 증가(%). 배경과 소품의 보너스를 더한다.
 export function getDecorBreedBonusPercent(
   backdropId: string | null | undefined,

@@ -71,6 +71,7 @@ import type {
   TrainResponse,
   Upgrade,
   VisitResult,
+  VisitSummary,
 } from './types';
 import { authStorage } from '../auth/authStorage';
 
@@ -152,6 +153,7 @@ export const api = {
   setTerrariumPublic: (isPublic: boolean) => post<ActionResult>('/game-state/decor/public', { isPublic }),
   getVisit: (userId: string) => request<VisitResult>(`/visit/${userId}`),
   getRandomVisit: () => request<{ userId: string }>('/visit/random'),
+  getVisitSummary: () => request<VisitSummary>('/visit/summary'),
   setTerrariumLike: (ownerId: string, terrariumId: string, liked: boolean) =>
     post<{ liked: boolean; likes: number }>(`/visit/${ownerId}/like`, { terrariumId, liked }),
   getBossCatalog: () => request<BossCatalog>('/boss'),

@@ -39,4 +39,8 @@ export class UpdateNotificationPrefsDto {
   @IsOptional()
   @IsBoolean()
   mail?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  terrariumLike?: boolean;
 }

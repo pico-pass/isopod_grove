@@ -18,6 +18,7 @@ export function VisitView({
   decorCatalog,
   onVisit,
   onOpenProfile,
+  onLikeChanged,
   showToast,
 }: {
   targetUserId: string | null;
@@ -25,6 +26,7 @@ export function VisitView({
   decorCatalog: DecorItem[];
   onVisit: (userId: string | null) => void;
   onOpenProfile: (userId: string) => void;
+  onLikeChanged?: () => void; // 좋아요를 누르거나 취소했을 때(업적 진행도의 '준 좋아요' 수를 새로 읽는다)
   showToast: (message: string, isError?: boolean) => void;
 }) {
   const [data, setData] = useState<VisitResult | null>(null);
@@ -114,6 +116,7 @@ export function VisitView({
         const terrariums = prev.terrariums.map((x) => (x.terrariumId === t.terrariumId ? { ...x, likedByMe: r.liked, likes: r.likes } : x));
         return { ...prev, terrariums, totalLikes: terrariums.reduce((sum, x) => sum + x.likes, 0) };
       });
+      onLikeChanged?.();
     } catch (e) {
       showToast(e instanceof Error ? e.message : '좋아요를 처리하지 못했어요.', true);
     } finally {

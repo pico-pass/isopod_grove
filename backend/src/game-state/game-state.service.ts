@@ -18,6 +18,7 @@ import {
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { PuzzleRecord, PuzzleRecordDocument } from './schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordDocument } from './schemas/runner-record.schema';
+import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import {
   RUNNER_ABILITIES_BY_RARITY,
   RUNNER_AIR_JUMP_PERCENT,
@@ -59,6 +60,7 @@ import type {
   BossPattern,
   CombatStats,
   DuelAction,
+  DuelSkillContext,
   SurvivalBuffId,
   SurvivalSegmentStatus,
   SurvivalStageResult,
@@ -66,12 +68,13 @@ import type {
 } from './game-engine';
 import type { Species } from '../species/schemas/species.schema';
 import { SpeciesService } from '../species/species.service';
-import { resolveFamily } from '../species/species.family';
+import { DEFAULT_FAMILY, resolveFamily } from '../species/species.family';
 import {
   DECOR_PROP_SLOTS,
   findDecor,
   getDecorBreedFactors,
   normalizeDecorProps,
+  summarizeDecor,
   type DecorKind,
 } from '../decor/decor.data';
 import type { SpeciesFamily } from '../species/species.family';
@@ -168,6 +171,7 @@ import {
   applySurvivalBuff,
   applyStatBonuses,
   getDuelActionStates,
+  getDuelSkillInfo,
   getDuelIntent,
   playDuelTurn,
   canBreedInEnvironment,
@@ -277,6 +281,9 @@ export class GameStateService {
     // 콩 달리기 기록 전용(역시 끝자리).
     @InjectModel(RunnerRecord.name)
     private runnerRecordModel?: Model<RunnerRecordDocument>,
+    // 사육장 좋아요 업적(받은·준 좋아요 수) 조회 전용(역시 끝자리).
+    @InjectModel(TerrariumLike.name)
+    private terrariumLikeModel?: Model<TerrariumLikeDocument>,
   ) {}
 
   // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
@@ -301,6 +308,18 @@ export class GameStateService {
       status: 'accepted',
       $or: [{ requesterId: me }, { recipientId: me }],
     });
+  }
+
+  // 사육장 좋아요 업적용: 내 사육장이 지금 받고 있는 좋아요 수와 내가 지금 누르고 있는 좋아요 수.
+  // 취소하면 줄어들기 때문에, 취소했다 다시 눌러도 늘지 않는다.
+  private async countLikes(userId: string): Promise<{ received: number; given: number }> {
+    if (!this.terrariumLikeModel || !Types.ObjectId.isValid(userId)) return { received: 0, given: 0 };
+    const me = new Types.ObjectId(userId);
+    const [received, given] = await Promise.all([
+      this.terrariumLikeModel.countDocuments({ ownerId: me }),
+      this.terrariumLikeModel.countDocuments({ likerId: me }),
+    ]);
+    return { received, given };
   }
 
   // 경험치는 항상 이 메서드를 통해서만 더한다. 레벨이 오르면 다이아를 지급한다.
@@ -910,6 +929,9 @@ export class GameStateService {
       charged: duel.charged,
       strikeCooldown: duel.strikeCooldown,
       healUsed: duel.healUsed,
+      skillCooldown: duel.skillCooldown ?? 0,
+      burnTurns: duel.burnTurns ?? 0,
+      rootTurns: duel.rootTurns ?? 0,
     };
   }
 
@@ -991,6 +1013,9 @@ export class GameStateService {
         charged: false,
         strikeCooldown: 0,
         healUsed: false,
+        skillCooldown: 0,
+        burnTurns: 0,
+        rootTurns: 0,
         log: [],
         startedAt: Date.now(),
       };
@@ -1025,7 +1050,9 @@ export class GameStateService {
         throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
       }
 
-      const r = playDuelTurn(ctx.mine, ctx.enemy, [], state, action as DuelAction);
+      const r = playDuelTurn(ctx.mine, ctx.enemy, [], state, action as DuelAction, Math.random, {
+        skill: this.duelSkillOf(ctx.mySpecies),
+      });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       if (r.winner) {
         const result = await this.concludeWildBattle(gameState, ctx, r.winner === 'me', log);
@@ -1037,6 +1064,9 @@ export class GameStateService {
       duel.charged = r.state.charged;
       duel.strikeCooldown = r.state.strikeCooldown;
       duel.healUsed = r.state.healUsed;
+      duel.skillCooldown = r.state.skillCooldown ?? 0;
+      duel.burnTurns = r.state.burnTurns ?? 0;
+      duel.rootTurns = r.state.rootTurns ?? 0;
       duel.log = log as unknown as Record<string, unknown>[];
       await gameState.save();
       return {
@@ -1737,6 +1767,9 @@ export class GameStateService {
       charged: duel.charged,
       strikeCooldown: duel.strikeCooldown,
       healUsed: duel.healUsed,
+      skillCooldown: duel.skillCooldown ?? 0,
+      burnTurns: duel.burnTurns ?? 0,
+      rootTurns: duel.rootTurns ?? 0,
     };
   }
 
@@ -1765,6 +1798,11 @@ export class GameStateService {
     };
   }
 
+  // 내 식구의 계열 기술(직접 전투 행동). 계열은 종의 계열, 위력은 희귀도로 정해진다.
+  private duelSkillOf(species: { speciesId: string; family?: string; rarity: number }): DuelSkillContext {
+    return { family: resolveFamily(species), rarity: species.rarity };
+  }
+
   // 직접 전투 화면에 공통으로 필요한 부분(양쪽 정보, 상태, 예고, 행동 목록, 기록). 보스·야생·서바이벌이 같이 쓴다.
   // state.bossHp는 보스뿐 아니라 상대(야생 개체·엘리트)의 현재 HP를 뜻한다.
   private duelCoreView(
@@ -1788,9 +1826,16 @@ export class GameStateService {
         charged: state.charged,
         strikeCooldown: state.strikeCooldown,
         healUsed: state.healUsed,
+        skillCooldown: state.skillCooldown ?? 0,
+        burnTurns: state.burnTurns ?? 0,
+        rootTurns: state.rootTurns ?? 0,
       },
       intent: getDuelIntent(patterns, state.turn),
-      actions: DUEL_ACTION_INFO.map((info) => ({ ...info, ...states.find((a) => a.id === info.id)! })),
+      // 계열 기술의 이름·설명은 내 식구의 계열·희귀도에 따라 달라서 여기서 채운다
+      actions: DUEL_ACTION_INFO.map((info) => ({
+        ...(info.id === 'skill' ? getDuelSkillInfo({ family: mine.family ?? DEFAULT_FAMILY, rarity: mine.rarity }) : info),
+        ...states.find((a) => a.id === info.id)!,
+      })),
       log,
     };
   }
@@ -1861,6 +1906,9 @@ export class GameStateService {
         charged: false,
         strikeCooldown: 0,
         healUsed: false,
+        skillCooldown: 0,
+        burnTurns: 0,
+        rootTurns: 0,
         log: [],
         startedAt: Date.now(),
       };
@@ -1896,7 +1944,9 @@ export class GameStateService {
         throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
       }
 
-      const r = playDuelTurn(ctx.mine, ctx.bossStats, ctx.floor.patterns, state, action as DuelAction);
+      const r = playDuelTurn(ctx.mine, ctx.bossStats, ctx.floor.patterns, state, action as DuelAction, Math.random, {
+        skill: this.duelSkillOf(ctx.mySpecies),
+      });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       if (r.winner) {
         const result = await this.concludeBossBattle(gameState, ctx, r.winner === 'me', log);
@@ -1909,6 +1959,9 @@ export class GameStateService {
       duel.charged = r.state.charged;
       duel.strikeCooldown = r.state.strikeCooldown;
       duel.healUsed = r.state.healUsed;
+      duel.skillCooldown = r.state.skillCooldown ?? 0;
+      duel.burnTurns = r.state.burnTurns ?? 0;
+      duel.rootTurns = r.state.rootTurns ?? 0;
       duel.log = log as unknown as Record<string, unknown>[];
       await gameState.save();
       return {
@@ -2570,6 +2623,9 @@ export class GameStateService {
         charged: false,
         strikeCooldown: 0,
         healUsed: run.healUsed,
+        skillCooldown: 0,
+        burnTurns: 0,
+        rootTurns: 0,
         log: [],
       };
     }
@@ -2679,6 +2735,9 @@ export class GameStateService {
       charged: duel.charged,
       strikeCooldown: duel.strikeCooldown,
       healUsed: duel.healUsed,
+      skillCooldown: duel.skillCooldown ?? 0,
+      burnTurns: duel.burnTurns ?? 0,
+      rootTurns: duel.rootTurns ?? 0,
     };
   }
 
@@ -2768,6 +2827,7 @@ export class GameStateService {
 
       const r = playDuelTurn(mine, enemyStats, info.patterns, state, action as DuelAction, Math.random, {
         healCapHp: stats.maxHp,
+        skill: this.duelSkillOf(species),
       });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       const speciesList = await this.speciesService.findAll();
@@ -2781,6 +2841,9 @@ export class GameStateService {
         duel.charged = r.state.charged;
         duel.strikeCooldown = r.state.strikeCooldown;
         duel.healUsed = r.state.healUsed;
+        duel.skillCooldown = r.state.skillCooldown ?? 0;
+        duel.burnTurns = r.state.burnTurns ?? 0;
+        duel.rootTurns = r.state.rootTurns ?? 0;
         duel.log = log as unknown as Record<string, unknown>[];
         await gameState.save();
         const displayName = this.displayNameFor(gameState, run.speciesId, species.name);
@@ -3839,6 +3902,7 @@ export class GameStateService {
 
     const speciesList = await this.speciesService.findAll();
     const friendsCount = await this.countFriends(userId);
+    const likes = await this.countLikes(userId);
     const { progress, target } = getAchievementProgress(
       achievement,
       {
@@ -3847,6 +3911,9 @@ export class GameStateService {
         friendsCount,
         nicknamesCount: gameState.speciesNicknames.size,
         equipment: summarizeEquipment(gameState.equipment, gameState.equipmentSlots.length),
+        decor: summarizeDecor(gameState.decorOwned, gameState.terrariums),
+        likesReceived: likes.received,
+        likesGiven: likes.given,
         stats: gameState.stats,
       },
       speciesList,

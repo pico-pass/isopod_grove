@@ -4,6 +4,7 @@ import { PushToggle } from './PushToggle';
 const CATEGORIES: { key: keyof NotificationPrefs; icon: string; label: string; description: string }[] = [
   { key: 'friendChat', icon: '💬', label: '친구 메시지', description: '친구가 메시지를 보냈을 때' },
   { key: 'mail', icon: '📬', label: '우편', description: '운영자의 보상·공지 우편이 왔을 때' },
+  { key: 'terrariumLike', icon: '❤️', label: '사육장 좋아요', description: '다른 숲지기가 내 사육장을 좋아해 줬을 때' },
 ];
 
 // 알림 설정. 위쪽은 이 기기의 푸시 알림 켜기/끄기, 아래쪽은 알림 종류별 켜기/끄기(계정 전체에 적용)다.

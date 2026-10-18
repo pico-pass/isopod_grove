@@ -18,10 +18,11 @@ export function effectiveDisplayName(user: {
   return user.nickname || user.displayName;
 }
 
-export type NotificationCategory = 'friendChat' | 'mail';
+export type NotificationCategory = 'friendChat' | 'mail' | 'terrariumLike';
 export interface NotificationPrefsView {
   friendChat: boolean;
   mail: boolean;
+  terrariumLike: boolean;
 }
 
 // 채팅이 정지된 유저가 메시지를 보내려 할 때 보여주는 안내. 풀리는 시각(한국 시간)과 남은 시간을 알려준다.
@@ -133,6 +134,7 @@ export class UsersService {
     return {
       friendChat: user?.notificationPrefs?.friendChat ?? true,
       mail: user?.notificationPrefs?.mail ?? true,
+      terrariumLike: user?.notificationPrefs?.terrariumLike ?? true,
     };
   }
 
@@ -140,6 +142,7 @@ export class UsersService {
     const set: Record<string, boolean> = {};
     if (typeof patch.friendChat === 'boolean') set['notificationPrefs.friendChat'] = patch.friendChat;
     if (typeof patch.mail === 'boolean') set['notificationPrefs.mail'] = patch.mail;
+    if (typeof patch.terrariumLike === 'boolean') set['notificationPrefs.terrariumLike'] = patch.terrariumLike;
     if (Object.keys(set).length === 0) {
       throw new BadRequestException('변경할 알림 설정이 없어요.');
     }

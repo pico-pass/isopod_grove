@@ -11,6 +11,10 @@ export class NotificationPrefs {
 
   @Prop({ default: true })
   mail: boolean;
+
+  // 다른 유저가 내 사육장에 좋아요를 눌렀을 때
+  @Prop({ default: true })
+  terrariumLike: boolean;
 }
 export const NotificationPrefsSchema = SchemaFactory.createForClass(NotificationPrefs);
 

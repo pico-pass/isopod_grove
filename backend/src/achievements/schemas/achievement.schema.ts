@@ -9,6 +9,8 @@ export type AchievementType = 'stat' | 'collectionRarity' | 'collectionAll';
 // friendsCount는 친구 관계 수, nicknames는 지어준 콩벌레 별명 수를 그때그때 조회해서 쓴다.
 // equipment* 중 equipmentPulls만 누적 카운터이고, 나머지는 보유 장비에서 그때그때 계산한다
 // (장비는 사라지지 않고 레벨·각성·슬롯도 줄지 않아서 "한 번이라도 달성" 조건으로 안전하다).
+// decorOwned·epicDecor·decorFilled는 산 장식과 사육장 배치에서 그때그때 계산하고, likesReceived·likesGiven은
+// 사육장 좋아요 기록(terrarium_likes)에서 지금 남아 있는 개수를 센다(취소했다 다시 눌러도 늘지 않는다).
 // highestBossFloor는 보스 타워에서 깬 최고 층, bossWins는 보스 타워 승리 누적, bestPvpWinStreak는 투기장 최고 연승 기록
 // (모두 줄지 않는 값이라 "한 번이라도 달성" 조건으로 안전하다).
 export type AchievementStatKey =
@@ -35,7 +37,12 @@ export type AchievementStatKey =
   | 'highestBossFloor'
   | 'bossWins'
   | 'bestPvpWinStreak'
-  | 'highestSurvivalStage';
+  | 'highestSurvivalStage'
+  | 'decorOwned'
+  | 'epicDecor'
+  | 'decorFilled'
+  | 'likesReceived'
+  | 'likesGiven';
 
 @Schema({ collection: 'achievements' })
 export class Achievement {

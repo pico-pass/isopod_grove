@@ -38,6 +38,7 @@ import { FighterCard } from './FighterCard';
 import { DuelPanel } from './DuelPanel';
 import { SpeciesImage } from './SpeciesImage';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
+import { battleLogLabel, battleLogValue } from '../utils/battleLog';
 
 const DIFFICULTY_STORAGE_KEY = 'isopod-boss-difficulty';
 const FALLBACK_DIFFICULTIES: BossCatalog['difficulties'] = [{ id: 'easy', name: '쉬움', multiplier: 1 }];
@@ -492,10 +493,8 @@ export function BossView({
             {visibleLog.map((turn, i) => (
               <Fragment key={i}>
                 <div className={`battle-log-row ${turn.attacker}`}>
-                  <span>
-                    {turn.attacker === 'me' ? (turn.damage === 0 && turn.note ? '내 행동' : '내 공격') : result.isBoss ? '보스 공격' : '상대 공격'}
-                  </span>
-                  <span>{turn.attacker === 'me' && turn.damage === 0 && turn.note ? '—' : `-${formatNumber(turn.damage)}`}</span>
+                  <span>{battleLogLabel(turn, result.isBoss ? '보스 공격' : '상대 공격')}</span>
+                  <span>{battleLogValue(turn)}</span>
                   <span>남은 HP {formatNumber(turn.remainingHp)}</span>
                 </div>
                 {turn.note && <div className="battle-log-note">{turn.note}</div>}

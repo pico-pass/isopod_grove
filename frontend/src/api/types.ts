@@ -262,7 +262,12 @@ export type AchievementStatKey =
   | 'highestBossFloor'
   | 'bossWins'
   | 'bestPvpWinStreak'
-  | 'highestSurvivalStage';
+  | 'highestSurvivalStage'
+  | 'decorOwned'
+  | 'epicDecor'
+  | 'decorFilled'
+  | 'likesReceived'
+  | 'likesGiven';
 
 export interface Achievement {
   achievementId: string;
@@ -422,6 +427,13 @@ export interface ResolveReportResult {
 export interface NotificationPrefs {
   friendChat: boolean;
   mail: boolean;
+  terrariumLike: boolean;
+}
+
+// 내 사육장이 지금 받은 좋아요 수와 내가 지금 누르고 있는 좋아요 수(업적·새 좋아요 알림용)
+export interface VisitSummary {
+  received: number;
+  given: number;
 }
 
 export interface AdminChatReportList {
@@ -945,7 +957,7 @@ export interface BossBattleResponse {
 }
 
 // ---- 보스 직접 전투(매 턴 행동을 고르는 전투) ----
-export type DuelActionId = 'attack' | 'guard' | 'strike' | 'heal';
+export type DuelActionId = 'attack' | 'guard' | 'strike' | 'heal' | 'skill';
 
 export interface DuelActionView {
   id: DuelActionId;
@@ -953,6 +965,9 @@ export interface DuelActionView {
   description: string;
   available: boolean;
   reason?: string; // 지금 못 고르는 이유
+  // 계열 기술(id: 'skill')일 때만: 내 식구의 계열과 다시 쓸 수 있을 때까지의 턴 수
+  family?: SpeciesFamily;
+  cooldown?: number;
 }
 
 // 보스·야생·서바이벌 직접 전투가 같이 쓰는 화면 데이터. state.bossHp는 보스뿐 아니라 상대(야생 개체·엘리트)의 현재 HP다.
@@ -970,6 +985,10 @@ export interface DuelCoreView {
     charged: boolean;
     strikeCooldown: number;
     healUsed: boolean;
+    // 계열 기술: 다시 쓸 수 있을 때까지 남은 턴, 상대에게 걸린 화상(불꽃)·속박(숲)이 남은 턴. 예전 응답에는 없을 수 있다.
+    skillCooldown?: number;
+    burnTurns?: number;
+    rootTurns?: number;
   };
   // 이번 턴에 상대가 하려는 일(강타·웅크리기는 미리 알 수 있다)
   intent: { heavy: boolean; guard: boolean };

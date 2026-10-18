@@ -5,7 +5,7 @@ import { useGameEngine } from './hooks/useGameEngine';
 import { LoginView } from './components/LoginView';
 import { TopBar } from './components/TopBar';
 import { Sidebar, type ViewKey } from './components/Sidebar';
-import { NAVIGABLE_VIEWS } from './utils/views';
+import { resolveNavigationTarget, type NavigationTarget } from './utils/views';
 import { HabitatView } from './components/HabitatView';
 import { CollectionView } from './components/CollectionView';
 import { MarketView } from './components/MarketView';
@@ -40,14 +40,14 @@ import { releasePushOnLogout, syncPushSubscription } from './utils/push';
 import { hasUnseenChangelog, loadSeenChangelogDate, saveSeenChangelogDate } from './utils/changelog';
 import './App.css';
 
-// 푸시 알림을 눌러 열었을 때 주소 조각(#friends, #mail)으로 처음 보여줄 화면을 정한다.
-function initialViewFromHash(): ViewKey {
-  const key = window.location.hash.slice(1) as ViewKey;
-  if (NAVIGABLE_VIEWS.includes(key)) {
+// 푸시 알림을 눌러 열었을 때 주소 조각(#friends, #mail, #visit-me)으로 처음 보여줄 화면을 정한다.
+function initialNavigationFromHash(): NavigationTarget {
+  const target = resolveNavigationTarget(window.location.hash.slice(1));
+  if (target) {
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    return key;
+    return target;
   }
-  return 'habitat';
+  return { view: 'habitat', visitTarget: null };
 }
 
 function App() {
@@ -67,6 +67,8 @@ function App() {
     bossLeaderboard,
     survivalLeaderboard,
     friendsCount,
+    likeCounts,
+    refreshLikeCounts,
     mailSummary,
     refreshMailSummary,
     friendChatUnread,
@@ -83,12 +85,13 @@ function App() {
     showToast,
     runAction,
   } = useGameEngine(user?._id ?? null);
-  const [view, setView] = useState<ViewKey>(initialViewFromHash);
+  const [initialNav] = useState(initialNavigationFromHash);
+  const [view, setView] = useState<ViewKey>(initialNav.view);
   const [selectedTerrariumId, setSelectedTerrariumId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState<string | null>(null);
   // 사육장 방문 화면에서 구경 중인 유저(없으면 인기 사육장 목록)
-  const [visitTarget, setVisitTarget] = useState<string | null>(null);
+  const [visitTarget, setVisitTarget] = useState<string | null>(initialNav.visitTarget);
   const openVisit = useCallback((userId: string | null) => {
     setVisitTarget(userId);
     if (userId) {
@@ -107,8 +110,10 @@ function App() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
     const onMessage = (e: MessageEvent<{ type?: string; view?: string }>) => {
-      const target = e.data?.view as ViewKey | undefined;
-      if (e.data?.type === 'navigate' && target && NAVIGABLE_VIEWS.includes(target)) setView(target);
+      const target = e.data?.type === 'navigate' ? resolveNavigationTarget(e.data.view) : null;
+      if (!target) return;
+      setView(target.view);
+      if (target.view === 'visit') setVisitTarget(target.visitTarget);
     };
     navigator.serviceWorker.addEventListener('message', onMessage);
     return () => navigator.serviceWorker.removeEventListener('message', onMessage);
@@ -172,7 +177,13 @@ function App() {
   );
   const claimableAchievements = achievements.filter((a) => {
     if (gameState.achievementsClaimed.includes(a.achievementId)) return false;
-    const { progress, target } = getAchievementProgress(a, gameState, species, { friendsCount, equipmentCatalog });
+    const { progress, target } = getAchievementProgress(a, gameState, species, {
+      friendsCount,
+      equipmentCatalog,
+      decorCatalog: decorCatalog?.items,
+      likesReceived: likeCounts.received,
+      likesGiven: likeCounts.given,
+    });
     return target > 0 && progress >= target;
   }).length;
 
@@ -283,6 +294,8 @@ function App() {
               achievements={achievements}
               friendsCount={friendsCount}
               equipmentCatalog={equipmentCatalog}
+              decorCatalog={decorCatalog?.items ?? []}
+              likeCounts={likeCounts}
               onClaim={(achievementId) => runAction(() => api.claimAchievement(achievementId))}
             />
           )}
@@ -421,6 +434,7 @@ function App() {
               decorCatalog={decorCatalog?.items ?? []}
               onVisit={openVisit}
               onOpenProfile={setProfileTarget}
+              onLikeChanged={refreshLikeCounts}
               showToast={showToast}
             />
           )}

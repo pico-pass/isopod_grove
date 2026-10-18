@@ -3,6 +3,7 @@ import type {
   BoostKind,
   BossDifficultyId,
   CombatStats,
+  DecorItem,
   EquipmentCatalogItem,
   EquipmentItemState,
   FamilyMatchup,
@@ -11,6 +12,7 @@ import type {
   SpeciesFamily,
   Stats,
 } from '../api/types';
+import { summarizeDecor } from './decor';
 
 export const BASE_CAPACITY = 20;
 export const CAPACITY_PER_LEVEL = 20;
@@ -431,6 +433,10 @@ export function getFamilyMatchup(mine: SpeciesFamily, enemy: SpeciesFamily): Fam
 export interface AchievementExtras {
   friendsCount?: number;
   equipmentCatalog?: readonly EquipmentCatalogItem[];
+  // 꾸미기 장식 카탈로그(장식·에픽 장식 업적), 받은·준 사육장 좋아요 수
+  decorCatalog?: readonly DecorItem[];
+  likesReceived?: number;
+  likesGiven?: number;
 }
 
 export interface EquipmentSummary {
@@ -519,6 +525,17 @@ export function getAchievementProgress(
     case 'bestPvpWinStreak':
     case 'highestSurvivalStage':
       return { progress: gameState.stats[achievement.statKey] ?? 0, target };
+    case 'decorOwned':
+    case 'epicDecor':
+    case 'decorFilled': {
+      const decor = summarizeDecor(extras.decorCatalog ?? [], gameState.decorOwned, gameState.terrariums);
+      const byKey = { decorOwned: decor.owned, epicDecor: decor.epic, decorFilled: decor.bestFilled } as const;
+      return { progress: byKey[achievement.statKey], target };
+    }
+    case 'likesReceived':
+      return { progress: extras.likesReceived ?? 0, target };
+    case 'likesGiven':
+      return { progress: extras.likesGiven ?? 0, target };
     default:
       return { progress: 0, target };
   }

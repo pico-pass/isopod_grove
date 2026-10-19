@@ -1631,10 +1631,11 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
   {
     tier: 2,
     name: '대원정',
-    multiplier: 150,
+    multiplier: 100,
     odds: [
-      { rarity: 3, percent: 80 },
-      { rarity: 4, percent: 20 },
+      { rarity: 2, percent: 70 },
+      { rarity: 3, percent: 22 },
+      { rarity: 4, percent: 8 },
     ],
   },
 ];

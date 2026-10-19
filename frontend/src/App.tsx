@@ -28,6 +28,7 @@ import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChangelogView } from './components/ChangelogView';
 import { VisitView } from './components/VisitView';
+import { PromoPopup } from './components/PromoPopup';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
 import {
@@ -444,6 +445,7 @@ function App() {
         </main>
       </div>
       <ChatWidget currentUserId={user._id} onOpenProfile={setProfileTarget} />
+      <PromoPopup userId={user._id} species={species} />
       {profileTarget && (
         <ProfileModal
           targetUserId={profileTarget}

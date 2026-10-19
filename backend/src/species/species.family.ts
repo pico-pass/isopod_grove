@@ -17,6 +17,7 @@ export const FAMILY_BY_SPECIES_ID: Record<string, SpeciesFamily> = {
   yellowzebra: 'fire',
   zebrachocolete: 'forest',
   // 희귀
+  muricatum: 'frost',
   'blind satoon': 'frost',
   iceFlower: 'frost',
   mandarinDucky: 'fire',
@@ -24,6 +25,8 @@ export const FAMILY_BY_SPECIES_ID: Record<string, SpeciesFamily> = {
   tiramisu: 'forest',
   vex: 'forest',
   // 에픽
+  ibericum: 'fire',
+  milkyEdge: 'frost',
   bumblebee: 'fire',
   bumblpot: 'fire',
   capuchino: 'forest',
@@ -41,6 +44,7 @@ export const FAMILY_BY_SPECIES_ID: Record<string, SpeciesFamily> = {
   werneri: 'forest',
   whiteskurspaiky: 'frost',
   // 전설
+  latte: 'fire',
   BlondeDucky: 'fire',
   angrymonkHighqual: 'forest',
   ddalgiratte: 'fire',
@@ -56,6 +60,7 @@ export const FAMILY_BY_SPECIES_ID: Record<string, SpeciesFamily> = {
   whiteDuckyFireFly: 'frost',
   whiteIslandTiger: 'frost',
   // 신화
+  albomarginatum: 'forest',
   R5: 'fire',
   ationtgayter: 'forest',
   bonpentom: 'frost',

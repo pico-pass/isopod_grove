@@ -3668,7 +3668,7 @@ export class GameStateService {
   }
 
   // ---- 고급 탐색(원정) ----
-  // 숲 탐색 비용에 비례하는 골드를 내고 에픽 이상(대원정은 전설 이상)을 확정으로 만난다. 탐색권으로는 갈 수 없다.
+  // 숲 탐색 비용에 비례하는 골드를 내고 에픽 이상을 확정으로 만난다(대원정이 전설·신화 확률이 더 높다). 탐색권으로는 갈 수 없다.
   async getExpeditionInfo(userId: string) {
     const gameState = await this.getOrThrow(userId);
     const steps = gameState.exploreCostSteps || 0;

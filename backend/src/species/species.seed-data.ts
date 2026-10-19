@@ -723,6 +723,71 @@ const RAW_SPECIES_SEED: Omit<SpeciesSeed, 'family'>[] = [
     description:
       '샤이차니스파이키',
   },
+  {
+    speciesId: 'muricatum',
+    name: '크리스타르마딜리디움 무리카툼',
+    image: '/assets/kong/muricatum.png',
+    latin: 'Cristarmadillidium muricatum',
+    rarity: 1,
+    price: 35,
+    rate: 0.055,
+    breed: 70,
+    filter: 'none',
+    description:
+      '가시가 오돌토돌 솟은 연분홍빛 콩벌레',
+  },
+  {
+    speciesId: 'milkyEdge',
+    name: '아르덴티엘라 밀키엣지',
+    image: '/assets/kong/milkyedge.png',
+    latin: 'Ardentiella sp. "Milky Edge"',
+    rarity: 2,
+    price: 35,
+    rate: 0.0666667,
+    breed: 70,
+    filter: 'none',
+    description:
+      '검은 등껍질에 우유빛 테두리가 번지는 콩벌레',
+  },
+  {
+    speciesId: 'ibericum',
+    name: '아르마딜리디움 이베리쿰',
+    image: '/assets/kong/ibericum.png',
+    latin: 'Armadillidium ibericum',
+    rarity: 2,
+    price: 35,
+    rate: 0.0666667,
+    breed: 70,
+    filter: 'none',
+    description:
+      '주황빛으로 반짝이는 이베리아의 콩벌레',
+  },
+  {
+    speciesId: 'latte',
+    name: '쿠바리스 라떼',
+    image: '/assets/kong/latte.png',
+    latin: 'Cubaris sp. "Latte"',
+    rarity: 3,
+    price: 35,
+    rate: 0.0833333,
+    breed: 70,
+    filter: 'none',
+    description:
+      '따뜻한 라떼 색으로 물든 부드러운 콩벌레',
+  },
+  {
+    speciesId: 'albomarginatum',
+    name: '아르마딜리디움 알보마지나툼',
+    image: '/assets/kong/albomarginatum.png',
+    latin: 'Armadillidium albomarginatum',
+    rarity: 4,
+    price: 35,
+    rate: 0.103333,
+    breed: 70,
+    filter: 'none',
+    description:
+      '진한 갈색 띠 사이로 주황빛이 비치는 전설 속 콩벌레',
+  },
 ];
 
 // 계열은 종 id로 정해진다(species.family.ts). 시드에 값을 일일이 적지 않고 여기서 붙인다.

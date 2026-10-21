@@ -70,6 +70,7 @@ function App() {
     friendsCount,
     likeCounts,
     refreshLikeCounts,
+    weather,
     mailSummary,
     refreshMailSummary,
     friendChatUnread,
@@ -245,6 +246,7 @@ function App() {
               onPlaceDecor={(terrariumId, kind, index, decorId) => runAction(() => api.placeDecor(terrariumId, kind, index, decorId))}
               onSetTerrariumPublic={(isPublic) => runAction(() => api.setTerrariumPublic(isPublic))}
               onVisitMine={() => openVisit(user._id)}
+              weather={weather}
             />
           )}
           {view === 'collection' && (
@@ -274,6 +276,7 @@ function App() {
               terrarium={terrarium}
               species={displaySpecies}
               onExpedition={(tier) => runAction(() => api.expedition(tier, terrarium.terrariumId))}
+              weather={weather}
             />
           )}
           {view === 'upgrades' && (

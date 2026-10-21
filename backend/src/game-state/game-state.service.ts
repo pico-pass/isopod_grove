@@ -19,6 +19,8 @@ import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.sc
 import { PuzzleRecord, PuzzleRecordDocument } from './schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordDocument } from './schemas/runner-record.schema';
 import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
+import { WeatherService } from '../weather/weather.service';
+import { getWeatherEffects, pickWeightedByFamily } from '../weather/weather.data';
 import {
   RUNNER_ABILITIES_BY_RARITY,
   RUNNER_AIR_JUMP_PERCENT,
@@ -208,6 +210,7 @@ import {
   SURVIVAL_REVIVE_COSTS,
   SURVIVAL_REVIVE_HP_RATE,
   EXPEDITION_PITY_LIMIT,
+  EXPEDITION_DAILY_FIELD,
   EXPEDITION_TIERS,
   LONG_OFFLINE_BREED_MIN_RARITY,
   advanceBreeding,
@@ -284,6 +287,8 @@ export class GameStateService {
     // 사육장 좋아요 업적(받은·준 좋아요 수) 조회 전용(역시 끝자리).
     @InjectModel(TerrariumLike.name)
     private terrariumLikeModel?: Model<TerrariumLikeDocument>,
+    // 오늘의 숲 날씨(번식·탐색 보너스, 비 오는 날 습도). 없으면 날씨 효과 없이 동작한다(끝자리).
+    private weatherService?: WeatherService,
   ) {}
 
   // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
@@ -420,6 +425,8 @@ export class GameStateService {
       remaining -= step;
       const incomeFactor = getBoostFactor(activeBoosts, 'income', stepStartMs, stepStartMs + step * 1000);
       const breedFactor = getBoostFactor(activeBoosts, 'breed', stepStartMs, stepStartMs + step * 1000);
+      // 그 시각의 숲 날씨(관측 기록이 없으면 효과 없음). 8시간을 넘는 자리 비움 구간에는 적용하지 않는다.
+      const weatherFx = getWeatherEffects(this.weatherService?.typeAt(stepStartMs));
 
       gameState.stats.played += step;
       const ambient = 24 + Math.sin(gameState.stats.played / 700) * 2.7;
@@ -432,7 +439,7 @@ export class GameStateService {
           0,
           100,
         );
-        terrarium.humidity = clamp(terrarium.humidity - 0.023 * step, 0, 100);
+        terrarium.humidity = clamp(terrarium.humidity - 0.023 * step * weatherFx.humidityDecayMult, 0, 100);
         terrarium.temperature +=
           (ambient - terrarium.temperature) * Math.min(1, step * 0.002);
 
@@ -476,10 +483,12 @@ export class GameStateService {
             getBaseBreedSeconds(species.rarity),
             nurseryLevel,
           );
-          const decorFactor = decorFactors.get(terrarium.terrariumId)?.[resolveFamily(species)] ?? 1;
+          const speciesFamily = resolveFamily(species);
+          const decorFactor = decorFactors.get(terrarium.terrariumId)?.[speciesFamily] ?? 1;
+          const weatherFactor = weatherFx.favored === speciesFamily ? weatherFx.breedFactor : 1;
           const progressed = Math.min(
             limit,
-            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor * decorFactor,
+            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor * decorFactor * weatherFactor,
           );
           terrarium.breeding.set(species.speciesId, progressed);
           if (progressed >= limit && capacityLeft > 0) {
@@ -3638,7 +3647,11 @@ export class GameStateService {
 
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);
-    const species = pickRandomOfRarity(speciesList, rarity, Math.random());
+    // 오늘 날씨가 편드는 계열 종이 같은 등급 안에서 더 잘 나온다(날씨 정보가 없으면 균등).
+    const favored = getWeatherEffects(this.weatherService?.current()?.type).favored;
+    const species = favored
+      ? pickWeightedByFamily(speciesList.filter((s) => s.rarity === rarity), Math.random(), favored, (s) => resolveFamily(s))
+      : pickRandomOfRarity(speciesList, rarity, Math.random());
     const isNew = !gameState.discovered.includes(species.speciesId);
     terrarium.population.set(
       species.speciesId,
@@ -3669,6 +3682,13 @@ export class GameStateService {
 
   // ---- 고급 탐색(원정) ----
   // 숲 탐색 비용에 비례하는 골드를 내고 에픽 이상을 확정으로 만난다(대원정이 전설·신화 확률이 더 높다). 탐색권으로는 갈 수 없다.
+  // 오늘 이 원정을 다녀온 횟수(날짜가 바뀌었는데 아직 초기화되지 않았다면 0)
+  private expeditionUsedToday(gameState: GameStateDocument, tierNo: number): number {
+    if (gameState.daily?.day !== dayKey()) return 0;
+    const field = EXPEDITION_DAILY_FIELD[tierNo];
+    return field ? gameState.daily[field] ?? 0 : 0;
+  }
+
   async getExpeditionInfo(userId: string) {
     const gameState = await this.getOrThrow(userId);
     const steps = gameState.exploreCostSteps || 0;
@@ -3681,6 +3701,8 @@ export class GameStateService {
         name: t.name,
         price: getExpeditionPrice(t, steps),
         odds: t.odds,
+        dailyLimit: t.dailyLimit,
+        usedToday: this.expeditionUsedToday(gameState, t.tier),
       })),
     };
   }
@@ -3696,6 +3718,11 @@ export class GameStateService {
       const gameState = await this.getOrThrow(userId);
       this.guardPaused(gameState);
       this.resetDailyIfNeeded(gameState);
+
+      const usedToday = this.expeditionUsedToday(gameState, tier.tier);
+      if (usedToday >= tier.dailyLimit) {
+        throw new BadRequestException(`오늘 ${tier.name}은(는) ${tier.dailyLimit}번 모두 다녀왔어요. 내일 다시 떠날 수 있어요.`);
+      }
 
       const terrarium = this.getTerrarium(gameState, terrariumId);
       if (getPopulationCount(terrarium.population) + EXPLORE_YIELD > getCapacity(terrarium.spaceLevel)) {
@@ -3713,7 +3740,13 @@ export class GameStateService {
       const pity = gameState.expeditionPity || 0;
       const forced = pity + 1 >= EXPEDITION_PITY_LIMIT; // 신화를 못 만난 원정이 쌓이면 이번에는 신화 확정
       const rarity = forced ? 4 : rollExpeditionRarity(tier, Math.random());
-      const species = pickExpeditionSpecies(speciesList, rarity, gameState.discovered, Math.random());
+      const species = pickExpeditionSpecies(
+        speciesList,
+        rarity,
+        gameState.discovered,
+        Math.random(),
+        getWeatherEffects(this.weatherService?.current()?.type).favored,
+      );
       if (!species) throw new BadRequestException('만날 수 있는 종이 없어요.');
 
       gameState.coins -= price;
@@ -3722,6 +3755,7 @@ export class GameStateService {
       gameState.daily.explore = (gameState.daily.explore || 0) + 1;
       gameState.stats.explored++;
       gameState.expeditionPity = rarity === 4 ? 0 : pity + 1;
+      gameState.daily[EXPEDITION_DAILY_FIELD[tier.tier]] = usedToday + 1;
 
       const isNew = !gameState.discovered.includes(species.speciesId);
       terrarium.population.set(
@@ -3754,6 +3788,8 @@ export class GameStateService {
         forced,
         pity: gameState.expeditionPity,
         pityLimit: EXPEDITION_PITY_LIMIT,
+        dailyLimit: tier.dailyLimit,
+        usedToday: usedToday + 1,
       };
     } finally {
       this.expeditionInFlight.delete(userId);
@@ -4127,6 +4163,8 @@ export class GameStateService {
         survivalAttempts: 0,
         bossExtraAttempts: 0,
         survivalExtraAttempts: 0,
+        expeditionCount: 0,
+        grandExpeditionCount: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.

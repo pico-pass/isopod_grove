@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { DecorItem, GameState, Quest, Species, Terrarium } from '../api/types';
+import type { DecorItem, GameState, Quest, Species, Terrarium, WeatherInfo } from '../api/types';
 import { WanderingCreatures } from './WanderingCreatures';
 import { TerrariumDecorLayer } from './TerrariumDecorLayer';
 import { DecorModal } from './DecorModal';
+import { WeatherBanner } from './WeatherBanner';
 import { getDecorBreedBonusPercent } from '../utils/decor';
 import {
   EXPLORE_COST_STEP,
@@ -111,6 +112,7 @@ export function HabitatView({
   onPlaceDecor,
   onSetTerrariumPublic,
   onVisitMine,
+  weather,
 }: {
   gameState: GameState;
   terrarium: Terrarium;
@@ -131,6 +133,7 @@ export function HabitatView({
   onPlaceDecor: (terrariumId: string, kind: 'backdrop' | 'prop', index: number | undefined, decorId?: string) => Promise<unknown>;
   onSetTerrariumPublic: (isPublic: boolean) => Promise<unknown>;
   onVisitMine: () => void;
+  weather: WeatherInfo | null;
 }) {
   const [now, setNow] = useState(0);
   const [decorOpen, setDecorOpen] = useState(false);
@@ -191,6 +194,8 @@ export function HabitatView({
           <p className="subheading">오늘도 작은 숲에 새로운 하루가 시작됐어요.</p>
         </div>
       </div>
+
+      <WeatherBanner weather={weather} />
 
       <div className="game-columns">
         <div className="habitat-column">
@@ -373,7 +378,9 @@ export function HabitatView({
               const ratio = interval > 0 ? progress / interval : 0;
               // 꾸미기 장식이 같은 계열 종에게 주는 번식 속도 증가(서버 advance와 같은 규칙)
               const decorPercent = getDecorBreedBonusPercent(decorCatalog, terrarium.decorBackdrop, terrarium.decorProps, sp.family ?? 'forest');
-              const breedSpeed = breedBoost * (1 + decorPercent / 100);
+              // 오늘의 숲 날씨가 편드는 계열이면 번식이 빨라진다(서버 advance와 같은 규칙)
+              const weatherPercent = weather?.available && weather.favoredFamily === (sp.family ?? 'forest') ? (weather.breedBonusPercent ?? 0) : 0;
+              const breedSpeed = breedBoost * (1 + decorPercent / 100) * (1 + weatherPercent / 100);
               const breedStatus =
                 residents < 2
                   ? '번식하려면 2마리 이상 필요해요'
@@ -381,7 +388,7 @@ export function HabitatView({
                     ? '환경이 좋지 않아 번식이 멈췄어요'
                     : count >= capacity
                       ? '공간이 가득 차서 기다리는 중이에요'
-                      : `다음 새끼까지 ${formatDuration((interval - progress) / breedSpeed)}${breedBoost > 1 ? ` ⚡×${breedBoost}` : ''}${decorPercent > 0 ? ` 🎨+${decorPercent}%` : ''}`;
+                      : `다음 새끼까지 ${formatDuration((interval - progress) / breedSpeed)}${breedBoost > 1 ? ` ⚡×${breedBoost}` : ''}${decorPercent > 0 ? ` 🎨+${decorPercent}%` : ''}${weatherPercent > 0 ? ` ${weather?.icon}+${weatherPercent}%` : ''}`;
               const breedActive = residents >= 2 && canBreed && count < capacity;
               return (
                 <div key={id} className="resident">

@@ -72,6 +72,7 @@ import type {
   Upgrade,
   VisitResult,
   VisitSummary,
+  WeatherInfo,
 } from './types';
 import { authStorage } from '../auth/authStorage';
 
@@ -154,6 +155,7 @@ export const api = {
   getVisit: (userId: string) => request<VisitResult>(`/visit/${userId}`),
   getRandomVisit: () => request<{ userId: string }>('/visit/random'),
   getVisitSummary: () => request<VisitSummary>('/visit/summary'),
+  getWeather: () => request<WeatherInfo>('/weather'),
   setTerrariumLike: (ownerId: string, terrariumId: string, liked: boolean) =>
     post<{ liked: boolean; likes: number }>(`/visit/${ownerId}/like`, { terrariumId, liked }),
   getBossCatalog: () => request<BossCatalog>('/boss'),

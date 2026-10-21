@@ -8,6 +8,7 @@ import { UpgradesModule } from '../upgrades/upgrades.module';
 import { QuestsModule } from '../quests/quests.module';
 import { AchievementsModule } from '../achievements/achievements.module';
 import { UsersModule } from '../users/users.module';
+import { WeatherModule } from '../weather/weather.module';
 import { Friendship, FriendshipSchema } from '../friends/schemas/friendship.schema';
 import { PuzzleRecord, PuzzleRecordSchema } from './schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordSchema } from './schemas/runner-record.schema';
@@ -29,6 +30,7 @@ import { TerrariumLike, TerrariumLikeSchema } from '../visit/schemas/terrarium-l
     QuestsModule,
     AchievementsModule,
     UsersModule,
+    WeatherModule,
   ],
   providers: [GameStateService],
   controllers: [GameStateController],

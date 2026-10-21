@@ -4156,3 +4156,89 @@ main {
     width: 100%;
   }
 }
+
+/* 원정 하루 횟수 */
+.expedition-daily {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.expedition-daily.spent {
+  color: var(--danger);
+}
+
+/* 오늘의 숲 날씨 */
+.weather-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: linear-gradient(100deg, var(--panel2), var(--panel));
+}
+.weather-banner.compact {
+  margin-bottom: 8px;
+  padding: 8px 14px;
+}
+.weather-banner.unavailable {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.weather-banner.clear,
+.weather-banner.heat,
+.weather-banner.storm {
+  border-color: rgba(234, 160, 80, 0.55);
+}
+.weather-banner.cloudy,
+.weather-banner.snow,
+.weather-banner.cold {
+  border-color: rgba(130, 190, 235, 0.55);
+}
+.weather-banner.rain {
+  border-color: rgba(120, 200, 140, 0.55);
+}
+.weather-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+.weather-main {
+  flex: 1;
+  min-width: 0;
+}
+.weather-main strong {
+  font-size: 0.95rem;
+}
+.weather-main strong small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.weather-main p {
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.weather-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.weather-chip {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.weather-chip.on {
+  color: var(--lime);
+  border-color: var(--lime);
+}
+.weather-explore-note {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}

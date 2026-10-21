@@ -61,6 +61,9 @@ export interface DailyProgress {
   // 오늘 다이아로 산 추가 도전/입장 횟수. 하루 한도 = 기본 횟수 + 이 값. 예전 데이터에는 없을 수 있다.
   bossExtraAttempts?: number;
   survivalExtraAttempts?: number;
+  // 오늘 다녀온 원정·대원정 횟수. 예전 데이터에는 없을 수 있다.
+  expeditionCount?: number;
+  grandExpeditionCount?: number;
   claimed: string[];
 }
 
@@ -431,6 +434,23 @@ export interface NotificationPrefs {
 }
 
 // 내 사육장이 지금 받은 좋아요 수와 내가 지금 누르고 있는 좋아요 수(업적·새 좋아요 알림용)
+// 오늘의 숲 날씨(실제 서울 날씨). 정보가 없으면 available: false이고 효과도 없다.
+export interface WeatherInfo {
+  available: boolean;
+  city: string;
+  type?: 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'heat' | 'cold';
+  name?: string;
+  icon?: string;
+  flavor?: string;
+  tempC?: number;
+  humidity?: number;
+  observedAt?: number;
+  favoredFamily?: SpeciesFamily; // 이 날씨가 편드는 계열
+  breedBonusPercent?: number; // 그 계열 종의 번식 보너스(%)
+  exploreWeight?: number; // 숲 탐색·원정에서 그 계열 종이 나올 가중치 배수
+  effects?: string[]; // 화면에 보여 줄 효과 설명
+}
+
 export interface VisitSummary {
   received: number;
   given: number;
@@ -784,6 +804,8 @@ export interface ExpeditionTierInfo {
   name: string;
   price: number; // 내 탐색 횟수에 맞춰 서버가 계산한 가격
   odds: { rarity: number; percent: number }[];
+  dailyLimit: number; // 하루에 갈 수 있는 횟수
+  usedToday: number; // 오늘 다녀온 횟수
 }
 
 export interface ExpeditionInfo {
@@ -804,6 +826,8 @@ export interface ExpeditionResponse {
   forced: boolean; // 신화 천장으로 확정된 원정인지
   pity: number;
   pityLimit: number;
+  dailyLimit: number;
+  usedToday: number;
 }
 
 // ---- 장비 조각 ----

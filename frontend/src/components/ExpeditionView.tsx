@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { ExpeditionInfo, ExpeditionResponse, GameState, Species, Terrarium } from '../api/types';
+import type { ExpeditionInfo, ExpeditionResponse, GameState, Species, Terrarium, WeatherInfo } from '../api/types';
 import { RARITIES, formatNumber, getCapacity, getPopulationCount } from '../utils/gameCalc';
 import { SpeciesImage } from './SpeciesImage';
+import { WeatherBanner } from './WeatherBanner';
 
 export function ExpeditionView({
   gameState,
   terrarium,
   species,
   onExpedition,
+  weather,
 }: {
   gameState: GameState;
   terrarium: Terrarium;
   species: Species[];
   onExpedition: (tier: number) => Promise<ExpeditionResponse | null>;
+  weather: WeatherInfo | null;
 }) {
   const [info, setInfo] = useState<ExpeditionInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,8 +64,14 @@ export function ExpeditionView({
         </div>
       </div>
 
+      <WeatherBanner weather={weather} compact />
+      {weather?.available && weather.favoredFamily && (
+        <p className="weather-explore-note">
+          {weather.icon} 오늘은 같은 등급 안에서 {weather.favoredFamily === 'fire' ? '불꽃' : weather.favoredFamily === 'forest' ? '숲' : '서리'} 계열 종을 만날 확률이 {weather.exploreWeight ?? 2}배예요.
+        </p>
+      )}
       <div className="info-banner">
-        🧭 숲 탐색 비용에 비례하는 골드를 내고 <b>에픽 이상</b>을 확정으로 만나요(대원정은 전설·신화 확률이 더 높아요). 같은 등급에 아직 도감에 없는 종이
+        🧭 숲 탐색 비용에 비례하는 골드를 내고 <b>에픽 이상</b>을 확정으로 만나요(대원정은 전설·신화 확률이 더 높아요). 하루에 원정은 {info?.tiers[0]?.dailyLimit ?? 5}번, 대원정은 {info?.tiers[1]?.dailyLimit ?? 3}번까지 갈 수 있어요. 같은 등급에 아직 도감에 없는 종이
         있으면 그중에서 먼저 만나요. 신화를 못 만난 채 {info?.pityLimit ?? 30}번 다녀오면 다음 원정은 신화가 확정이에요. 원정도 숲 탐색 한 번으로
         세어져서 다음 탐색 비용이 올라가요(탐색권으로는 갈 수 없어요). 📍 <b>{terrarium.name}</b>으로 {info?.yield ?? 2}마리를 데려와요.
       </div>
@@ -97,10 +106,15 @@ export function ExpeditionView({
         <div className="upgrade-grid">
           {info.tiers.map((t) => {
             const poor = gameState.coins < t.price;
+            const left = Math.max(0, t.dailyLimit - t.usedToday);
+            const spent = left <= 0;
             return (
               <article className="upgrade-card expedition-card" key={t.tier}>
                 <span style={{ fontSize: '1.5rem' }}>{t.tier === 1 ? '🧭' : '🏔️'}</span>
                 <h2>{t.name}</h2>
+                <small className={`expedition-daily${spent ? ' spent' : ''}`}>
+                  오늘 {t.usedToday}/{t.dailyLimit}번{spent ? ' · 내일 다시' : ` · ${left}번 남음`}
+                </small>
                 <div className="expedition-odds">
                   {t.odds.map((o) => (
                     <span key={o.rarity} style={{ color: RARITIES[o.rarity].color }}>
@@ -110,14 +124,15 @@ export function ExpeditionView({
                 </div>
                 <button
                   className="button primary full"
-                  disabled={busy || gameState.paused || poor || noRoom}
+                  disabled={busy || gameState.paused || spent || poor || noRoom}
                   onClick={() => void go(t.tier)}
                 >
                   <span>{busy ? '떠나는 중...' : '원정 떠나기'}</span>
                   <span>{formatNumber(t.price)} G</span>
                 </button>
-                {poor && <small className="equip-hint">골드가 {formatNumber(t.price - gameState.coins)} G 모자라요</small>}
-                {!poor && noRoom && <small className="equip-hint">{terrarium.name}에 자리가 없어요 — 분양하거나 확장해 주세요</small>}
+                {spent && <small className="equip-hint">오늘은 {t.name}을 모두 다녀왔어요 (자정에 초기화돼요)</small>}
+                {!spent && poor && <small className="equip-hint">골드가 {formatNumber(t.price - gameState.coins)} G 모자라요</small>}
+                {!spent && !poor && noRoom && <small className="equip-hint">{terrarium.name}에 자리가 없어요 — 분양하거나 확장해 주세요</small>}
               </article>
             );
           })}

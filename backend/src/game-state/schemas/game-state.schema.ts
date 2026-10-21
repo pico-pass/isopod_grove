@@ -35,6 +35,13 @@ export class DailyProgress {
   @Prop({ default: 0 })
   survivalExtraAttempts: number;
 
+  // 오늘 다녀온 원정·대원정 횟수(하루 한도는 EXPEDITION_TIERS의 dailyLimit). 날짜가 바뀌면 daily 전체와 함께 0으로 돌아간다.
+  @Prop({ default: 0 })
+  expeditionCount: number;
+
+  @Prop({ default: 0 })
+  grandExpeditionCount: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }

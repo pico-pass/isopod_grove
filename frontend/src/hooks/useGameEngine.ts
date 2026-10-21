@@ -12,6 +12,7 @@ import type {
   LeaderboardResult,
   MailSummary,
   VisitSummary,
+  WeatherInfo,
   NotificationPrefs,
   Quest,
   Species,
@@ -149,6 +150,22 @@ export function useGameEngine(userKey: string | null) {
     const id = setInterval(() => void refreshMailSummary(), 60_000);
     return () => clearInterval(id);
   }, [userKey, refreshMailSummary]);
+
+  // 오늘의 숲 날씨(실제 서울 날씨). 서버가 30분마다 새로 읽으니 10분마다 확인한다. 못 불러오면 날씨 없음으로 둔다.
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  const refreshWeather = useCallback(async () => {
+    try {
+      setWeather(await api.getWeather());
+    } catch {
+      // 날씨는 부가 정보라 실패해도 게임 진행에는 영향이 없다. 다음 주기에 다시 시도한다.
+    }
+  }, []);
+  useEffect(() => {
+    if (!userKey) return;
+    Promise.resolve().then(() => refreshWeather());
+    const id = setInterval(() => void refreshWeather(), 10 * 60_000);
+    return () => clearInterval(id);
+  }, [userKey, refreshWeather]);
 
   // 사육장 좋아요 수(내가 받은 것·내가 누른 것). 업적 진행도에 쓰고, 받은 수가 늘면 알린다. 1분마다 새로 확인한다.
   const [likeCounts, setLikeCounts] = useState<VisitSummary>({ received: 0, given: 0 });
@@ -315,6 +332,7 @@ export function useGameEngine(userKey: string | null) {
     friendsCount,
     likeCounts,
     refreshLikeCounts,
+    weather,
     mailSummary,
     refreshMailSummary,
     friendChatUnread,

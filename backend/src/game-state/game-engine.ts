@@ -1,5 +1,6 @@
 import { Species } from '../species/schemas/species.schema';
 import { SPECIES_FAMILIES, resolveFamily, type SpeciesFamily } from '../species/species.family';
+import { pickWeightedByFamily } from '../weather/weather.data';
 import {
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
@@ -1615,6 +1616,7 @@ export interface ExpeditionTier {
   tier: number;
   name: string;
   multiplier: number; // 지금의 숲 탐색 비용에 곱한다
+  dailyLimit: number; // 하루에 갈 수 있는 횟수(한국 시간 자정 기준 daily와 함께 초기화된다)
   odds: { rarity: number; percent: number }[]; // 합계 100
 }
 export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
@@ -1622,6 +1624,7 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
     tier: 1,
     name: '원정',
     multiplier: 40,
+    dailyLimit: 5,
     odds: [
       { rarity: 2, percent: 80 },
       { rarity: 3, percent: 17 },
@@ -1632,6 +1635,7 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
     tier: 2,
     name: '대원정',
     multiplier: 100,
+    dailyLimit: 3,
     odds: [
       { rarity: 2, percent: 70 },
       { rarity: 3, percent: 22 },
@@ -1639,6 +1643,12 @@ export const EXPEDITION_TIERS: readonly ExpeditionTier[] = [
     ],
   },
 ];
+// 오늘 이 원정을 다녀온 횟수가 저장되는 daily 필드(원정 / 대원정)
+export const EXPEDITION_DAILY_FIELD: Record<number, 'expeditionCount' | 'grandExpeditionCount'> = {
+  1: 'expeditionCount',
+  2: 'grandExpeditionCount',
+};
+
 export const EXPEDITION_PITY_LIMIT = 30; // 신화가 이만큼 연속으로 안 나오면 이번 원정은 신화 확정(단계와 무관하게 센다)
 
 export function getExpeditionTier(tier: number): ExpeditionTier | undefined {
@@ -1665,11 +1675,14 @@ export function pickExpeditionSpecies(
   rarity: number,
   discovered: readonly string[],
   random: number,
+  // 오늘 날씨가 편드는 계열(있으면 후보 안에서 그 계열 종이 더 잘 나온다)
+  favoredFamily: SpeciesFamily | null = null,
 ): Species | null {
   const pool = speciesList.filter((s) => s.rarity === rarity);
   if (pool.length === 0) return null;
   const fresh = pool.filter((s) => !discovered.includes(s.speciesId));
   const from = fresh.length > 0 ? fresh : pool;
+  if (favoredFamily) return pickWeightedByFamily(from, random, favoredFamily, (s) => resolveFamily(s));
   return from[Math.min(from.length - 1, Math.floor(random * from.length))];
 }
 

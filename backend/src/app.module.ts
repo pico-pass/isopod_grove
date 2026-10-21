@@ -22,6 +22,7 @@ import { FriendChatModule } from './friend-chat/friend-chat.module';
 import { PushModule } from './push/push.module';
 import { DecorModule } from './decor/decor.module';
 import { VisitModule } from './visit/visit.module';
+import { WeatherModule } from './weather/weather.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { VisitModule } from './visit/visit.module';
     PushModule,
     DecorModule,
     VisitModule,
+    WeatherModule,
   ],
   controllers: [AppController],
   providers: [AppService],

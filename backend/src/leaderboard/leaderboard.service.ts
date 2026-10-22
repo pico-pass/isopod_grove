@@ -6,6 +6,7 @@ import { PuzzleRecord, PuzzleRecordDocument } from '../game-state/schemas/puzzle
 import { RunnerRecord, RunnerRecordDocument } from '../game-state/schemas/runner-record.schema';
 import { PUZZLE_STAGES, getPuzzleDayKey, rankByLadder } from '../game-state/puzzle-engine';
 import { rankByDistance } from '../game-state/runner-engine';
+import { describeDungeonScore, normalizeDungeonScore, rankDungeon } from '../game-state/dungeon-engine';
 import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
 import { SpeciesService } from '../species/species.service';
@@ -167,6 +168,23 @@ export class LeaderboardService {
     const ranks = rankByDistance(ranked.map((r) => r.n));
     return this.buildResult(
       ranked.map((r, i) => ({ userId: r._id, value: r.n, rank: ranks[i], label: `❤️ ${r.n.toLocaleString('ko-KR')}` })),
+      requesterId,
+      limit,
+    );
+  }
+
+  // 던전: 가장 높이 오른 기록(난이도 → 층) 순, 같으면 완주 횟수가 많은 순. 한 번도 못 올라간 유저는 순위에 올리지 않는다.
+  async getDungeonLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
+    const states = await this.gameStateModel
+      .find({ 'stats.dungeonBestScore': { $gt: 0 } }, { userId: 1, 'stats.dungeonBestScore': 1, 'stats.dungeonClears': 1 })
+      .lean<{ userId: Types.ObjectId; stats?: { dungeonBestScore?: number; dungeonClears?: number } }[]>();
+    const rows = states
+      .map((s) => ({ userId: s.userId, bestScore: normalizeDungeonScore(s.stats?.dungeonBestScore), clears: s.stats?.dungeonClears ?? 0 }))
+      .filter((r) => r.bestScore > 0)
+      .sort((a, b) => b.bestScore - a.bestScore || b.clears - a.clears);
+    const ranks = rankDungeon(rows);
+    return this.buildResult(
+      rows.map((r, i) => ({ userId: r.userId, value: r.bestScore, rank: ranks[i], label: `${describeDungeonScore(r.bestScore)}${r.clears > 0 ? ` · 완주 ${r.clears}회` : ''}` })),
       requesterId,
       limit,
     );

@@ -1249,3 +1249,126 @@ export interface RunnerFinishResponse {
   reward: RunnerRewardInfo;
   milestones: RunnerMilestoneInfo[];
 }
+
+// ---- 썩은 통나무 던전(로그라이크) ----
+export type DungeonDifficultyId = 'easy' | 'normal' | 'hard' | 'harder' | 'extreme';
+export type DungeonRoomType = 'battle' | 'elite' | 'rest' | 'shop' | 'event' | 'treasure' | 'boss';
+export type DungeonPhase = 'choose' | 'duel' | 'reward' | 'event' | 'shop' | 'rest';
+
+export interface DungeonRelicView {
+  relicId: string;
+  name: string;
+  icon: string;
+  tier: 0 | 1 | 2; // 일반 / 희귀 / 에픽
+  description: string;
+  maxStacks: number; // 한 런에서 겹쳐 가질 수 있는 최대 개수(효과가 개수만큼 쌓인다)
+  count?: number; // 가진 유물 목록: 지금 가진 개수
+  owned?: number; // 제안·상점: 이미 가진 개수
+}
+
+export interface DungeonRoomOption {
+  index: number;
+  type: DungeonRoomType;
+  name: string;
+  icon: string;
+  description: string;
+  family?: SpeciesFamily; // 전투·엘리트·보스 방: 적 계열
+  environment?: 'plain' | 'volcano' | 'jungle' | 'tundra';
+}
+
+export interface DungeonEventView {
+  eventId: string;
+  title: string;
+  icon: string;
+  text: string;
+  choices: { id: string; label: string; hint: string; disabled: boolean }[];
+}
+
+export interface DungeonShopView {
+  relics: (DungeonRelicView & { price: number; sold: boolean; affordable: boolean })[];
+  potion: { price: number; sold: boolean; healRate: number; affordable: boolean };
+}
+
+export interface DungeonRunView {
+  difficulty: { id: DungeonDifficultyId; name: string; rewardMult: number };
+  floor: number; // 지금 층(끝낸 층 + 1)
+  cleared: number;
+  floors: number;
+  phase: DungeonPhase;
+  species: { speciesId: string; name: string; image?: string; filter: string; rarity: number; family: SpeciesFamily; level: number };
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  gold: number; // 이번 런의 버섯조각
+  relics: DungeonRelicView[];
+  bonus: { atk: number; def: number; hp: number };
+  revived: boolean;
+  skillCooldownReduce: number;
+  log: string[];
+  options?: DungeonRoomOption[];
+  offer?: DungeonRelicView[];
+  offerKind?: string;
+  skipGold?: number;
+  event?: DungeonEventView;
+  shop?: DungeonShopView;
+  rest?: { healRate: number; trainBonus: number };
+  duel?: DuelCoreView & { kind: 'battle' | 'elite' | 'boss'; isBoss: boolean };
+}
+
+export interface DungeonInfo {
+  dailyRuns: number;
+  attemptsLeft: number;
+  floors: number;
+  chapter: number; // 한 장의 층 수(5층 엘리트, 마지막 층 보스)
+  chapterBonus: number; // 장 보스를 이길 때마다 오르는 공격·방어·체력 비율
+  milestones: { floor: number; diamonds: number }[]; // 처음 넘으면 다이아를 주는 층
+  difficulties: { id: DungeonDifficultyId; name: string; rewardMult: number }[];
+  relics: DungeonRelicView[];
+  relicsSeen: string[];
+  bestScore: number;
+  bestLabel: string | null;
+  clears: number;
+  rooms: Record<DungeonRoomType, { name: string; icon: string; description: string }>;
+}
+
+export interface DungeonEnded {
+  reason: 'cleared' | 'dead' | 'retired';
+  difficulty: DungeonDifficultyId;
+  floorsCleared: number;
+  cleared: boolean;
+  gold: number;
+  xp: number;
+  diamonds: number;
+  equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number }[];
+  levelBefore: number;
+  levelAfter: number;
+  newBest: boolean;
+  bestLabel: string;
+  relics: DungeonRelicView[];
+}
+
+export interface DungeonBattleView {
+  won: boolean;
+  revived?: boolean;
+  floor?: number;
+  hpBefore?: number;
+  hpAfter?: number;
+  enemy?: { speciesId: string; name: string; image?: string; filter: string; rarity: number; stats: CombatStats; family: SpeciesFamily };
+  rules?: BattleRules | null;
+  log: BattleTurn[];
+}
+
+export interface DungeonStatus {
+  run: DungeonRunView | null;
+  info: DungeonInfo;
+}
+
+export interface DungeonResponse extends DungeonStatus {
+  gameState: GameState;
+  message: string;
+  battle: DungeonBattleView | null;
+  turns?: BattleTurn[];
+  ended: DungeonEnded | null;
+  step?: true; // 직접 전투 중간 응답
+}

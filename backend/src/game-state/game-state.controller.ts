@@ -31,6 +31,7 @@ import { BossDuelActDto } from './dto/boss-duel-act.dto';
 import { PuzzleSubmitDto } from './dto/puzzle-submit.dto';
 import { RunnerFinishDto } from './dto/runner-finish.dto';
 import { RunnerStartDto } from './dto/runner-start.dto';
+import { DungeonChooseDto, DungeonStartDto } from './dto/dungeon.dto';
 import { BattleDuelStartDto } from './dto/battle-duel-start.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
@@ -148,6 +149,32 @@ export class GameStateController {
   @Post('puzzle/submit')
   puzzleSubmit(@CurrentUser() user: AuthenticatedUser, @Body() dto: PuzzleSubmitDto) {
     return this.gameStateService.puzzleSubmit(user.userId, dto.dayKey, dto.stage, dto.moves);
+  }
+
+  // 썩은 통나무 던전(로그라이크)
+  @Get('dungeon')
+  getDungeon(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.getDungeon(user.userId);
+  }
+
+  @Post('dungeon/start')
+  dungeonStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: DungeonStartDto) {
+    return this.gameStateService.dungeonStart(user.userId, dto.speciesId, dto.difficulty);
+  }
+
+  @Post('dungeon/choose')
+  dungeonChoose(@CurrentUser() user: AuthenticatedUser, @Body() dto: DungeonChooseDto) {
+    return this.gameStateService.dungeonChoose(user.userId, dto.choice);
+  }
+
+  @Post('dungeon/duel/act')
+  dungeonDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
+    return this.gameStateService.dungeonDuelAct(user.userId, dto.action);
+  }
+
+  @Post('dungeon/retire')
+  dungeonRetire(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.dungeonRetire(user.userId);
   }
 
   @Get('runner')

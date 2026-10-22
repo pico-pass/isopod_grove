@@ -28,6 +28,7 @@ import { AdminView } from './components/AdminView';
 import { JournalView } from './components/JournalView';
 import { ChangelogView } from './components/ChangelogView';
 import { VisitView } from './components/VisitView';
+import { DungeonView } from './components/DungeonView';
 import { PromoPopup } from './components/PromoPopup';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
@@ -344,6 +345,18 @@ function App() {
               onDuelStart={(speciesId, floor, difficulty) => runAction(() => api.bossDuelStart(speciesId, floor, difficulty))}
               onDuelAct={(action) => runAction(() => api.bossDuelAct(action))}
               onDuelForfeit={() => runAction(() => api.bossDuelForfeit())}
+            />
+          )}
+          {view === 'dungeon' && (
+            <DungeonView
+              gameState={gameState}
+              species={displaySpecies}
+              equipmentBonuses={equipmentBonuses}
+              onStart={(speciesId, difficulty) => runAction(() => api.dungeonStart(speciesId, difficulty))}
+              onChoose={(choice) => runAction(() => api.dungeonChoose(choice))}
+              onDuelAct={(action) => runAction(() => api.dungeonDuelAct(action))}
+              onRetire={() => runAction(() => api.dungeonRetire())}
+              onOpenProfile={setProfileTarget}
             />
           )}
           {view === 'survival' && (

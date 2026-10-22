@@ -4242,3 +4242,300 @@ main {
   color: var(--muted);
   font-size: 0.8rem;
 }
+
+/* 썩은 통나무 던전 */
+.dungeon-head {
+  margin-bottom: 14px;
+}
+.dungeon-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.dungeon-hero img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+.dungeon-hero > div {
+  flex: 1;
+  min-width: 0;
+}
+.dungeon-hero small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.dungeon-sub {
+  margin: 2px 0 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.dungeon-chapter {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.dungeon-chapter small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+.dungeon-overall {
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 99px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.dungeon-overall i {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+}
+.dungeon-track {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.dungeon-node {
+  flex: 1;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+.dungeon-node.done {
+  background: var(--lime);
+  color: #14201c;
+  border-color: var(--lime);
+}
+.dungeon-node.current {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold) inset;
+}
+.dungeon-battle-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.dungeon-battle-mode small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.dungeon-relic-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.dungeon-relic-mini {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  border-radius: 10px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+}
+.dungeon-rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.dungeon-room {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  color: var(--text);
+}
+.dungeon-room:hover:not(:disabled) {
+  border-color: var(--lime);
+}
+.dungeon-room.room-elite,
+.dungeon-room.room-boss {
+  border-color: var(--danger);
+}
+.dungeon-room-icon {
+  font-size: 1.8rem;
+}
+.dungeon-room small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.dungeon-room-enemy {
+  font-size: 0.78rem;
+}
+.dungeon-room-enemy em {
+  font-style: normal;
+}
+.matchup-advantage {
+  color: var(--lime);
+}
+.matchup-disadvantage {
+  color: var(--danger);
+}
+.dungeon-room-env {
+  color: var(--gold);
+}
+.dungeon-relics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.dungeon-relic {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--muted);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+button.dungeon-relic:hover:not(:disabled) {
+  border-color: var(--lime);
+}
+.dungeon-relic.tier-rare {
+  border-left-color: #7fb6e8;
+}
+.dungeon-relic.tier-epic {
+  border-left-color: #c79bf0;
+}
+.dungeon-relic:disabled {
+  opacity: 0.5;
+}
+.dungeon-relic-icon {
+  font-size: 1.7rem;
+  width: 2.2rem;
+  text-align: center;
+}
+.dungeon-relic-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dungeon-relic-text small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.dungeon-relic-count {
+  position: absolute;
+  right: -4px;
+  bottom: -5px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--gold);
+  color: #14201c;
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+.dungeon-relic-stack {
+  color: var(--gold);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 400;
+}
+.dungeon-relic-extra {
+  color: var(--gold);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.dungeon-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+.dungeon-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--text);
+}
+.dungeon-choice small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.dungeon-choice:disabled {
+  opacity: 0.5;
+}
+.dungeon-battle summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.dungeon-log p {
+  margin: 0 0 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.dungeon-result {
+  margin-bottom: 14px;
+  border-color: var(--lime);
+}
+.dungeon-result.dead {
+  border-color: var(--danger);
+}
+.dungeon-result h2 {
+  margin: 0 0 4px;
+}
+.dungeon-reward-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 0.86rem;
+}
+.dungeon-difficulty {
+  flex-wrap: wrap;
+}
+.dungeon-difficulty small {
+  color: var(--muted);
+  margin-left: 4px;
+}
+.dungeon-codex {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dungeon-codex-item {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.76rem;
+}
+.dungeon-codex-item.tier-rare {
+  border-color: #7fb6e8;
+}
+.dungeon-codex-item.tier-epic {
+  border-color: #c79bf0;
+}
+.dungeon-codex-item.unseen {
+  color: var(--muted);
+}

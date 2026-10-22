@@ -860,6 +860,7 @@ export const DUEL_SKILL_ROOT_CUT: readonly number[] = [0.18, 0.2, 0.22, 0.25, 0.
 export interface DuelSkillContext {
   family: SpeciesFamily;
   rarity: number; // 내 식구의 희귀도(0~4)
+  cooldownReduce?: number; // 쉬는 시간 감소(턴, 던전 유물). 쉬는 시간은 1턴 아래로 줄지 않는다.
 }
 
 export interface DuelSkillInfo {
@@ -1055,7 +1056,7 @@ export function playDuelTurn(
     }
     if (action === 'skill' && skill) {
       toBoss = Math.max(1, Math.round(toBoss * DUEL_SKILL_HIT_MULT[skill.family][rarity]));
-      skillCooldown = DUEL_SKILL_COOLDOWN[skill.family];
+      skillCooldown = Math.max(1, DUEL_SKILL_COOLDOWN[skill.family] - (skill.cooldownReduce ?? 0));
       myNotes.push(`${SKILL_ICON[skill.family]} ${getDuelSkillInfo(skill).name}!`);
     }
     if (charged) {
@@ -1304,7 +1305,7 @@ export function applySurvivalBuff(state: SurvivalState, buff: SurvivalBuffId): S
 }
 
 // 싸움이 끝난 뒤 내 남은 HP. 로그에서 내 HP가 마지막으로 바뀐 값을 찾는다(내가 먼저 쓰러뜨리면 상대 공격이 없어 그대로다).
-function myHpAfterBattle(log: BattleTurn[], startHp: number): number {
+export function myHpAfterBattle(log: BattleTurn[], startHp: number): number {
   for (let i = log.length - 1; i >= 0; i--) {
     const t = log[i];
     if (t.myHp !== undefined) return t.myHp;

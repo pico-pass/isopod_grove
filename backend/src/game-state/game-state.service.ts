@@ -12,12 +12,54 @@ import {
   GameStateDocument,
   SurvivalDuel,
   SurvivalRun,
+  DungeonRun,
+  DungeonDuel,
   Terrarium,
   WildDuel,
 } from './schemas/game-state.schema';
 import { Friendship, FriendshipDocument } from '../friends/schemas/friendship.schema';
 import { PuzzleRecord, PuzzleRecordDocument } from './schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordDocument } from './schemas/runner-record.schema';
+import {
+  DUNGEON_BATTLE_EXTRA_GOLD,
+  DUNGEON_BATTLE_RELIC_CHANCE,
+  DUNGEON_BOSS_HEAL_RATE,
+  DUNGEON_CHAPTER,
+  DUNGEON_CHAPTER_BONUS,
+  DUNGEON_CLEAR_DIAMONDS,
+  DUNGEON_DAILY_RUNS,
+  DUNGEON_DIFFICULTIES,
+  DUNGEON_FIRST_CLEAR_EQUIPMENT_RARITY,
+  DUNGEON_FIRST_FLOOR_DIAMONDS,
+  DUNGEON_FLOORS,
+  DUNGEON_POTION_HEAL_RATE,
+  DUNGEON_POTION_PRICE,
+  DUNGEON_RELICS,
+  DUNGEON_REST_HEAL_RATE,
+  DUNGEON_REVIVE_HP_RATE,
+  DUNGEON_ROOM_INFO,
+  DUNGEON_SKIP_GOLD,
+  DUNGEON_TRAIN_BONUS,
+  describeDungeonScore,
+  dungeonScore,
+  findDungeonDifficulty,
+  findEvent,
+  findRelic,
+  generateRoomOptions,
+  getDungeonEnemy,
+  getDungeonRewards,
+  getDungeonStats,
+  countRelics,
+  normalizeDungeonScore,
+  resolveEvent,
+  rollEventId,
+  rollRelicOffer,
+  rollShop,
+  seededRandom,
+  type DungeonDifficultyId,
+  type DungeonOfferKind,
+  type DungeonRoom,
+} from './dungeon-engine';
 import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import { WeatherService } from '../weather/weather.service';
 import { getWeatherEffects, pickWeightedByFamily } from '../weather/weather.data';
@@ -228,6 +270,7 @@ import {
   pickRandomOfRarityAndFamily,
   scaleStatsByMultiplier,
   rollBossStats,
+  myHpAfterBattle,
   rollCombatStats,
   rollEnemyLevel,
   rollEquipmentRarity,
@@ -304,6 +347,8 @@ export class GameStateService {
   // 오늘의 퍼즐 제출·보상 수령도 같은 이유로 막는다(같은 유저의 요청이 겹치면 보상이 두 번 지급될 수 있다).
   private readonly puzzleInFlight = new Set<string>();
   private readonly runnerInFlight = new Set<string>();
+  // 던전 진행도 같은 이유로 막는다(같은 유저의 요청이 겹치면 보상이나 선택이 두 번 처리될 수 있다).
+  private readonly dungeonInFlight = new Set<string>();
 
   // 서로 친구(status: accepted)인 관계 수를 센다. Friendship은 양방향이라 요청자/수신자 어느 쪽에
   // 내가 있어도 센다.
@@ -3680,6 +3725,798 @@ export class GameStateService {
     };
   }
 
+  // ---- 던전(로그라이크) ----
+  // 식구 한 마리로 100층을 올라가는 런(10층마다 한 장: 5층 엘리트, 10층 보스). 규칙과 수치는 dungeon-engine.ts에 있고, 여기서는 서버가 상태를 들고 한 번에 하나씩 진행한다.
+  // 일반 전투는 자동으로 끝내고, 엘리트·보스는 서바이벌 엘리트처럼 매 턴 행동을 고르는 직접 전투다. 100층 보스를 쓰러뜨려야 완주다.
+  private async withDungeonLock<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    if (this.dungeonInFlight.has(userId)) {
+      throw new BadRequestException('던전을 진행하는 중이에요. 잠시만 기다려 주세요.');
+    }
+    this.dungeonInFlight.add(userId);
+    try {
+      return await fn();
+    } finally {
+      this.dungeonInFlight.delete(userId);
+    }
+  }
+
+  private dungeonStatsOf(run: DungeonRun) {
+    return getDungeonStats({ baseHp: run.baseHp, baseAtk: run.baseAtk, baseDef: run.baseDef, relics: run.relics ?? [], bonus: run.bonus });
+  }
+
+  private dungeonLog(run: DungeonRun, text: string) {
+    run.log = [...(run.log ?? []), text].slice(-30);
+  }
+
+  // 최대 HP가 바뀌면 현재 HP도 맞춘다(늘어난 만큼 바로 회복, 줄면 새 최대치까지만).
+  private dungeonSyncHp(run: DungeonRun, maxBefore: number) {
+    const maxNow = this.dungeonStatsOf(run).maxHp;
+    run.hp = maxNow > maxBefore ? Math.min(maxNow, run.hp + (maxNow - maxBefore)) : Math.min(run.hp, maxNow);
+    run.hp = Math.max(1, run.hp);
+  }
+
+  private dungeonAddRelic(gameState: GameStateDocument, run: DungeonRun, relicId: string) {
+    const before = this.dungeonStatsOf(run).maxHp;
+    run.relics = [...(run.relics ?? []), relicId];
+    this.dungeonSyncHp(run, before);
+    if (!(gameState.dungeonRelicsSeen ?? []).includes(relicId)) {
+      gameState.dungeonRelicsSeen = [...(gameState.dungeonRelicsSeen ?? []), relicId];
+    }
+  }
+
+  private dungeonHeal(run: DungeonRun, fraction: number) {
+    const stats = this.dungeonStatsOf(run);
+    run.hp = Math.max(1, Math.min(stats.maxHp, run.hp + Math.round(stats.maxHp * fraction)));
+  }
+
+  private dungeonAddGold(run: DungeonRun, base: number) {
+    const gained = Math.round(base * this.dungeonStatsOf(run).goldMult);
+    run.gold = (run.gold ?? 0) + gained;
+    return gained;
+  }
+
+  // 전투 한 번의 버섯조각: 10층까지 층마다 늘고 그 뒤로는 그대로다(깊이 들어가도 상점 유물이 너무 싸지지 않게).
+  private dungeonFightGold(floor: number, elite: boolean): number {
+    return 10 + Math.min(floor, DUNGEON_CHAPTER) * 10 + (elite ? 15 : 0);
+  }
+
+  // 유물 고르기 단계로 들어간다(제안은 시드·층·종류로 정해서 저장한다).
+  private dungeonOpenReward(run: DungeonRun, kind: DungeonOfferKind) {
+    const stats = this.dungeonStatsOf(run);
+    const salt = ['battle', 'elite', 'treasure', 'event', 'shop', 'boss'].indexOf(kind) + 10;
+    run.offer = rollRelicOffer(seededRandom(run.seed, run.cleared, salt), run.relics ?? [], kind, stats.offerCount);
+    run.offerKind = kind;
+    run.phase = run.offer.length > 0 ? 'reward' : 'choose';
+    if (run.offer.length === 0) this.dungeonLog(run, '더 얻을 유물이 없어요.');
+  }
+
+  private dungeonNextFloor(run: DungeonRun) {
+    run.phase = 'choose';
+    run.offer = [];
+    run.offerKind = '';
+    run.eventId = '';
+    run.shop = null;
+  }
+
+  private dungeonEnemyFor(run: DungeonRun, room: DungeonRoom, speciesList: Species[]) {
+    const type = room.type === 'boss' ? 'boss' : room.type === 'elite' ? 'elite' : 'battle';
+    const enemy = getDungeonEnemy(run.seed, run.cleared + 1, type, run.difficulty as DungeonDifficultyId);
+    const family = room.family ?? 'forest';
+    const enemySpecies = pickRandomOfRarityAndFamily(speciesList, enemy.speciesRarity, family, Math.random());
+    return { enemy, family, environment: (room.environment ?? 'plain') as BattleEnvironmentId, enemySpecies, type };
+  }
+
+  // 두 번째 껍질로 되살아난다(런에서 한 번). 되살아나면 true.
+  private dungeonTryRevive(run: DungeonRun): boolean {
+    const stats = this.dungeonStatsOf(run);
+    if (!stats.hasRevive || run.revived) return false;
+    run.revived = true;
+    run.relics = (run.relics ?? []).filter((id) => findRelic(id)?.effects.revive !== true);
+    run.hp = Math.max(1, Math.round(this.dungeonStatsOf(run).maxHp * DUNGEON_REVIVE_HP_RATE));
+    this.dungeonLog(run, '🐚 두 번째 껍질이 깨지며 되살아났어요!');
+    return true;
+  }
+
+  // 일반 전투: 자동으로 끝까지 싸운다.
+  private dungeonAutoFight(run: DungeonRun, species: Species, room: DungeonRoom, speciesList: Species[]) {
+    const { enemy, family, environment, enemySpecies } = this.dungeonEnemyFor(run, room, speciesList);
+    const rolledEnemy = rollBossStats(enemy.stats);
+    const fightOnce = () => {
+      const stats = this.dungeonStatsOf(run);
+      const applied = applyBattleRules(
+        { hp: run.hp, atk: stats.atk, def: stats.def },
+        rolledEnemy,
+        resolveFamily(species),
+        family,
+        environment,
+      );
+      const sim = simulateBossBattle(applied.mine, applied.enemy, enemy.patterns, Math.random);
+      return { applied, sim, hpBefore: run.hp };
+    };
+    let fight = fightOnce();
+    let revived = false;
+    if (fight.sim.winner !== 'me' && this.dungeonTryRevive(run)) {
+      revived = true;
+      fight = fightOnce();
+    }
+    const won = fight.sim.winner === 'me';
+    const hpAfter = Math.max(0, myHpAfterBattle(fight.sim.log, fight.hpBefore));
+    return {
+      won,
+      revived,
+      hpAfter,
+      view: {
+        won,
+        revived,
+        floor: run.cleared + 1,
+        hpBefore: fight.hpBefore,
+        hpAfter,
+        enemy: {
+          speciesId: enemySpecies.speciesId,
+          name: enemySpecies.name,
+          image: enemySpecies.image,
+          filter: enemySpecies.filter,
+          rarity: enemySpecies.rarity,
+          stats: fight.applied.enemy,
+          family,
+        },
+        rules: fight.applied.rules,
+        log: fight.sim.log,
+      },
+    };
+  }
+
+  private dungeonStartDuel(run: DungeonRun, species: Species, room: DungeonRoom, speciesList: Species[]) {
+    const { enemy, family, environment, enemySpecies, type } = this.dungeonEnemyFor(run, room, speciesList);
+    const stats = this.dungeonStatsOf(run);
+    const applied = applyBattleRules(
+      { hp: run.hp, atk: stats.atk, def: stats.def },
+      rollBossStats(enemy.stats),
+      resolveFamily(species),
+      family,
+      environment,
+    );
+    run.duel = {
+      kind: type,
+      enemySpeciesId: enemySpecies.speciesId,
+      enemyFamily: family,
+      environment,
+      enemyPatterns: enemy.patterns,
+      mineHp: run.hp,
+      mineAtk: applied.mine.atk,
+      mineDef: applied.mine.def,
+      enemyHpMax: applied.enemy.hp,
+      enemyAtk: applied.enemy.atk,
+      enemyDef: applied.enemy.def,
+      turn: 1,
+      myHp: run.hp,
+      enemyHp: applied.enemy.hp,
+      enraged: false,
+      charged: false,
+      strikeCooldown: 0,
+      skillCooldown: 0,
+      burnTurns: 0,
+      rootTurns: 0,
+      healUsed: false,
+      log: [],
+    } as DungeonDuel;
+    run.phase = 'duel';
+  }
+
+  private toDungeonDuelState(duel: DungeonDuel): BossDuelState {
+    return {
+      turn: duel.turn,
+      myHp: duel.myHp,
+      bossHp: duel.enemyHp,
+      enraged: duel.enraged,
+      charged: duel.charged,
+      strikeCooldown: duel.strikeCooldown,
+      healUsed: duel.healUsed,
+      skillCooldown: duel.skillCooldown ?? 0,
+      burnTurns: duel.burnTurns ?? 0,
+      rootTurns: duel.rootTurns ?? 0,
+    };
+  }
+
+  // maxStacks: 한 런에서 몇 개까지 겹쳐 가질 수 있는지. owned: 지금 가진 개수(제안·상점 화면에서 "n/최대"를 보여 준다).
+  private relicView(relicId: string, owned?: number) {
+    const r = findRelic(relicId);
+    if (!r) return { relicId, name: relicId, icon: '❔', tier: 0, description: '', maxStacks: 1, ...(owned === undefined ? {} : { owned }) };
+    return {
+      relicId: r.relicId,
+      name: r.name,
+      icon: r.icon,
+      tier: r.tier,
+      description: r.description,
+      maxStacks: r.maxStacks,
+      ...(owned === undefined ? {} : { owned }),
+    };
+  }
+
+  // 가진 유물을 종류별로 묶어서(처음 얻은 순서) 개수와 함께 보여 준다.
+  private relicStacksView(relics: readonly string[]) {
+    const counts = countRelics(relics);
+    return [...counts].map(([id, count]) => ({ ...this.relicView(id), count }));
+  }
+
+  private dungeonAttemptsLeft(gameState: GameStateDocument): number {
+    const today = gameState.daily?.day === dayKey() ? gameState.daily.dungeonRuns ?? 0 : 0;
+    return Math.max(0, DUNGEON_DAILY_RUNS - today);
+  }
+
+  private dungeonInfo(gameState: GameStateDocument) {
+    const best = normalizeDungeonScore(gameState.stats.dungeonBestScore);
+    return {
+      dailyRuns: DUNGEON_DAILY_RUNS,
+      attemptsLeft: this.dungeonAttemptsLeft(gameState),
+      floors: DUNGEON_FLOORS,
+      chapter: DUNGEON_CHAPTER,
+      chapterBonus: DUNGEON_CHAPTER_BONUS,
+      milestones: Object.entries(DUNGEON_FIRST_FLOOR_DIAMONDS).map(([floor, diamonds]) => ({ floor: Number(floor), diamonds })),
+      difficulties: DUNGEON_DIFFICULTIES.map((d) => ({ id: d.id, name: d.name, rewardMult: d.rewardMult })),
+      relics: DUNGEON_RELICS.map((r) => this.relicView(r.relicId)),
+      relicsSeen: gameState.dungeonRelicsSeen ?? [],
+      bestScore: best,
+      bestLabel: best > 0 ? describeDungeonScore(best) : null,
+      clears: gameState.stats.dungeonClears ?? 0,
+      rooms: DUNGEON_ROOM_INFO,
+    };
+  }
+
+  // 화면에 그릴 진행 중인 런. 지금 단계(phase)에 필요한 것만 채운다.
+  private toDungeonRunView(gameState: GameStateDocument, run: DungeonRun, species: Species, speciesList: Species[]) {
+    const stats = this.dungeonStatsOf(run);
+    const difficulty = findDungeonDifficulty(run.difficulty) ?? DUNGEON_DIFFICULTIES[0];
+    const floor = run.cleared + 1;
+    const view: Record<string, unknown> = {
+      difficulty: { id: difficulty.id, name: difficulty.name, rewardMult: difficulty.rewardMult },
+      floor,
+      cleared: run.cleared,
+      floors: DUNGEON_FLOORS,
+      phase: run.phase,
+      species: {
+        speciesId: species.speciesId,
+        name: this.displayNameFor(gameState, species.speciesId, species.name),
+        image: species.image,
+        filter: species.filter,
+        rarity: species.rarity,
+        family: resolveFamily(species),
+        level: run.level,
+      },
+      hp: run.hp,
+      maxHp: stats.maxHp,
+      atk: stats.atk,
+      def: stats.def,
+      gold: run.gold ?? 0,
+      relics: this.relicStacksView(run.relics ?? []),
+      bonus: { atk: run.bonus?.atk ?? 0, def: run.bonus?.def ?? 0, hp: run.bonus?.hp ?? 0 },
+      revived: run.revived ?? false,
+      skillCooldownReduce: stats.skillCd,
+      log: run.log ?? [],
+    };
+    if (run.phase === 'choose') {
+      view.options = generateRoomOptions(run.seed, floor).map((room, index) => ({
+        index,
+        type: room.type,
+        ...DUNGEON_ROOM_INFO[room.type],
+        family: room.family,
+        environment: room.environment,
+      }));
+    } else if (run.phase === 'reward') {
+      const have = countRelics(run.relics ?? []);
+      view.offer = (run.offer ?? []).map((id) => this.relicView(id, have.get(id) ?? 0));
+      view.offerKind = run.offerKind;
+      view.skipGold = DUNGEON_SKIP_GOLD;
+    } else if (run.phase === 'event') {
+      const ev = findEvent(run.eventId);
+      if (ev) {
+        view.event = {
+          eventId: ev.eventId,
+          title: ev.title,
+          icon: ev.icon,
+          text: ev.text,
+          choices: ev.choices.map((c) => ({ ...c, disabled: resolveEvent(ev.eventId, c.id, run.gold ?? 0, () => 0) === null })),
+        };
+      }
+    } else if (run.phase === 'shop') {
+      const shop = (run.shop ?? { relics: [], potionPrice: DUNGEON_POTION_PRICE, potionSold: false }) as {
+        relics: { relicId: string; price: number; sold?: boolean }[];
+        potionPrice: number;
+        potionSold?: boolean;
+      };
+      view.shop = {
+        relics: shop.relics.map((s) => ({ ...this.relicView(s.relicId, countRelics(run.relics ?? []).get(s.relicId) ?? 0), price: s.price, sold: !!s.sold, affordable: (run.gold ?? 0) >= s.price })),
+        potion: { price: shop.potionPrice, sold: !!shop.potionSold, healRate: DUNGEON_POTION_HEAL_RATE, affordable: (run.gold ?? 0) >= shop.potionPrice },
+      };
+    } else if (run.phase === 'rest') {
+      view.rest = { healRate: DUNGEON_REST_HEAL_RATE + stats.restBonus, trainBonus: DUNGEON_TRAIN_BONUS };
+    } else if (run.phase === 'duel' && run.duel) {
+      const duel = run.duel;
+      const enemySpecies = speciesList.find((s) => s.speciesId === duel.enemySpeciesId) ?? species;
+      const fighter = (s: Species, name: string, st: CombatStats, level: number): DuelFighterView => ({
+        speciesId: s.speciesId,
+        name,
+        image: s.image,
+        filter: s.filter,
+        rarity: s.rarity,
+        stats: st,
+        level,
+        family: resolveFamily(s),
+      });
+      const rules = duel.enemyFamily
+        ? describeBattleRules(resolveFamily(species), duel.enemyFamily as SpeciesFamily, (duel.environment || null) as BattleEnvironmentId | null)
+        : null;
+      view.duel = {
+        kind: duel.kind,
+        isBoss: duel.kind === 'boss',
+        rules,
+        ...this.duelCoreView(
+          fighter(species, this.displayNameFor(gameState, species.speciesId, species.name), { hp: stats.maxHp, atk: duel.mineAtk, def: duel.mineDef }, run.level),
+          fighter(enemySpecies, enemySpecies.name, { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef }, run.level),
+          (duel.enemyPatterns ?? []) as BossPattern[],
+          this.toDungeonDuelState(duel),
+          duel.log as unknown as BattleTurn[],
+        ),
+      };
+    }
+    return view;
+  }
+
+  async getDungeon(userId: string) {
+    const gameState = await this.getOrThrow(userId);
+    const run = gameState.dungeonRun;
+    const info = this.dungeonInfo(gameState);
+    if (!run) return { run: null, info };
+    const species = await this.speciesService.findOne(run.speciesId);
+    if (!species) return { run: null, info };
+    const speciesList = await this.speciesService.findAll();
+    return { run: this.toDungeonRunView(gameState, run, species, speciesList), info };
+  }
+
+  async dungeonStart(userId: string, speciesId: string, difficultyId: string) {
+    const difficulty = findDungeonDifficulty(difficultyId);
+    if (!difficulty) throw new BadRequestException('알 수 없는 난이도예요.');
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      this.resetDailyIfNeeded(gameState);
+      if (gameState.dungeonRun) {
+        throw new BadRequestException('진행 중인 던전이 있어요. 이어서 하거나 포기해 주세요.');
+      }
+      if (!(this.totalOf(gameState, speciesId) > 0)) {
+        throw new BadRequestException('아직 만나지 못한 식구예요.');
+      }
+      const used = gameState.daily.dungeonRuns || 0;
+      if (used >= DUNGEON_DAILY_RUNS) {
+        throw new BadRequestException(`오늘의 던전 입장 ${DUNGEON_DAILY_RUNS}회를 모두 썼어요. 내일 다시 도전해 주세요.`);
+      }
+      const species = await this.speciesService.findOne(speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+
+      // 입장할 때의 능력치(레벨·장비 반영, 개체 편차 포함)를 한 번만 굴려서 런이 끝날 때까지 쓴다.
+      const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
+      const rolled = rollCombatStats(species.rarity, level, Math.random, computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment));
+      gameState.daily.dungeonRuns = used + 1;
+      gameState.stats.dungeonRuns = (gameState.stats.dungeonRuns || 0) + 1;
+      gameState.dungeonRun = {
+        speciesId,
+        level,
+        difficulty: difficulty.id,
+        seed: Math.floor(Math.random() * 2_147_483_647),
+        cleared: 0,
+        phase: 'choose',
+        hp: rolled.hp,
+        baseHp: rolled.hp,
+        baseAtk: rolled.atk,
+        baseDef: rolled.def,
+        relics: [],
+        bonus: { atk: 0, def: 0, hp: 0 },
+        gold: 0,
+        revived: false,
+        offer: [],
+        offerKind: '',
+        eventId: '',
+        shop: null,
+        duel: null,
+        log: [`🪵 ${difficulty.name} 던전에 들어왔어요.`],
+        startedAt: Date.now(),
+      } as DungeonRun;
+      await gameState.save();
+      const speciesList = await this.speciesService.findAll();
+      return {
+        gameState,
+        message: `${difficulty.name} 던전에 입장했어요! 올라갈 방을 골라 주세요.`,
+        run: this.toDungeonRunView(gameState, gameState.dungeonRun as DungeonRun, species, speciesList),
+        info: this.dungeonInfo(gameState),
+        ended: null,
+      };
+    });
+  }
+
+  // 지금 단계(방 고르기·유물·이벤트·상점·휴식)에 맞는 선택 하나를 처리한다. 선택 값은 단계마다 다르다:
+  //   방 고르기 '0'·'1'·'2' / 유물 relicId 또는 'skip' / 이벤트 선택 id / 상점 'buy:relicId'·'potion'·'leave' / 휴식 'heal'·'atk'·'def'·'hp'
+  async dungeonChoose(userId: string, choice: string) {
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.dungeonRun;
+      if (!run) throw new BadRequestException('진행 중인 던전이 없어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      const speciesList = await this.speciesService.findAll();
+
+      let message = '';
+      let battle: unknown = null;
+      let ended: ReturnType<GameStateService['dungeonFinalize']> | null = null;
+      switch (run.phase) {
+        case 'choose': {
+          const r = this.dungeonEnterRoom(gameState, run, species, speciesList, choice);
+          message = r.message;
+          battle = r.battle ?? null;
+          ended = r.ended ?? null;
+          break;
+        }
+        case 'reward': {
+          if (choice === 'skip') {
+            const gained = this.dungeonAddGold(run, DUNGEON_SKIP_GOLD);
+            message = `유물을 고르지 않고 버섯조각 ${gained}개를 챙겼어요.`;
+          } else {
+            if (!(run.offer ?? []).includes(choice)) throw new BadRequestException('제시된 유물 중에서 골라 주세요.');
+            this.dungeonAddRelic(gameState, run, choice);
+            const info = this.relicView(choice);
+            message = `${info.icon} ${info.name}을(를) 얻었어요!`;
+          }
+          this.dungeonLog(run, message);
+          this.dungeonNextFloor(run);
+          break;
+        }
+        case 'event': {
+          const outcome = resolveEvent(run.eventId, choice, run.gold ?? 0, Math.random);
+          if (!outcome) throw new BadRequestException('고를 수 없는 선택이에요. 버섯조각이 모자라거나 없는 선택이에요.');
+          const maxBefore = this.dungeonStatsOf(run).maxHp;
+          run.gold = Math.max(0, (run.gold ?? 0) + outcome.gold);
+          if (outcome.bonus) {
+            run.bonus = {
+              atk: (run.bonus?.atk ?? 0) + (outcome.bonus.atk ?? 0),
+              def: (run.bonus?.def ?? 0) + (outcome.bonus.def ?? 0),
+              hp: (run.bonus?.hp ?? 0) + (outcome.bonus.hp ?? 0),
+            };
+            this.dungeonSyncHp(run, maxBefore);
+          }
+          if (outcome.hpDelta !== 0) {
+            const maxHp = this.dungeonStatsOf(run).maxHp;
+            run.hp = Math.max(1, Math.min(maxHp, run.hp + Math.round(maxHp * outcome.hpDelta)));
+          }
+          message = outcome.message;
+          this.dungeonLog(run, message);
+          if (outcome.offerRelic) this.dungeonOpenReward(run, 'event');
+          else this.dungeonNextFloor(run);
+          break;
+        }
+        case 'shop': {
+          const shop = run.shop as { relics: { relicId: string; price: number; sold?: boolean }[]; potionPrice: number; potionSold?: boolean } | null;
+          if (!shop) throw new BadRequestException('상점 정보를 읽지 못했어요.');
+          if (choice === 'leave') {
+            message = '상점을 나왔어요.';
+            this.dungeonNextFloor(run);
+          } else if (choice === 'potion') {
+            if (shop.potionSold) throw new BadRequestException('이미 샀어요.');
+            if ((run.gold ?? 0) < shop.potionPrice) throw new BadRequestException(`버섯조각이 모자라요. ${shop.potionPrice}개가 필요해요.`);
+            run.gold -= shop.potionPrice;
+            this.dungeonHeal(run, DUNGEON_POTION_HEAL_RATE);
+            run.shop = { ...shop, potionSold: true };
+            message = `🧪 회복약을 마셨어요. (-${shop.potionPrice} 버섯조각)`;
+          } else if (choice.startsWith('buy:')) {
+            const id = choice.slice(4);
+            const item = shop.relics.find((s) => s.relicId === id);
+            if (!item) throw new BadRequestException('상점에 없는 유물이에요.');
+            if (item.sold) throw new BadRequestException('이미 샀어요.');
+            if ((run.gold ?? 0) < item.price) throw new BadRequestException(`버섯조각이 모자라요. ${item.price}개가 필요해요.`);
+            run.gold -= item.price;
+            this.dungeonAddRelic(gameState, run, id);
+            run.shop = { ...shop, relics: shop.relics.map((s) => (s.relicId === id ? { ...s, sold: true } : s)) };
+            const info = this.relicView(id);
+            message = `${info.icon} ${info.name}을(를) 샀어요! (-${item.price} 버섯조각)`;
+          } else {
+            throw new BadRequestException('알 수 없는 선택이에요.');
+          }
+          this.dungeonLog(run, message);
+          break;
+        }
+        case 'rest': {
+          const stats = this.dungeonStatsOf(run);
+          if (choice === 'heal') {
+            this.dungeonHeal(run, DUNGEON_REST_HEAL_RATE + stats.restBonus);
+            message = '🏕️ 푹 쉬었어요. HP가 회복됐어요.';
+          } else if (choice === 'atk' || choice === 'def' || choice === 'hp') {
+            const maxBefore = stats.maxHp;
+            run.bonus = { atk: run.bonus?.atk ?? 0, def: run.bonus?.def ?? 0, hp: run.bonus?.hp ?? 0, [choice]: (run.bonus?.[choice] ?? 0) + DUNGEON_TRAIN_BONUS };
+            this.dungeonSyncHp(run, maxBefore);
+            message = `🏕️ ${{ atk: '공격력', def: '방어력', hp: '체력' }[choice]}을(를) 단련했어요. (+${Math.round(DUNGEON_TRAIN_BONUS * 10000) / 100}%)`;
+          } else {
+            throw new BadRequestException('알 수 없는 선택이에요.');
+          }
+          this.dungeonLog(run, message);
+          this.dungeonNextFloor(run);
+          break;
+        }
+        default:
+          throw new BadRequestException('지금은 직접 전투 중이에요. 행동을 골라 주세요.');
+      }
+      return this.dungeonRespond(gameState, run, species, speciesList, message, battle, ended);
+    });
+  }
+
+  // 방 하나에 들어간다. 일반 전투는 바로 결과가 나오고, 엘리트·보스는 직접 전투가 시작된다.
+  private dungeonEnterRoom(gameState: GameStateDocument, run: DungeonRun, species: Species, speciesList: Species[], choice: string) {
+    const options = generateRoomOptions(run.seed, run.cleared + 1);
+    // 방 번호 뒤에 ':manual'을 붙이면 일반 전투도 직접 전투로 한다(':auto'나 생략은 자동 전투, 전투가 아닌 방에서는 무시).
+    const parsed = /^(\d+)(?::(auto|manual))?$/.exec(choice);
+    const index = parsed ? Number(parsed[1]) : -1;
+    const manual = parsed?.[2] === 'manual';
+    const room = options[index];
+    if (!room) throw new BadRequestException('고를 수 없는 방이에요.');
+    const floor = run.cleared + 1;
+    const name = `${DUNGEON_ROOM_INFO[room.type].icon} ${DUNGEON_ROOM_INFO[room.type].name}`;
+
+    if (room.type === 'battle' && manual) {
+      this.dungeonLog(run, `${name}에 들어왔어요. (직접 전투)`);
+      this.dungeonStartDuel(run, species, room, speciesList);
+      return { message: `${name}과(와) 마주쳤어요! 행동을 골라 주세요.` };
+    }
+    if (room.type === 'battle') {
+      const fight = this.dungeonAutoFight(run, species, room, speciesList);
+      if (!fight.won) {
+        this.dungeonLog(run, `${floor}층 전투에서 쓰러졌어요.`);
+        run.hp = 0;
+        return { message: `${floor}층 전투에서 쓰러졌어요…`, battle: fight.view, ended: this.dungeonFinalize(gameState, run, species, 'dead') };
+      }
+      return { message: this.dungeonBattleWon(run, floor, fight.hpAfter, fight.revived), battle: fight.view };
+    }
+    if (room.type === 'elite' || room.type === 'boss') {
+      this.dungeonLog(run, `${name}에 들어왔어요.`);
+      this.dungeonStartDuel(run, species, room, speciesList);
+      return { message: `${name}과(와) 마주쳤어요! 행동을 골라 주세요.` };
+    }
+    // 싸우지 않는 방은 들어가는 순간 층을 끝낸 것으로 센다(런을 포기해도 이 층은 깬 것으로 친다).
+    run.cleared += 1;
+    this.dungeonLog(run, `${name}에 들어왔어요.`);
+    if (room.type === 'rest') {
+      run.phase = 'rest';
+      return { message: '🏕️ 쉴 곳을 찾았어요. 쉬거나 단련할 수 있어요.' };
+    }
+    if (room.type === 'shop') {
+      const stats = this.dungeonStatsOf(run);
+      const stock = rollShop(run.seed, run.cleared, run.relics ?? [], stats.shopDiscount);
+      run.shop = { relics: stock.relics.map((s) => ({ ...s, sold: false })), potionPrice: stock.potionPrice, potionSold: false };
+      run.phase = 'shop';
+      return { message: '🛒 떠돌이 상점이에요. 버섯조각으로 살 수 있어요.' };
+    }
+    if (room.type === 'event') {
+      run.eventId = rollEventId(run.seed, run.cleared);
+      run.phase = 'event';
+      return { message: `❓ ${findEvent(run.eventId)?.title ?? '이벤트'}이(가) 벌어졌어요!` };
+    }
+    this.dungeonOpenReward(run, 'treasure');
+    return { message: '💎 보물 상자를 찾았어요! 유물을 하나 골라요.' };
+  }
+
+  // 일반 전투에서 이긴 뒤 처리(자동·직접 전투 공통): 전투 후 회복, 버섯조각, 층 +1, 유물 제안(확률) 또는 바로 다음 층.
+  private dungeonBattleWon(run: DungeonRun, floor: number, hpAfter: number, usedRevive: boolean): string {
+    const stats = this.dungeonStatsOf(run);
+    run.hp = Math.max(1, Math.min(stats.maxHp, hpAfter + Math.round(stats.maxHp * stats.postHeal)));
+    const gained = this.dungeonAddGold(run, this.dungeonFightGold(floor, false));
+    run.cleared += 1;
+    // 깊이 들어갈수록 전투가 많아서, 이길 때마다 유물이 나오지는 않는다(안 나오면 버섯조각을 더 얻는다).
+    const relicDrop = seededRandom(run.seed, floor, 20)() < DUNGEON_BATTLE_RELIC_CHANCE;
+    const extra = relicDrop ? 0 : this.dungeonAddGold(run, DUNGEON_BATTLE_EXTRA_GOLD);
+    const message = `⚔️ ${floor}층 전투 승리! 버섯조각 ${gained + extra}개${usedRevive ? ' (두 번째 껍질을 썼어요)' : ''}`;
+    this.dungeonLog(run, message);
+    if (relicDrop) this.dungeonOpenReward(run, 'battle');
+    else this.dungeonNextFloor(run);
+    return message;
+  }
+
+  // 직접 전투(일반 전투를 직접 하기로 한 경우·엘리트·보스)를 한 턴 진행한다.
+  async dungeonDuelAct(userId: string, action: string) {
+    if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
+      throw new BadRequestException('알 수 없는 행동이에요.');
+    }
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.dungeonRun;
+      const duel = run?.duel;
+      if (!run || !duel || run.phase !== 'duel') throw new BadRequestException('진행 중인 직접 전투가 없어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      const speciesList = await this.speciesService.findAll();
+
+      const stats = this.dungeonStatsOf(run);
+      const mine: CombatStats = { hp: duel.mineHp, atk: duel.mineAtk, def: duel.mineDef };
+      const enemyStats: CombatStats = { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef };
+      const patterns = (duel.enemyPatterns ?? []) as BossPattern[];
+      const state = this.toDungeonDuelState(duel);
+      const status = getDuelActionStates(state).find((a) => a.id === action)!;
+      if (!status.available) {
+        const name = action === 'skill' ? '계열 기술' : DUEL_ACTION_INFO.find((a) => a.id === action)?.name ?? action;
+        throw new BadRequestException(`${name}은(는) 지금 쓸 수 없어요. ${status.reason ?? ''}`.trim());
+      }
+
+      const r = playDuelTurn(mine, enemyStats, patterns, state, action as DuelAction, Math.random, {
+        healCapHp: stats.maxHp,
+        skill: { ...this.duelSkillOf(species), cooldownReduce: stats.skillCd },
+      });
+      let log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
+      let winner = r.winner;
+      let nextState = r.state;
+      // 쓰러졌지만 두 번째 껍질이 있으면 한 번 되살아나서 전투를 이어 간다.
+      if (winner === 'enemy' && this.dungeonTryRevive(run)) {
+        winner = null;
+        nextState = { ...nextState, myHp: run.hp };
+        log = [...log, { turn: r.state.turn - 1, attacker: 'me', damage: 0, remainingHp: nextState.bossHp, note: '🐚 두 번째 껍질이 깨지며 되살아났어요!' }];
+      }
+      if (!winner) {
+        duel.turn = nextState.turn;
+        duel.myHp = nextState.myHp;
+        duel.enemyHp = nextState.bossHp;
+        duel.enraged = nextState.enraged;
+        duel.charged = nextState.charged;
+        duel.strikeCooldown = nextState.strikeCooldown;
+        duel.healUsed = nextState.healUsed;
+        duel.skillCooldown = nextState.skillCooldown ?? 0;
+        duel.burnTurns = nextState.burnTurns ?? 0;
+        duel.rootTurns = nextState.rootTurns ?? 0;
+        duel.log = log as unknown as Record<string, unknown>[];
+        run.hp = nextState.myHp;
+        await gameState.save();
+        return {
+          gameState,
+          message: '',
+          step: true as const,
+          run: this.toDungeonRunView(gameState, run, species, speciesList),
+          info: this.dungeonInfo(gameState),
+          turns: r.turns,
+          battle: null,
+          ended: null,
+        };
+      }
+
+      const won = winner === 'me';
+      const floor = run.cleared + 1;
+      const isBoss = duel.kind === 'boss';
+      const isBattle = duel.kind === 'battle';
+      run.duel = null;
+      if (!won) {
+        run.hp = 0;
+        this.dungeonLog(run, isBattle ? `${floor}층 전투에서 쓰러졌어요.` : `${floor}층 ${isBoss ? '보스' : '엘리트'}에게 쓰러졌어요.`);
+        const ended = this.dungeonFinalize(gameState, run, species, 'dead');
+        return this.dungeonRespond(gameState, run, species, speciesList, `${floor}층에서 쓰러졌어요…`, { log, won: false }, ended, r.turns);
+      }
+      if (isBattle) {
+        const message = this.dungeonBattleWon(run, floor, nextState.myHp, log.some((t) => /두 번째 껍질/.test(t.note ?? '')));
+        return this.dungeonRespond(gameState, run, species, speciesList, message, { log, won: true }, null, r.turns);
+      }
+      run.hp = Math.max(1, Math.min(stats.maxHp, nextState.myHp + Math.round(stats.maxHp * stats.postHeal)));
+      const gained = this.dungeonAddGold(run, this.dungeonFightGold(floor, !isBoss));
+      run.cleared += 1;
+      if (isBoss && floor >= DUNGEON_FLOORS) {
+        this.dungeonLog(run, '👑 던전의 주인을 쓰러뜨렸어요!');
+        const ended = this.dungeonFinalize(gameState, run, species, 'cleared');
+        return this.dungeonRespond(gameState, run, species, speciesList, `👑 ${DUNGEON_FLOORS}층을 완주했어요!`, { log, won: true }, ended, r.turns);
+      }
+      if (isBoss) {
+        // 장 보스: 이 장을 마무리하면 능력치가 오르고 크게 회복한다. 유물도 에픽 쪽으로 나온다.
+        const maxBefore = this.dungeonStatsOf(run).maxHp;
+        run.bonus = {
+          atk: (run.bonus?.atk ?? 0) + DUNGEON_CHAPTER_BONUS,
+          def: (run.bonus?.def ?? 0) + DUNGEON_CHAPTER_BONUS,
+          hp: (run.bonus?.hp ?? 0) + DUNGEON_CHAPTER_BONUS,
+        };
+        this.dungeonSyncHp(run, maxBefore);
+        this.dungeonHeal(run, DUNGEON_BOSS_HEAL_RATE);
+        const message = `👑 ${floor / DUNGEON_CHAPTER}장 보스를 쓰러뜨렸어요! 공격·방어·체력 +${Math.round(DUNGEON_CHAPTER_BONUS * 100)}%, HP 회복 · 버섯조각 ${gained}개`;
+        this.dungeonLog(run, message);
+        this.dungeonOpenReward(run, 'boss');
+        return this.dungeonRespond(gameState, run, species, speciesList, message, { log, won: true }, null, r.turns);
+      }
+      const message = `💀 ${floor}층 엘리트를 쓰러뜨렸어요! 버섯조각 ${gained}개`;
+      this.dungeonLog(run, message);
+      this.dungeonOpenReward(run, 'elite');
+      return this.dungeonRespond(gameState, run, species, speciesList, message, { log, won: true }, null, r.turns);
+    });
+  }
+
+  async dungeonRetire(userId: string) {
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      const run = gameState.dungeonRun;
+      if (!run) throw new BadRequestException('진행 중인 던전이 없어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      const speciesList = await this.speciesService.findAll();
+      this.dungeonLog(run, '던전에서 빠져나왔어요.');
+      const ended = this.dungeonFinalize(gameState, run, species, 'retired');
+      return this.dungeonRespond(gameState, run, species, speciesList, '던전에서 나왔어요. 지금까지 깬 층의 보상을 받았어요.', null, ended);
+    });
+  }
+
+  // 런이 끝났을 때(완주·쓰러짐·포기) 깬 층만큼 보상을 주고 런을 지운다.
+  private dungeonFinalize(gameState: GameStateDocument, run: DungeonRun, species: Species, reason: 'cleared' | 'dead' | 'retired') {
+    const difficulty = (findDungeonDifficulty(run.difficulty) ?? DUNGEON_DIFFICULTIES[0]).id;
+    const cleared = reason === 'cleared';
+    const floors = Math.min(DUNGEON_FLOORS, run.cleared);
+    const rewards = getDungeonRewards(floors, cleared, difficulty);
+    const xp = this.boostXp(gameState, rewards.xp);
+    const bestBefore = normalizeDungeonScore(gameState.stats.dungeonBestScore); // 10층 시절의 옛 기록 형식도 읽는다
+    const score = floors > 0 ? dungeonScore(difficulty, floors) : 0;
+    let diamonds = 0;
+    for (const [floor, reward] of Object.entries(DUNGEON_FIRST_FLOOR_DIAMONDS)) {
+      if (floors >= Number(floor) && bestBefore < dungeonScore(difficulty, Number(floor))) diamonds += reward;
+    }
+    const equipment: { itemId: string; name: string; rarity: number; isNew: boolean; copies: number }[] = [];
+    if (cleared) {
+      if ((gameState.daily.dungeonClears ?? 0) === 0) diamonds += DUNGEON_CLEAR_DIAMONDS;
+      gameState.daily.dungeonClears = (gameState.daily.dungeonClears ?? 0) + 1;
+      if ((gameState.stats.dungeonClears ?? 0) === 0) {
+        const picked = pickEquipmentOfRarity(DUNGEON_FIRST_CLEAR_EQUIPMENT_RARITY, Math.random());
+        const { item, isNew } = this.grantEquipment(gameState, picked.equipmentId);
+        equipment.push({ itemId: picked.equipmentId, name: picked.name, rarity: picked.rarity, isNew, copies: item.copies });
+      }
+      gameState.stats.dungeonClears = (gameState.stats.dungeonClears ?? 0) + 1;
+    }
+    gameState.stats.dungeonBestScore = Math.max(bestBefore, score);
+    gameState.coins += rewards.gold;
+    gameState.stats.earned += rewards.gold;
+    gameState.diamonds += diamonds;
+    const beforeXp = gameState.battleXp.get(species.speciesId) || 0;
+    const levelBefore = getBattleLevel(beforeXp);
+    gameState.battleXp.set(species.speciesId, beforeXp + xp);
+    const levelAfter = getBattleLevel(beforeXp + xp);
+    gameState.stats.highestBattleLevel = Math.max(gameState.stats.highestBattleLevel, levelAfter);
+    const relics = this.relicStacksView(run.relics ?? []);
+    const text = `던전(${(findDungeonDifficulty(difficulty) ?? DUNGEON_DIFFICULTIES[0]).name}) ${floors}층까지 ${cleared ? '완주' : '도달'}: +${rewards.gold.toLocaleString('ko-KR')} G${diamonds ? ` · 💎 ${diamonds}개` : ''}`;
+    this.pushLog(gameState, 'trophy', text);
+    gameState.dungeonRun = null;
+    return {
+      reason,
+      difficulty,
+      floorsCleared: floors,
+      cleared,
+      gold: rewards.gold,
+      xp,
+      diamonds,
+      equipment,
+      levelBefore,
+      levelAfter,
+      newBest: score > bestBefore,
+      bestLabel: describeDungeonScore(Math.max(bestBefore, score)),
+      relics,
+    };
+  }
+
+  private async dungeonRespond(
+    gameState: GameStateDocument,
+    run: DungeonRun,
+    species: Species,
+    speciesList: Species[],
+    message: string,
+    battle: unknown,
+    ended: ReturnType<GameStateService['dungeonFinalize']> | null,
+    turns: BattleTurn[] = [],
+  ) {
+    await gameState.save();
+    return {
+      gameState,
+      message,
+      run: gameState.dungeonRun ? this.toDungeonRunView(gameState, gameState.dungeonRun as DungeonRun, species, speciesList) : null,
+      info: this.dungeonInfo(gameState),
+      battle,
+      turns,
+      ended,
+    };
+  }
+
   // ---- 고급 탐색(원정) ----
   // 숲 탐색 비용에 비례하는 골드를 내고 에픽 이상을 확정으로 만난다(대원정이 전설·신화 확률이 더 높다). 탐색권으로는 갈 수 없다.
   // 오늘 이 원정을 다녀온 횟수(날짜가 바뀌었는데 아직 초기화되지 않았다면 0)
@@ -4165,6 +5002,8 @@ export class GameStateService {
         survivalExtraAttempts: 0,
         expeditionCount: 0,
         grandExpeditionCount: 0,
+        dungeonRuns: 0,
+        dungeonClears: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.

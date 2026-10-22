@@ -44,6 +44,11 @@ export class LeaderboardController {
     return this.leaderboardService.getLikesLeaderboard(user.userId, parseLeaderboardLimit(limit));
   }
 
+  @Get('dungeon')
+  dungeon(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.leaderboardService.getDungeonLeaderboard(user.userId, parseLeaderboardLimit(limit));
+  }
+
   @Get('pvp')
   pvp(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
     return this.leaderboardService.getPvpLeaderboard(user.userId, parseLeaderboardLimit(limit));

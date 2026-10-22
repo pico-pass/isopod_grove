@@ -42,6 +42,13 @@ export class DailyProgress {
   @Prop({ default: 0 })
   grandExpeditionCount: number;
 
+  // 오늘 던전에 입장한 횟수와 완주한 횟수(날짜가 바뀌면 daily 전체와 함께 0으로 돌아간다)
+  @Prop({ default: 0 })
+  dungeonRuns: number;
+
+  @Prop({ default: 0 })
+  dungeonClears: number;
+
   @Prop({ type: [String], default: [] })
   claimed: string[];
 }
@@ -118,6 +125,16 @@ export class Stats {
   // 서바이벌 입장 횟수 누적
   @Prop({ default: 0 })
   survivalRuns: number;
+
+  // 던전: 가장 높이 오른 기록(난이도 번호 × 100 + 층, 한 번 오르면 내려가지 않는다)·완주 횟수·입장 횟수 누적
+  @Prop({ default: 0 })
+  dungeonBestScore: number;
+
+  @Prop({ default: 0 })
+  dungeonClears: number;
+
+  @Prop({ default: 0 })
+  dungeonRuns: number;
 
   // 투기장 현재 연승. 지면 0으로 돌아간다(재도전 제한으로 거절된 시도는 영향이 없다).
   @Prop({ default: 0 })
@@ -364,6 +381,171 @@ export class SurvivalRun {
   startedAt: number;
 }
 export const SurvivalRunSchema = SchemaFactory.createForClass(SurvivalRun);
+
+// ---- 던전(로그라이크) ----
+// 런 중 단련·이벤트로 얻은 능력치 보너스(비율, 런 내내 유지)
+@Schema({ _id: false })
+export class DungeonBonus {
+  @Prop({ default: 0 })
+  atk: number;
+
+  @Prop({ default: 0 })
+  def: number;
+
+  @Prop({ default: 0 })
+  hp: number;
+}
+export const DungeonBonusSchema = SchemaFactory.createForClass(DungeonBonus);
+
+// 엘리트·보스와의 직접 전투 상태(서바이벌 엘리트 전투와 같은 모양이고, 내 능력치와 적 패턴을 함께 저장한다)
+@Schema({ _id: false })
+export class DungeonDuel {
+  // 'battle'(직접 하기로 한 일반 전투) | 'elite' | 'boss'
+  @Prop({ default: 'elite' })
+  kind: string;
+
+  @Prop({ default: '' })
+  enemySpeciesId: string;
+
+  @Prop({ default: '' })
+  enemyFamily: string;
+
+  @Prop({ default: '' })
+  environment: string;
+
+  @Prop({ type: [String], default: [] })
+  enemyPatterns: string[];
+
+  // 이 전투를 시작할 때의 내 HP, 상성·환경을 적용한 내 공격·방어
+  @Prop({ required: true })
+  mineHp: number;
+
+  @Prop({ required: true })
+  mineAtk: number;
+
+  @Prop({ required: true })
+  mineDef: number;
+
+  @Prop({ required: true })
+  enemyHpMax: number;
+
+  @Prop({ required: true })
+  enemyAtk: number;
+
+  @Prop({ required: true })
+  enemyDef: number;
+
+  @Prop({ default: 1 })
+  turn: number;
+
+  @Prop({ required: true })
+  myHp: number;
+
+  @Prop({ required: true })
+  enemyHp: number;
+
+  @Prop({ default: false })
+  enraged: boolean;
+
+  @Prop({ default: false })
+  charged: boolean;
+
+  @Prop({ default: 0 })
+  strikeCooldown: number;
+
+  @Prop({ default: 0 })
+  skillCooldown: number;
+
+  @Prop({ default: 0 })
+  burnTurns: number;
+
+  @Prop({ default: 0 })
+  rootTurns: number;
+
+  @Prop({ default: false })
+  healUsed: boolean;
+
+  @Prop({ type: [Object], default: [] })
+  log: Record<string, unknown>[];
+}
+export const DungeonDuelSchema = SchemaFactory.createForClass(DungeonDuel);
+
+@Schema({ _id: false })
+export class DungeonRun {
+  @Prop({ required: true })
+  speciesId: string;
+
+  // 입장할 때의 전투 레벨(화면 표시용)
+  @Prop({ default: 1 })
+  level: number;
+
+  @Prop({ default: 'easy' })
+  difficulty: string;
+
+  // 방·유물 제안·상점·이벤트를 정하는 런 시드
+  @Prop({ required: true })
+  seed: number;
+
+  // 지금까지 끝낸 층 수. 지금 층은 cleared + 1이다.
+  @Prop({ default: 0 })
+  cleared: number;
+
+  // 'choose'(방 고르기) | 'duel' | 'reward'(유물 고르기) | 'event' | 'shop' | 'rest'
+  @Prop({ default: 'choose' })
+  phase: string;
+
+  @Prop({ required: true })
+  hp: number;
+
+  // 입장할 때 굴린 기본 능력치(유물·보너스는 getDungeonStats가 더한다)
+  @Prop({ required: true })
+  baseHp: number;
+
+  @Prop({ required: true })
+  baseAtk: number;
+
+  @Prop({ required: true })
+  baseDef: number;
+
+  @Prop({ type: [String], default: [] })
+  relics: string[];
+
+  @Prop({ type: DungeonBonusSchema, default: () => ({}) })
+  bonus: DungeonBonus;
+
+  // 이번 런의 버섯조각(상점·이벤트에 쓴다. 런이 끝나면 사라진다)
+  @Prop({ default: 0 })
+  gold: number;
+
+  // 두 번째 껍질로 되살아난 적이 있는지
+  @Prop({ default: false })
+  revived: boolean;
+
+  // 유물을 고르는 중이면 제안된 유물 id들과 그 종류(battle·elite·treasure·event)
+  @Prop({ type: [String], default: [] })
+  offer: string[];
+
+  @Prop({ default: '' })
+  offerKind: string;
+
+  @Prop({ default: '' })
+  eventId: string;
+
+  // 상점 재고: { relics: [{ relicId, price, sold }], potionPrice, potionSold }
+  @Prop({ type: Object, default: null })
+  shop: Record<string, unknown> | null;
+
+  @Prop({ type: DungeonDuelSchema, default: null })
+  duel: DungeonDuel | null;
+
+  // 이번 런의 최근 일지(문장)
+  @Prop({ type: [String], default: [] })
+  log: string[];
+
+  @Prop({ required: true })
+  startedAt: number;
+}
+export const DungeonRunSchema = SchemaFactory.createForClass(DungeonRun);
 
 // 진행 중인 야생 배틀 직접 전투. 시작할 때 뽑은 상대와 굴린 양쪽 능력치, 지금까지의 전투 상태·기록을 서버가 들고 있다.
 @Schema({ _id: false })
@@ -669,6 +851,14 @@ export class GameState {
   // 진행 중인 서바이벌 런. 없으면 null.
   @Prop({ type: SurvivalRunSchema, default: null })
   survivalRun: SurvivalRun | null;
+
+  // 진행 중인 던전 런. 없으면 null.
+  @Prop({ type: DungeonRunSchema, default: null })
+  dungeonRun: DungeonRun | null;
+
+  // 던전에서 한 번이라도 얻은 유물 id(유물 도감)
+  @Prop({ type: [String], default: [] })
+  dungeonRelicsSeen: string[];
 
   // 서버가 마지막으로 시간 진행(advance)을 받은 시각(ms). 전설·신화 번식의 긴 오프라인 시간을 서버 시계로 재는 기준이다.
   // 이 필드가 생기기 전의 계정은 비어 있고(null) 마지막 저장 시각(updatedAt)을 대신 쓴다.

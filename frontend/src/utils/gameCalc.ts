@@ -352,6 +352,22 @@ export function applyStatBonuses(stats: CombatStats, b: StatBonuses): CombatStat
   };
 }
 
+// 전투 레벨 각성 ★: ★ 하나마다 HP·공격력·방어력 +20%(장비 보너스와는 곱해진다). 서버(awaken-engine.ts)와 같은 값이어야 한다.
+export const AWAKEN_STAR_BONUS = 0.2;
+export const AWAKEN_MAX_STARS = 5;
+
+export function starBonuses(stars: number | null | undefined): StatBonuses {
+  const n = Math.max(0, Math.min(AWAKEN_MAX_STARS, Math.floor(Number(stars)) || 0));
+  const b = n * AWAKEN_STAR_BONUS;
+  return { hp: b, atk: b, def: b };
+}
+
+// 장비 보너스와 ★ 보너스를 곱해서 합친다: (1+a)(1+b) − 1
+export function combineBonuses(a: StatBonuses, b: StatBonuses): StatBonuses {
+  const mul = (x: number, y: number) => Math.round(((1 + x) * (1 + y) - 1) * 1e9) / 1e9;
+  return { hp: mul(a.hp, b.hp), atk: mul(a.atk, b.atk), def: mul(a.def, b.def) };
+}
+
 export function formatBonusPercent(value: number): string {
   const pct = value * 100;
   return `+${Number.isInteger(pct) ? pct : pct.toFixed(1)}%`;

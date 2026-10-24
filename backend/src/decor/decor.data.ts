@@ -34,6 +34,8 @@ export interface DecorItem {
   description: string;
   // 배경만: 사육장 사진 위에 덮는 그라데이션 색(위쪽, 아래쪽)
   tint?: [string, string];
+  // 절기·명절 한정 장식이면 그 이벤트 id(game-state/event-engine.ts). 이벤트 기간에만 살 수 있고, 산 뒤에는 언제든 놓을 수 있다.
+  eventId?: string;
 }
 
 function item(
@@ -60,6 +62,27 @@ function item(
     ...(tint ? { tint } : {}),
   };
 }
+
+// 절기·명절 한정 장식: 이벤트마다 배경(희귀) 1종 + 소품(에픽) 1종. 번식 보너스는 같은 등급의 일반 장식과 같다(이벤트가 편드는 계열).
+function eventItem(eventId: string, kind: DecorKind, decorId: string, name: string, icon: string, family: SpeciesFamily, tint?: [string, string]): DecorItem {
+  const base = item(kind, decorId, name, icon, kind === 'backdrop' ? 1 : 2, family, tint);
+  return { ...base, description: `${base.description} · 기간 한정`, eventId };
+}
+
+const EVENT_DECOR: readonly DecorItem[] = [
+  eventItem('seollal', 'backdrop', 'seollal-snowyard', '설날 눈마당', '🎎', 'frost', ['rgba(235,240,250,0.4)', 'rgba(190,60,60,0.35)']),
+  eventItem('seollal', 'prop', 'seollal-bokjumeoni', '복주머니', '🧧', 'frost'),
+  eventItem('blossom', 'backdrop', 'blossom-path', '벚꽃 흩날리는 길', '🌸', 'forest', ['rgba(255,205,220,0.45)', 'rgba(205,115,145,0.4)']),
+  eventItem('blossom', 'prop', 'blossom-bamboo', '소원 대나무', '🎋', 'forest'),
+  eventItem('monsoon', 'backdrop', 'monsoon-puddle', '장맛비 웅덩이', '🌧️', 'forest', ['rgba(90,130,170,0.45)', 'rgba(30,60,90,0.5)']),
+  eventItem('monsoon', 'prop', 'monsoon-umbrella', '노란 우산', '☂️', 'forest'),
+  eventItem('chuseok', 'backdrop', 'harvest-moon', '한가위 보름달', '🌕', 'fire', ['rgba(250,220,130,0.4)', 'rgba(110,60,30,0.5)']),
+  eventItem('chuseok', 'prop', 'songpyeon-plate', '송편 한 접시', '🥮', 'fire'),
+  eventItem('halloween', 'backdrop', 'haunted-pumpkin-patch', '으스스한 호박밭', '👻', 'fire', ['rgba(255,140,40,0.45)', 'rgba(40,10,60,0.6)']),
+  eventItem('halloween', 'prop', 'jack-o-lantern', '잭오랜턴', '🎃', 'fire'),
+  eventItem('christmas', 'backdrop', 'snowy-christmas', '눈 내리는 성탄절', '🌨️', 'frost', ['rgba(210,60,60,0.35)', 'rgba(20,80,50,0.5)']),
+  eventItem('christmas', 'prop', 'xmas-tree', '반짝이는 트리', '🎄', 'frost'),
+];
 
 export const DECOR_CATALOG: readonly DecorItem[] = [
   // 배경 — 숲
@@ -95,6 +118,7 @@ export const DECOR_CATALOG: readonly DecorItem[] = [
   item('prop', 'tiny-ladder', '작은 사다리', '🪜', 0, null),
   item('prop', 'lantern', '작은 등불', '🏮', 1, null),
   item('prop', 'mini-castle', '미니 성', '🏰', 2, null),
+  ...EVENT_DECOR,
 ];
 
 const DECOR_BY_ID = new Map(DECOR_CATALOG.map((d) => [d.decorId, d]));

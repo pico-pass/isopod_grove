@@ -4,6 +4,8 @@ import { WanderingCreatures } from './WanderingCreatures';
 import { TerrariumDecorLayer } from './TerrariumDecorLayer';
 import { DecorModal } from './DecorModal';
 import { WeatherBanner } from './WeatherBanner';
+import { SeasonalBanner } from './SeasonalBanner';
+import { FortuneBanner } from './FortuneBanner';
 import { getDecorBreedBonusPercent } from '../utils/decor';
 import {
   EXPLORE_COST_STEP,
@@ -113,6 +115,8 @@ export function HabitatView({
   onSetTerrariumPublic,
   onVisitMine,
   weather,
+  onOpenSeasonal,
+  onOpenFortune,
 }: {
   gameState: GameState;
   terrarium: Terrarium;
@@ -134,6 +138,8 @@ export function HabitatView({
   onSetTerrariumPublic: (isPublic: boolean) => Promise<unknown>;
   onVisitMine: () => void;
   weather: WeatherInfo | null;
+  onOpenSeasonal?: () => void;
+  onOpenFortune?: () => void;
 }) {
   const [now, setNow] = useState(0);
   const [decorOpen, setDecorOpen] = useState(false);
@@ -196,6 +202,8 @@ export function HabitatView({
       </div>
 
       <WeatherBanner weather={weather} />
+      <SeasonalBanner onOpen={onOpenSeasonal} />
+      <FortuneBanner onOpen={onOpenFortune} />
 
       <div className="game-columns">
         <div className="habitat-column">

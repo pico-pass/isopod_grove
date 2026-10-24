@@ -31,7 +31,7 @@ import { BossDuelActDto } from './dto/boss-duel-act.dto';
 import { PuzzleSubmitDto } from './dto/puzzle-submit.dto';
 import { RunnerFinishDto } from './dto/runner-finish.dto';
 import { RunnerStartDto } from './dto/runner-start.dto';
-import { DungeonChooseDto, DungeonStartDto } from './dto/dungeon.dto';
+import { DungeonChooseDto, DungeonGuardianDto, DungeonLabDto, DungeonStartDto } from './dto/dungeon.dto';
 import { BattleDuelStartDto } from './dto/battle-duel-start.dto';
 import { EquipmentDismantleDto } from './dto/equipment-dismantle.dto';
 import { SetSpeciesNicknameDto } from './dto/set-species-nickname.dto';
@@ -128,7 +128,7 @@ export class GameStateController {
 
   @Post('battle/duel/act')
   battleDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
-    return this.gameStateService.battleDuelAct(user.userId, dto.action);
+    return this.gameStateService.battleDuelAct(user.userId, dto.action, dto.rhythm);
   }
 
   @Post('battle/duel/forfeit')
@@ -159,7 +159,7 @@ export class GameStateController {
 
   @Post('dungeon/start')
   dungeonStart(@CurrentUser() user: AuthenticatedUser, @Body() dto: DungeonStartDto) {
-    return this.gameStateService.dungeonStart(user.userId, dto.speciesId, dto.difficulty);
+    return this.gameStateService.dungeonStart(user.userId, dto.speciesId, dto.difficulty, dto.supplies, dto.pay);
   }
 
   @Post('dungeon/choose')
@@ -167,14 +167,40 @@ export class GameStateController {
     return this.gameStateService.dungeonChoose(user.userId, dto.choice);
   }
 
+  @Post('dungeon/lab')
+  dungeonLabUpgrade(@CurrentUser() user: AuthenticatedUser, @Body() dto: DungeonLabDto) {
+    return this.gameStateService.dungeonLabUpgrade(user.userId, dto.id);
+  }
+
+  @Post('dungeon/scout')
+  dungeonScout(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.dungeonScout(user.userId);
+  }
+
+  @Post('dungeon/reroll')
+  dungeonReroll(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.dungeonReroll(user.userId);
+  }
+
   @Post('dungeon/duel/act')
   dungeonDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
-    return this.gameStateService.dungeonDuelAct(user.userId, dto.action);
+    return this.gameStateService.dungeonDuelAct(user.userId, dto.action, dto.rhythm);
   }
 
   @Post('dungeon/retire')
   dungeonRetire(@CurrentUser() user: AuthenticatedUser) {
     return this.gameStateService.dungeonRetire(user.userId);
+  }
+
+  // 던전 문지기: 내 식구를 세우거나 내리고, 쌓인 통행료를 받는다
+  @Post('dungeon/guardian')
+  setDungeonGuardian(@CurrentUser() user: AuthenticatedUser, @Body() dto: DungeonGuardianDto) {
+    return this.gameStateService.setDungeonGuardian(user.userId, dto.speciesId);
+  }
+
+  @Post('dungeon/guardian/claim')
+  claimDungeonToll(@CurrentUser() user: AuthenticatedUser) {
+    return this.gameStateService.claimDungeonToll(user.userId);
   }
 
   @Get('runner')
@@ -204,7 +230,7 @@ export class GameStateController {
 
   @Post('boss/duel/act')
   bossDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
-    return this.gameStateService.bossDuelAct(user.userId, dto.action);
+    return this.gameStateService.bossDuelAct(user.userId, dto.action, dto.rhythm);
   }
 
   @Post('boss/duel/forfeit')
@@ -244,7 +270,7 @@ export class GameStateController {
 
   @Post('survival/duel/act')
   survivalDuelAct(@CurrentUser() user: AuthenticatedUser, @Body() dto: BossDuelActDto) {
-    return this.gameStateService.survivalDuelAct(user.userId, dto.action);
+    return this.gameStateService.survivalDuelAct(user.userId, dto.action, dto.rhythm);
   }
 
   @Post('survival/choose')

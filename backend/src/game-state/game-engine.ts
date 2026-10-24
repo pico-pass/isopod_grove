@@ -1,6 +1,6 @@
 import { Species } from '../species/schemas/species.schema';
 import { SPECIES_FAMILIES, resolveFamily, type SpeciesFamily } from '../species/species.family';
-import { pickWeightedByFamily } from '../weather/weather.data';
+import { pickWeightedByFamily, pickWeightedByFamilyWeights, type FamilyWeights } from '../weather/weather.data';
 import {
   EQUIPMENT_BY_ID,
   EQUIPMENT_CATALOG,
@@ -831,6 +831,15 @@ export function simulateBossBattle(
 // 그 턴이 오기 전에 미리 예고해 줄 수 있고, 플레이어는 예고를 보고 방어하거나 힘을 모아 대응한다.
 export type DuelAction = 'attack' | 'guard' | 'strike' | 'heal' | 'skill';
 export const DUEL_ACTIONS: readonly DuelAction[] = ['attack', 'guard', 'strike', 'heal', 'skill'];
+
+// 리듬 일격: 강력한 일격을 타이밍 바로 쏠 때 정확도(0~1, 가운데에 가까울수록 1)에 따라 일격 피해가 최대 ±30% 달라진다.
+// 정확도 0.5가 보정 없음이다. 클라이언트가 보낸 값은 믿을 수 없어서 서버는 이 범위(−30%~+30%) 안에서만 인정한다.
+export const DUEL_RHYTHM_MAX_BONUS = 0.3;
+export function rhythmStrikeBonus(accuracy: number | null | undefined): number {
+  if (typeof accuracy !== 'number' || !Number.isFinite(accuracy)) return 0;
+  const clamped = Math.max(0, Math.min(1, accuracy));
+  return Math.round((clamped - 0.5) * 2 * DUEL_RHYTHM_MAX_BONUS * 1000) / 1000;
+}
 export const DUEL_GUARD_TAKEN_MULT = 0.5; // 방어 태세를 취한 턴에 받는 피해
 export const DUEL_CHARGE_MULT = 1.5; // 방어로 모은 힘: 다음 공격(강력한 일격 포함)의 피해 배율
 export const DUEL_STRIKE_MULT = 1.5; // 강력한 일격의 피해 배율
@@ -857,10 +866,20 @@ export const DUEL_SKILL_BURN_RATE: readonly number[] = [0.3, 0.33, 0.36, 0.4, 0.
 export const DUEL_SKILL_ROOT_TURNS = 3;
 export const DUEL_SKILL_ROOT_CUT: readonly number[] = [0.18, 0.2, 0.22, 0.25, 0.28];
 
+// 계열 기술 연구소(skill-lab-engine.ts)가 더하는 효과. 모두 선택이고 없으면 0이다.
+export interface SkillLabEffects {
+  burnMult?: number; // 화상 피해 +비율(0.1이면 +10%)
+  burnTurns?: number; // 화상 지속 +턴
+  rootCut?: number; // 속박으로 줄어드는 공격력 +비율p(0.02면 +2%p)
+  rootTurns?: number; // 속박 지속 +턴
+  hit?: number; // 기술의 공격 피해 배율 +(0.04면 +4%p)
+}
+
 export interface DuelSkillContext {
   family: SpeciesFamily;
   rarity: number; // 내 식구의 희귀도(0~4)
-  cooldownReduce?: number; // 쉬는 시간 감소(턴, 던전 유물). 쉬는 시간은 1턴 아래로 줄지 않는다.
+  cooldownReduce?: number; // 쉬는 시간 감소(턴, 던전 유물·계열 기술 연구). 쉬는 시간은 1턴 아래로 줄지 않는다.
+  lab?: SkillLabEffects; // 계열 기술 연구 효과
 }
 
 export interface DuelSkillInfo {
@@ -877,8 +896,9 @@ const clampRarity = (rarity: number) => Math.max(0, Math.min(4, Math.round(rarit
 
 export function getDuelSkillInfo(skill: DuelSkillContext): DuelSkillInfo {
   const r = clampRarity(skill.rarity);
-  const cooldown = DUEL_SKILL_COOLDOWN[skill.family];
-  const hit = Math.round(DUEL_SKILL_HIT_MULT[skill.family][r] * 100);
+  const lab = skill.lab ?? {};
+  const cooldown = Math.max(1, DUEL_SKILL_COOLDOWN[skill.family] - (skill.cooldownReduce ?? 0));
+  const hit = Math.round((DUEL_SKILL_HIT_MULT[skill.family][r] + (lab.hit ?? 0)) * 100);
   const rest = `피해 ${hit}%의 공격을 하면서`;
   const wait = ` 쓰고 나면 ${cooldown - 1}턴 쉬어야 해요.`;
   if (skill.family === 'fire') {
@@ -886,7 +906,7 @@ export function getDuelSkillInfo(skill: DuelSkillContext): DuelSkillInfo {
       id: 'skill',
       family: 'fire',
       name: '불길',
-      description: `${rest} 상대에게 화상을 걸어요. ${DUEL_SKILL_BURN_TURNS}턴 동안 턴이 끝날 때마다 피해가 들어가요(평범한 공격 한 번의 ${Math.round(DUEL_SKILL_BURN_RATE[r] * 100)}%).${wait}`,
+      description: `${rest} 상대에게 화상을 걸어요. ${DUEL_SKILL_BURN_TURNS + (lab.burnTurns ?? 0)}턴 동안 턴이 끝날 때마다 피해가 들어가요(평범한 공격 한 번의 ${Math.round(DUEL_SKILL_BURN_RATE[r] * (1 + (lab.burnMult ?? 0)) * 100)}%).${wait}`,
       cooldown,
     };
   }
@@ -895,7 +915,7 @@ export function getDuelSkillInfo(skill: DuelSkillContext): DuelSkillInfo {
       id: 'skill',
       family: 'forest',
       name: '뿌리 감기',
-      description: `${rest} 상대를 뿌리로 묶어요. ${DUEL_SKILL_ROOT_TURNS}턴 동안 상대의 공격력이 ${Math.round(DUEL_SKILL_ROOT_CUT[r] * 100)}% 줄어요.${wait}`,
+      description: `${rest} 상대를 뿌리로 묶어요. ${DUEL_SKILL_ROOT_TURNS + (lab.rootTurns ?? 0)}턴 동안 상대의 공격력이 ${Math.round((DUEL_SKILL_ROOT_CUT[r] + (lab.rootCut ?? 0)) * 100)}% 줄어요.${wait}`,
       cooldown,
     };
   }
@@ -1011,7 +1031,8 @@ export function playDuelTurn(
   random: () => number = Math.random,
   // healCapHp: 회복의 기준이 되는 내 최대 HP. 처음 HP가 최대보다 낮은 채로 시작하는 전투(서바이벌)에서 쓴다. 기본은 mine.hp.
   // skill: 내 식구의 계열 기술(계열·희귀도). 없으면 기술 행동은 일반 공격으로 처리한다(서버는 고를 수 없는 상태로 막는다).
-  opts: { healCapHp?: number; skill?: DuelSkillContext } = {},
+  // strikeBonus: 리듬 일격의 피해 보정(−0.3~+0.3, rhythmStrikeBonus). 강력한 일격에만 쓴다.
+  opts: { healCapHp?: number; skill?: DuelSkillContext; strikeBonus?: number } = {},
 ): DuelTurnResult {
   const has = (p: BossPattern) => patterns.includes(p);
   const turn = start.turn;
@@ -1049,13 +1070,18 @@ export function playDuelTurn(
   if (action === 'attack' || action === 'strike' || action === 'skill') {
     let toBoss = rollDamage(mine.atk, boss.def, random);
     if (action === 'strike') {
-      toBoss = Math.round(toBoss * DUEL_STRIKE_MULT);
+      const timing = Math.max(-DUEL_RHYTHM_MAX_BONUS, Math.min(DUEL_RHYTHM_MAX_BONUS, opts.strikeBonus ?? 0));
+      toBoss = Math.round(toBoss * DUEL_STRIKE_MULT * (1 + timing));
       strikeCooldown = DUEL_STRIKE_COOLDOWN;
       reckless = true;
       myNotes.push('💥 강력한 일격!');
+      if (opts.strikeBonus !== undefined) {
+        const pct = Math.round(timing * 100);
+        myNotes.push(`🎵 ${pct >= 24 ? '완벽한 타이밍' : pct > 0 ? '좋은 타이밍' : pct === 0 ? '무난한 타이밍' : '아쉬운 타이밍'} ${pct > 0 ? '+' : ''}${pct}%`);
+      }
     }
     if (action === 'skill' && skill) {
-      toBoss = Math.max(1, Math.round(toBoss * DUEL_SKILL_HIT_MULT[skill.family][rarity]));
+      toBoss = Math.max(1, Math.round(toBoss * (DUEL_SKILL_HIT_MULT[skill.family][rarity] + (skill.lab?.hit ?? 0))));
       skillCooldown = Math.max(1, DUEL_SKILL_COOLDOWN[skill.family] - (skill.cooldownReduce ?? 0));
       myNotes.push(`${SKILL_ICON[skill.family]} ${getDuelSkillInfo(skill).name}!`);
     }
@@ -1084,10 +1110,10 @@ export function playDuelTurn(
     }
     if (action === 'skill' && skill) {
       if (skill.family === 'fire') {
-        burnTurns = DUEL_SKILL_BURN_TURNS;
+        burnTurns = DUEL_SKILL_BURN_TURNS + (skill.lab?.burnTurns ?? 0);
         myNotes.push('🔥 상대에게 불이 붙었어요');
       } else if (skill.family === 'forest') {
-        rootTurns = DUEL_SKILL_ROOT_TURNS;
+        rootTurns = DUEL_SKILL_ROOT_TURNS + (skill.lab?.rootTurns ?? 0);
         myNotes.push('🌿 상대가 뿌리에 묶였어요');
       } else {
         frozen = true;
@@ -1130,7 +1156,7 @@ export function playDuelTurn(
     }
     let bossAtk = enraged ? boss.atk * BOSS_ENRAGE_ATK_MULT : boss.atk;
     if (rootTurns > 0) {
-      bossAtk *= 1 - DUEL_SKILL_ROOT_CUT[rarity];
+      bossAtk *= 1 - Math.min(0.9, DUEL_SKILL_ROOT_CUT[rarity] + (skill?.lab?.rootCut ?? 0));
       bossNotes.push('🌿 뿌리에 묶여 공격이 약해졌어요');
     }
     toMe = rollDamage(bossAtk, mine.def, random);
@@ -1157,7 +1183,7 @@ export function playDuelTurn(
   // ---- 턴이 끝날 때 ---- 화상 피해(내 평균 공격 피해 × 비율)를 입히고, 속박 턴을 줄인다.
   if (burnTurns > 0) {
     const meanHit = rollDamage(mine.atk, boss.def, () => 0.5);
-    const tick = Math.max(1, Math.round(meanHit * DUEL_SKILL_BURN_RATE[rarity]));
+    const tick = Math.max(1, Math.round(meanHit * DUEL_SKILL_BURN_RATE[rarity] * (1 + (skill?.lab?.burnMult ?? 0))));
     bossHp = Math.max(0, bossHp - tick);
     burnTurns--;
     turns.push({
@@ -1537,11 +1563,12 @@ export function describeBattleRules(
   myFamily: SpeciesFamily,
   enemyFamily: SpeciesFamily,
   environmentId: BattleEnvironmentId | null,
+  matchupExtra = 0, // 장비 각인 '상성 연마': 상성이 유리할 때만 보정에 더해지는 비율(0.04면 +4%p)
 ) {
   // null이면 환경이 없는 전투(서바이벌): 계열 상성만 적용된다.
   const environment = environmentId === null ? null : (BATTLE_ENVIRONMENT_BY_ID.get(environmentId) ?? BATTLE_ENVIRONMENTS[0]);
   const matchup = getFamilyMatchup(myFamily, enemyFamily);
-  const matchupBonus = matchup === 'advantage' ? FAMILY_MATCHUP_BONUS : matchup === 'disadvantage' ? -FAMILY_MATCHUP_BONUS : 0;
+  const matchupBonus = matchup === 'advantage' ? FAMILY_MATCHUP_BONUS + Math.max(0, matchupExtra) : matchup === 'disadvantage' ? -FAMILY_MATCHUP_BONUS : 0;
   const multiplierOf = (family: SpeciesFamily, bonus: number) =>
     Math.round((1 + bonus + (environment?.family === family ? ENVIRONMENT_BONUS : 0)) * 100) / 100;
   return {
@@ -1560,8 +1587,9 @@ export function applyBattleRules(
   myFamily: SpeciesFamily,
   enemyFamily: SpeciesFamily,
   environmentId: BattleEnvironmentId | null,
+  matchupExtra = 0,
 ) {
-  const rules = describeBattleRules(myFamily, enemyFamily, environmentId);
+  const rules = describeBattleRules(myFamily, enemyFamily, environmentId, matchupExtra);
   return {
     mine: scaleStatsByMultiplier(mine, rules.mine.multiplier),
     enemy: scaleStatsByMultiplier(enemy, rules.enemy.multiplier),
@@ -1676,14 +1704,15 @@ export function pickExpeditionSpecies(
   rarity: number,
   discovered: readonly string[],
   random: number,
-  // 오늘 날씨가 편드는 계열(있으면 후보 안에서 그 계열 종이 더 잘 나온다)
-  favoredFamily: SpeciesFamily | null = null,
+  // 오늘 날씨가 편드는 계열(있으면 후보 안에서 그 계열 종이 더 잘 나온다). 날씨와 계절 이벤트를 함께 쓸 때는 계열별 가중치 맵을 넘긴다.
+  favoredFamily: SpeciesFamily | FamilyWeights | null = null,
 ): Species | null {
   const pool = speciesList.filter((s) => s.rarity === rarity);
   if (pool.length === 0) return null;
   const fresh = pool.filter((s) => !discovered.includes(s.speciesId));
   const from = fresh.length > 0 ? fresh : pool;
-  if (favoredFamily) return pickWeightedByFamily(from, random, favoredFamily, (s) => resolveFamily(s));
+  if (typeof favoredFamily === 'string') return pickWeightedByFamily(from, random, favoredFamily, (s) => resolveFamily(s));
+  if (favoredFamily && Object.keys(favoredFamily).length > 0) return pickWeightedByFamilyWeights(from, random, favoredFamily, (s) => resolveFamily(s));
   return from[Math.min(from.length - 1, Math.floor(random * from.length))];
 }
 

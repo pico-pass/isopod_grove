@@ -5,10 +5,12 @@ import type {
   DungeonBattleView,
   DungeonDifficultyId,
   DungeonEnded,
+  DungeonGuardianResponse,
   DungeonInfo,
   DungeonRelicView,
   DungeonResponse,
   DungeonRunView,
+  DungeonSupplyChoice,
   GameState,
   LeaderboardResult,
   Species,
@@ -24,6 +26,7 @@ import { RankingList } from './RankingView';
 import { SpeciesImage } from './SpeciesImage';
 import { SpeciesPickGrid } from './SpeciesPickGrid';
 
+const NO_SUPPLIES: DungeonSupplyChoice = { relic: 0, mushrooms: 0, scout: 0, reroll: 0 };
 const ENV_LABELS: Record<string, string> = { plain: '🌍 평범한 땅', volcano: '🌋 화산 지대', jungle: '🌳 울창한 숲', tundra: '🧊 서리 평원' };
 const TIER_NAMES = ['일반', '희귀', '에픽'];
 const TIER_CLASS = ['common', 'rare', 'epic'];
@@ -96,18 +99,28 @@ export function DungeonView({
   species,
   equipmentBonuses,
   onStart,
+  onScout,
+  onReroll,
+  onLabUpgrade,
   onChoose,
   onDuelAct,
   onRetire,
+  onSetGuardian,
+  onClaimToll,
   onOpenProfile,
 }: {
   gameState: GameState;
   species: Species[];
   equipmentBonuses: StatBonuses;
-  onStart: (speciesId: string, difficulty: DungeonDifficultyId) => Promise<DungeonResponse | null>;
+  onStart: (speciesId: string, difficulty: DungeonDifficultyId, supplies?: DungeonSupplyChoice, pay?: 'gold' | 'diamond') => Promise<DungeonResponse | null>;
+  onScout: () => Promise<DungeonResponse | null>;
+  onReroll: () => Promise<DungeonResponse | null>;
+  onLabUpgrade: (id: string) => Promise<DungeonGuardianResponse | null>;
   onChoose: (choice: string) => Promise<DungeonResponse | null>;
-  onDuelAct: (action: DuelActionId) => Promise<DungeonResponse | null>;
+  onDuelAct: (action: DuelActionId, rhythm?: number) => Promise<DungeonResponse | null>;
   onRetire: () => Promise<DungeonResponse | null>;
+  onSetGuardian: (speciesId: string) => Promise<DungeonGuardianResponse | null>;
+  onClaimToll: () => Promise<DungeonGuardianResponse | null>;
   onOpenProfile: (userId: string) => void;
 }) {
   const [info, setInfo] = useState<DungeonInfo | null>(null);
@@ -120,6 +133,9 @@ export function DungeonView({
   const [ranking, setRanking] = useState<LeaderboardResult | null>(null);
   const [rankingLimit, setRankingLimit] = useState<RankingLimit>(loadRankingLimit);
   const [battleMode, setBattleMode] = useState<DungeonBattleMode>(loadDungeonBattleMode);
+  // 출정 준비물 선택(입장할 때만 쓴다)과 결제 수단
+  const [supplies, setSupplies] = useState<DungeonSupplyChoice>(NO_SUPPLIES);
+  const [pay, setPay] = useState<'gold' | 'diamond'>('gold');
   const rankingLimitRef = useRef(rankingLimit);
 
   const loadRanking = useCallback(async () => {
@@ -171,6 +187,33 @@ export function DungeonView({
     setBusy(true);
     try {
       apply(await fn());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 입장: 준비물을 골랐으면 함께 보내고, 입장에 성공하면 선택을 비운다
+  const start = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const hasSupplies = Object.values(supplies).some((n) => n > 0);
+      const r = hasSupplies ? await onStart(selected, difficulty, supplies, pay) : await onStart(selected, difficulty);
+      if (r) {
+        apply(r);
+        setSupplies(NO_SUPPLIES);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const actGuardian = async (fn: () => Promise<DungeonGuardianResponse | null>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fn();
+      if (r) setInfo(r.info);
     } finally {
       setBusy(false);
     }
@@ -279,6 +322,30 @@ export function DungeonView({
               <div className="panel-heading">
                 <h2>{run.floor}층 · 들어갈 방을 고르세요</h2>
               </div>
+              {run.supplies && (run.supplies.scout > 0 || run.supplies.reroll > 0) && (
+                <div className="dungeon-supply-bar" role="group" aria-label="출정 준비물">
+                  <button className="button secondary" disabled={busy || run.supplies.scout < 1 || run.supplies.scoutUntil >= Math.min(run.floors, run.cleared + 3)} onClick={() => void act(onScout)}>
+                    🗺️ 정찰 지도 사용 ({run.supplies.scout})
+                  </button>
+                  <button className="button secondary" disabled={busy || run.supplies.reroll < 1 || run.options.length < 2} onClick={() => void act(onReroll)}>
+                    🔄 방 새로고침 ({run.supplies.reroll})
+                  </button>
+                </div>
+              )}
+              {run.preview && run.preview.length > 0 && (
+                <ul className="dungeon-preview" aria-label="정찰 결과">
+                  {run.preview.map((p) => (
+                    <li key={p.floor}>
+                      <b>{p.floor}층</b>
+                      {p.rooms.map((r, i) => (
+                        <span key={i} title={r.description}>
+                          {r.icon} {r.name}
+                        </span>
+                      ))}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {run.options.some((o) => o.type === 'battle') && (
                 <div className="dungeon-battle-mode">
                   <div className="filter-row" role="group" aria-label="일반 전투 방식">
@@ -304,6 +371,12 @@ export function DungeonView({
                       <span className="dungeon-room-icon">{o.icon}</span>
                       <strong>{o.name}</strong>
                       <small>{o.description}</small>
+                      {o.guardian && (
+                        <span className="dungeon-room-guardian">
+                          🛡️ {o.guardian.ownerName}의 문지기 · {o.guardian.speciesName}
+                          <small>이기면 현상금, 지면 주인이 통행료를 받아요</small>
+                        </span>
+                      )}
                       {o.family && (
                         <span className="dungeon-room-enemy">
                           적 <FamilyBadge family={o.family} />
@@ -321,12 +394,12 @@ export function DungeonView({
           {run.phase === 'duel' && run.duel && (
             <DuelPanel
               duel={run.duel}
-              title={`${run.floor}층 ${duelLabel(run.duel.kind, run.floor >= run.floors)}`}
-              enemyLabel={duelLabel(run.duel.kind, run.floor >= run.floors)}
+              title={`${run.floor}층 ${duelLabel(run.duel.kind, run.floor >= run.floors)}${run.duel.guardian ? ` · 🛡️ ${run.duel.guardian.ownerName}의 문지기` : ''}`}
+              enemyLabel={run.duel.guardian ? `🛡️ ${run.duel.guardian.ownerName}의 문지기` : duelLabel(run.duel.kind, run.floor >= run.floors)}
               enemyLevelLabel="던전의 적"
               enemyAttackLabel={run.duel.kind === 'boss' ? '보스 공격' : run.duel.kind === 'elite' ? '엘리트 공격' : '적 공격'}
               busy={busy}
-              onAct={(action) => void act(() => onDuelAct(action))}
+              onAct={(action, rhythm) => void act(() => onDuelAct(action, rhythm))}
             />
           )}
 
@@ -520,9 +593,154 @@ export function DungeonView({
               🎒 장착 장비 — 공격력 {formatBonusPercent(equipmentBonuses.atk)} · 방어력 {formatBonusPercent(equipmentBonuses.def)} · HP {formatBonusPercent(equipmentBonuses.hp)}가 입장할 때 적용돼요.
             </div>
           )}
-          <button className="button primary full battle-fight-button" disabled={!selected || busy || attemptsLeft <= 0} onClick={() => void act(() => onStart(selected, difficulty))}>
+          {info?.supplies && info.supplies.length > 0 && (
+            <section className="panel dungeon-supplies">
+              <div className="panel-heading">
+                <h2>🎒 출정 준비물 (선택)</h2>
+                <div className="filter-row" role="group" aria-label="결제 수단">
+                  <button className={`filter${pay === 'gold' ? ' active' : ''}`} onClick={() => setPay('gold')}>
+                    골드로
+                  </button>
+                  <button className={`filter${pay === 'diamond' ? ' active' : ''}`} onClick={() => setPay('diamond')}>
+                    다이아로
+                  </button>
+                </div>
+              </div>
+              <ul>
+                {info.supplies.map((s) => {
+                  const n = supplies[s.id] ?? 0;
+                  return (
+                    <li key={s.id}>
+                      <span className="dungeon-supply-icon">{s.icon}</span>
+                      <span className="dungeon-supply-info">
+                        <strong>{s.name}</strong>
+                        <small>{s.desc}</small>
+                      </span>
+                      <span className="dungeon-supply-price">{pay === 'gold' ? `${formatNumber(s.gold[difficulty])} G` : `💎 ${s.diamonds}`}</span>
+                      <span className="dungeon-supply-step">
+                        <button className="button secondary" aria-label={`${s.name} 줄이기`} disabled={busy || n <= 0} onClick={() => setSupplies((prev) => ({ ...prev, [s.id]: n - 1 }))}>
+                          −
+                        </button>
+                        <b>{n}</b>
+                        <button className="button secondary" aria-label={`${s.name} 늘리기`} disabled={busy || n >= s.max} onClick={() => setSupplies((prev) => ({ ...prev, [s.id]: n + 1 }))}>
+                          +
+                        </button>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {(() => {
+                const total = info.supplies.reduce((a, s) => ({ gold: a.gold + s.gold[difficulty] * (supplies[s.id] ?? 0), diamonds: a.diamonds + s.diamonds * (supplies[s.id] ?? 0) }), { gold: 0, diamonds: 0 });
+                const have = pay === 'gold' ? gameState.coins : gameState.diamonds;
+                const need = pay === 'gold' ? total.gold : total.diamonds;
+                return (
+                  <p className={`dungeon-supply-total${need > have ? ' short' : ''}`}>
+                    {need === 0 ? '고른 준비물이 없어요. 준비물은 이번 입장에서만 쓰고 사라져요.' : `합계 ${pay === 'gold' ? `${formatNumber(need)} G` : `💎 ${need}`} (보유 ${pay === 'gold' ? `${formatNumber(have)} G` : `💎 ${have}`})${need > have ? ' — 모자라요' : ''}`}
+                  </p>
+                );
+              })()}
+            </section>
+          )}
+          <button className="button primary full battle-fight-button" disabled={!selected || busy || attemptsLeft <= 0} onClick={() => void start()}>
             {attemptsLeft <= 0 ? '오늘 입장 횟수를 모두 썼어요 (내일 다시)' : !selected ? '입장할 식구를 먼저 골라주세요' : busy ? '입장 중...' : '🪵 던전 입장'}
           </button>
+
+          {info?.lab && info.lab.length > 0 && (
+            <section className="panel dungeon-lab">
+              <div className="panel-heading">
+                <h2>🔬 던전 연구소</h2>
+                <span className="pill">골드·다이아로 영구 강화</span>
+              </div>
+              <p className="dungeon-sub">올린 연구는 다음 입장부터 적용돼요(진행 중인 던전에는 영향이 없어요).</p>
+              <ul>
+                {info.lab.map((l) => {
+                  const afford = !!l.next && gameState.coins >= l.next.gold && gameState.diamonds >= l.next.diamonds;
+                  return (
+                    <li key={l.id} className={l.level >= l.max ? 'maxed' : ''}>
+                      <span className="dungeon-supply-icon">{l.icon}</span>
+                      <span className="dungeon-supply-info">
+                        <strong>
+                          {l.name} <small>Lv.{l.level}/{l.max}</small>
+                        </strong>
+                        <small>{l.desc}</small>
+                      </span>
+                      {l.next ? (
+                        <>
+                          <span className="dungeon-supply-price">
+                            {formatNumber(l.next.gold)} G · 💎 {l.next.diamonds}
+                          </span>
+                          <button className="button secondary" disabled={busy || gameState.paused || !afford} title={afford ? undefined : '골드나 다이아가 부족해요'} onClick={() => void actGuardian(() => onLabUpgrade(l.id))}>
+                            강화
+                          </button>
+                        </>
+                      ) : (
+                        <span className="dungeon-supply-price">최고 단계</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          {info && (
+            <section className="panel dungeon-guardian-panel">
+              <div className="panel-heading">
+                <h2>🛡️ 내 문지기</h2>
+                <span>{info.guardian.speciesId ? '근무 중' : '비어 있음'}</span>
+              </div>
+              {(() => {
+                const g = info.guardian;
+                const guardSpecies = species.find((s) => s.speciesId === g.speciesId);
+                return (
+                  <>
+                    <p className="dungeon-sub">
+                      식구를 문지기로 세우면 다른 유저의 던전 엘리트 층(5·15·…·95층)에서 도전자를 기다려요. 도전자가 이기면 현상금은 도전자에게, 지면 통행료
+                      (쓰러진 층 × {formatNumber(g.rules.tollPerFloor)} G × 난이도 배율, 하루 {g.rules.tollDailyLimit}번까지)를 내가 받아요. 도전자가 잃는 것은 없어요.
+                    </p>
+                    {guardSpecies && (
+                      <div className="dungeon-guardian-card">
+                        <SpeciesImage species={guardSpecies} style={{ filter: guardSpecies.filter }} />
+                        <div>
+                          <strong>{guardSpecies.name}</strong> <FamilyBadge family={guardSpecies.family} />
+                          <p className="dungeon-sub">
+                            막은 횟수 {formatNumber(g.blocked)} · 뚫린 횟수 {formatNumber(g.breached)} · 누적 통행료 {formatNumber(g.tollTotal)} G · 오늘 받을 수 있는 통행료 {g.tollLeftToday}번
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {g.pendingToll > 0 && (
+                      <button className="button primary full" disabled={busy} onClick={() => void actGuardian(onClaimToll)}>
+                        💰 쌓인 통행료 {formatNumber(g.pendingToll)} G 받기
+                      </button>
+                    )}
+                    <details className="dungeon-guardian-pick">
+                      <summary>{g.speciesId ? '문지기 바꾸기' : '문지기 세우기'}</summary>
+                      {owned.length === 0 ? (
+                        <p className="empty">세울 식구가 없어요.</p>
+                      ) : (
+                        <SpeciesPickGrid
+                          species={owned}
+                          gameState={gameState}
+                          activeId={g.speciesId}
+                          disabled={busy}
+                          bonuses={equipmentBonuses}
+                          familyRules={{ enemy: null, environment: null }}
+                          onPick={(speciesId) => void actGuardian(() => onSetGuardian(speciesId))}
+                        />
+                      )}
+                      {g.speciesId && (
+                        <button className="button secondary full" disabled={busy} onClick={() => void actGuardian(() => onSetGuardian(''))}>
+                          문지기 내리기
+                        </button>
+                      )}
+                    </details>
+                  </>
+                );
+              })()}
+            </section>
+          )}
 
           {info && (
             <section className="panel">

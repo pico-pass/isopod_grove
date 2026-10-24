@@ -18,6 +18,10 @@ import { BossView } from './components/BossView';
 import { SurvivalView } from './components/SurvivalView';
 import { PuzzleView } from './components/PuzzleView';
 import { RunnerView } from './components/RunnerView';
+import { StackView } from './components/StackView';
+import { ShopSimView } from './components/ShopSimView';
+import { QuizView } from './components/QuizView';
+import { NewsView } from './components/NewsView';
 import { BoostShopView } from './components/BoostShopView';
 import { ExpeditionView } from './components/ExpeditionView';
 import { EquipmentView } from './components/EquipmentView';
@@ -29,6 +33,18 @@ import { JournalView } from './components/JournalView';
 import { ChangelogView } from './components/ChangelogView';
 import { VisitView } from './components/VisitView';
 import { DungeonView } from './components/DungeonView';
+import { WantedView } from './components/WantedView';
+import { UnderdogView } from './components/UnderdogView';
+import { RestorationView } from './components/RestorationView';
+import { SeasonalView } from './components/SeasonalView';
+import { FortuneView } from './components/FortuneView';
+import { AuctionView } from './components/AuctionView';
+import { SkillLabView } from './components/SkillLabView';
+import { AwakenView } from './components/AwakenView';
+import { EngraveView } from './components/EngraveView';
+import { ManagerView } from './components/ManagerView';
+import { ExhibitView } from './components/ExhibitView';
+import { MerchantView } from './components/MerchantView';
 import { PromoPopup } from './components/PromoPopup';
 import { ChatWidget } from './components/ChatWidget';
 import { Toast } from './components/Toast';
@@ -246,6 +262,8 @@ function App() {
               onBuyDecor={(decorId) => runAction(() => api.buyDecor(decorId))}
               onPlaceDecor={(terrariumId, kind, index, decorId) => runAction(() => api.placeDecor(terrariumId, kind, index, decorId))}
               onSetTerrariumPublic={(isPublic) => runAction(() => api.setTerrariumPublic(isPublic))}
+              onOpenSeasonal={() => setView('seasonal')}
+              onOpenFortune={() => setView('fortune')}
               onVisitMine={() => openVisit(user._id)}
               weather={weather}
             />
@@ -328,7 +346,7 @@ function App() {
                 runAction(() => api.train(speciesId, intensity, extreme))
               }
               onDuelStart={(speciesId, difficulty) => runAction(() => api.battleDuelStart(speciesId, difficulty))}
-              onDuelAct={(action) => runAction(() => api.battleDuelAct(action))}
+              onDuelAct={(action, rhythm) => runAction(() => api.battleDuelAct(action, rhythm))}
               onDuelForfeit={() => runAction(() => api.battleDuelForfeit())}
             />
           )}
@@ -343,8 +361,24 @@ function App() {
               onBuyAttempt={() => runAction(() => api.buyBossAttempt())}
               onSkipCooldown={() => runAction(() => api.skipBossCooldown())}
               onDuelStart={(speciesId, floor, difficulty) => runAction(() => api.bossDuelStart(speciesId, floor, difficulty))}
-              onDuelAct={(action) => runAction(() => api.bossDuelAct(action))}
+              onDuelAct={(action, rhythm) => runAction(() => api.bossDuelAct(action, rhythm))}
               onDuelForfeit={() => runAction(() => api.bossDuelForfeit())}
+            />
+          )}
+          {view === 'underdog' && (
+            <UnderdogView
+              species={displaySpecies}
+              onEnter={(speciesId) => runAction(() => api.underdogEnter(speciesId))}
+              onMatch={(opponentUserId) => runAction(() => api.underdogMatch(opponentUserId))}
+              onClaim={() => runAction(() => api.underdogClaim())}
+            />
+          )}
+          {view === 'wanted' && (
+            <WantedView
+              species={displaySpecies}
+              onStart={(speciesId, tier) => runAction(() => api.wantedStart(speciesId, tier))}
+              onAct={(action, rhythm) => runAction(() => api.wantedAct(action, rhythm))}
+              onForfeit={() => runAction(() => api.wantedForfeit())}
             />
           )}
           {view === 'dungeon' && (
@@ -352,10 +386,15 @@ function App() {
               gameState={gameState}
               species={displaySpecies}
               equipmentBonuses={equipmentBonuses}
-              onStart={(speciesId, difficulty) => runAction(() => api.dungeonStart(speciesId, difficulty))}
+              onStart={(speciesId, difficulty, supplies, pay) => runAction(() => api.dungeonStart(speciesId, difficulty, supplies, pay))}
+              onLabUpgrade={(id) => runAction(() => api.dungeonLabUpgrade(id))}
+              onScout={() => runAction(() => api.dungeonScout())}
+              onReroll={() => runAction(() => api.dungeonReroll())}
               onChoose={(choice) => runAction(() => api.dungeonChoose(choice))}
-              onDuelAct={(action) => runAction(() => api.dungeonDuelAct(action))}
+              onDuelAct={(action, rhythm) => runAction(() => api.dungeonDuelAct(action, rhythm))}
               onRetire={() => runAction(() => api.dungeonRetire())}
+              onSetGuardian={(speciesId) => runAction(() => api.setDungeonGuardian(speciesId))}
+              onClaimToll={() => runAction(() => api.claimDungeonToll())}
               onOpenProfile={setProfileTarget}
             />
           )}
@@ -365,12 +404,69 @@ function App() {
               species={displaySpecies}
               equipmentBonuses={equipmentBonuses}
               onStart={(speciesId, mode) => runAction(() => api.survivalStart(speciesId, mode))}
-              onDuelAct={(action) => runAction(() => api.survivalDuelAct(action))}
+              onDuelAct={(action, rhythm) => runAction(() => api.survivalDuelAct(action, rhythm))}
               onChoose={(buffId) => runAction(() => api.survivalChoose(buffId))}
               onRetire={() => runAction(() => api.survivalRetire())}
               onRevive={() => runAction(() => api.survivalRevive())}
               onBuyAttempt={() => runAction(() => api.buySurvivalAttempt())}
               showToast={showToast}
+            />
+          )}
+          {view === 'merchant' && <MerchantView paused={gameState.paused} onBuy={(itemId, count) => runAction(() => api.merchantBuy(itemId, count))} />}
+          {view === 'exhibit' && (
+            <ExhibitView
+              species={displaySpecies}
+              paused={gameState.paused}
+              onCraft={(speciesId) => runAction(() => api.exhibitCraft(speciesId))}
+              onDisplay={(speciesId, show) => runAction(() => api.exhibitDisplay(speciesId, show))}
+              onShelf={() => runAction(() => api.exhibitShelf())}
+              onOpenProfile={setProfileTarget}
+            />
+          )}
+          {view === 'manager' && <ManagerView paused={gameState.paused} onHire={(grade) => runAction(() => api.managerHire(grade))} onDismiss={() => runAction(() => api.managerDismiss())} />}
+          {view === 'engrave' && (
+            <EngraveView
+              coins={gameState.coins}
+              paused={gameState.paused}
+              onRoll={(itemId) => runAction(() => api.engraveRoll(itemId))}
+              onAccept={(itemId) => runAction(() => api.engraveAccept(itemId))}
+              onDiscard={(itemId) => runAction(() => api.engraveDiscard(itemId))}
+            />
+          )}
+          {view === 'awaken' && <AwakenView species={displaySpecies} paused={gameState.paused} onAwaken={(speciesId) => runAction(() => api.awaken(speciesId))} />}
+          {view === 'skilllab' && <SkillLabView coins={gameState.coins} diamonds={gameState.diamonds} paused={gameState.paused} onUpgrade={(id) => runAction(() => api.skillLabUpgrade(id))} />}
+          {view === 'auction' && (
+            <AuctionView coins={gameState.coins} paused={gameState.paused} onBid={(lot, amount) => runAction(() => api.auctionBid(lot, amount))} onClaim={() => runAction(() => api.auctionClaim())} />
+          )}
+          {view === 'fortune' && <FortuneView paused={gameState.paused} onDraw={() => runAction(() => api.fortuneDraw())} />}
+          {view === 'seasonal' && (
+            <SeasonalView coins={gameState.coins} paused={gameState.paused} onGift={(eventId) => runAction(() => api.seasonalGift(eventId))} onBuyDecor={(decorId) => runAction(() => api.buyDecor(decorId))} />
+          )}
+          {view === 'restoration' && <RestorationView onClaim={(id, last) => runAction(() => api.restorationClaim(id, last))} />}
+          {view === 'news' && <NewsView />}
+          {view === 'quiz' && (
+            <QuizView
+              onStart={() => api.quizStart().catch((e: unknown) => {
+                showToast(e instanceof Error ? e.message : '퀴즈를 시작하지 못했어요.', true);
+                return null;
+              })}
+              onAnswer={(speciesId) => runAction(() => api.quizAnswer(speciesId))}
+              showToast={showToast}
+              onOpenProfile={setProfileTarget}
+            />
+          )}
+          {view === 'shopsim' && <ShopSimView onRun={(plan, practice) => runAction(() => api.shopSimRun(plan, practice))} />}
+          {view === 'stack' && (
+            <StackView
+              gameState={gameState}
+              species={displaySpecies}
+              onStart={(speciesId) => api.stackStart(speciesId).catch((e: unknown) => {
+                showToast(e instanceof Error ? e.message : '쌓기를 시작하지 못했어요.', true);
+                return null;
+              })}
+              onFinish={(delays) => runAction(() => api.stackFinish(delays))}
+              showToast={showToast}
+              onOpenProfile={setProfileTarget}
             />
           )}
           {view === 'runner' && (

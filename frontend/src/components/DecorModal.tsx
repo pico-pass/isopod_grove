@@ -119,6 +119,7 @@ export function DecorModal({
                   <strong>{d.name}</strong>
                   <small>
                     {tierNames[d.tier]} · {d.family ? `${FAMILY_LABELS[d.family].icon} ${d.description}` : d.description}
+                    {d.eventId && ` · 🎫 ${d.eventName ?? '이벤트'}`}
                   </small>
                 </span>
                 {have ? (
@@ -134,11 +135,11 @@ export function DecorModal({
                 ) : (
                   <button
                     className="decor-btn buy"
-                    disabled={busy || gameState.paused || gameState.coins < d.price}
+                    disabled={busy || gameState.paused || gameState.coins < d.price || d.available === false}
                     onClick={() => void run(() => onBuy(d.decorId))}
-                    title={gameState.coins < d.price ? '골드가 부족해요' : undefined}
+                    title={d.available === false ? `${d.eventName ?? '이벤트'} 기간에만 살 수 있어요` : gameState.coins < d.price ? '골드가 부족해요' : undefined}
                   >
-                    {formatNumber(d.price)} G
+                    {d.available === false ? '기간 아님' : `${formatNumber(d.price)} G`}
                   </button>
                 )}
               </div>

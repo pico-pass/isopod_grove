@@ -84,9 +84,21 @@ export function pickWeightedByFamily<T extends { speciesId: string; family?: str
   familyOf: (s: T) => SpeciesFamily,
   weight = WEATHER_EXPLORE_WEIGHT,
 ): T {
+  return pickWeightedByFamilyWeights(pool, random, favored ? { [favored]: weight } : {}, familyOf);
+}
+
+// 계열마다 다른 가중치(없으면 1)로 하나 고른다. 날씨와 계절 이벤트가 겹쳐 두 계열 이상을 편들 때 쓴다. 가중치가 하나도 없으면 균등하다.
+export type FamilyWeights = Partial<Record<SpeciesFamily, number>>;
+
+export function pickWeightedByFamilyWeights<T extends { speciesId: string; family?: string }>(
+  pool: readonly T[],
+  random: number,
+  familyWeights: FamilyWeights,
+  familyOf: (s: T) => SpeciesFamily,
+): T {
   if (pool.length === 0) throw new Error('고를 종이 없어요.');
-  if (!favored) return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
-  const weights = pool.map((s) => (familyOf(s) === favored ? weight : 1));
+  if (Object.keys(familyWeights).length === 0) return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
+  const weights = pool.map((s) => familyWeights[familyOf(s)] ?? 1);
   const total = weights.reduce((a, b) => a + b, 0);
   let r = random * total;
   for (let i = 0; i < pool.length; i++) {

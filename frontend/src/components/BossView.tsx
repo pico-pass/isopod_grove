@@ -76,7 +76,7 @@ export function BossView({
   onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
   onSkipCooldown: () => Promise<SkipCooldownResponse | null>;
   onDuelStart: (speciesId: string, floor: number, difficulty: BossDifficultyId) => Promise<BossDuelTurnResponse | null>;
-  onDuelAct: (action: DuelActionId) => Promise<BossDuelActResponse | null>;
+  onDuelAct: (action: DuelActionId, rhythm?: number) => Promise<BossDuelActResponse | null>;
   onDuelForfeit: () => Promise<BossDuelEndResponse | null>;
 }) {
   const [selected, setSelected] = useState('');
@@ -166,10 +166,10 @@ export function BossView({
     setDuelBusy(false);
   };
 
-  const duelAct = async (action: DuelActionId) => {
+  const duelAct = async (action: DuelActionId, rhythm?: number) => {
     if (duelBusy) return;
     setDuelBusy(true);
-    const r = await onDuelAct(action);
+    const r = await onDuelAct(action, rhythm);
     if (r) {
       if (r.finished) finishDuel(r);
       else setDuel(r.duel);
@@ -234,7 +234,7 @@ export function BossView({
           enemyLevelLabel={`${duel.floor}층 · ${duel.difficulty.name}`}
           enemyAttackLabel={duel.isBoss ? '보스 공격' : '상대 공격'}
           busy={duelBusy}
-          onAct={(a) => void duelAct(a)}
+          onAct={(a, rhythm) => void duelAct(a, rhythm)}
           onForfeit={() => void duelForfeit()}
         />
       </section>

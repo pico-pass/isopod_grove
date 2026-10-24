@@ -21,6 +21,8 @@ import {
   TRAIN_INTENSITY_LABELS,
   TRAIN_XP_BY_INTENSITY,
   applyStatBonuses,
+  combineBonuses,
+  starBonuses,
   formatBonusPercent,
   formatDuration,
   formatNumber,
@@ -57,7 +59,7 @@ export function BattleView({
   onBattle: (speciesId: string, difficulty: number) => Promise<BattleResponse | null>;
   onTrain: (speciesId: string, intensity: number, extreme: boolean) => Promise<TrainResponse | null>;
   onDuelStart: (speciesId: string, difficulty: number) => Promise<WildDuelTurnResponse | null>;
-  onDuelAct: (action: DuelActionId) => Promise<WildDuelActResponse | null>;
+  onDuelAct: (action: DuelActionId, rhythm?: number) => Promise<WildDuelActResponse | null>;
   onDuelForfeit: () => Promise<WildDuelEndResponse | null>;
 }) {
   const [mode, setMode] = useState<Mode>('wild');
@@ -142,10 +144,10 @@ export function BattleView({
     setDuelBusy(false);
   };
 
-  const duelAct = async (action: DuelActionId) => {
+  const duelAct = async (action: DuelActionId, rhythm?: number) => {
     if (duelBusy) return;
     setDuelBusy(true);
-    const r = await onDuelAct(action);
+    const r = await onDuelAct(action, rhythm);
     if (r) {
       if (r.finished) finishDuel(r);
       else setDuel(r.duel);
@@ -194,7 +196,7 @@ export function BattleView({
           enemyLevelLabel={`Lv.${duel.enemy.level}`}
           enemyAttackLabel="상대 공격"
           busy={duelBusy}
-          onAct={(a) => void duelAct(a)}
+          onAct={(a, rhythm) => void duelAct(a, rhythm)}
           onForfeit={() => void duelForfeit()}
         />
       </section>
@@ -305,7 +307,8 @@ export function BattleView({
         <div className="battle-picker">
           {owned.map((sp) => {
             const progress = getBattleLevelProgress(gameState.battleXp[sp.speciesId] || 0);
-            const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), equipmentBonuses);
+            const stars = gameState.battleStars?.[sp.speciesId] ?? 0;
+            const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), combineBonuses(equipmentBonuses, starBonuses(stars)));
             return (
               <button
                 key={sp.speciesId}
@@ -316,6 +319,7 @@ export function BattleView({
                 <SpeciesImage species={sp} style={{ filter: sp.filter }} />
                 <span className="battle-pick-name">
                   {sp.name} <small className="battle-pick-level">Lv.{progress.level}</small>
+                  {stars > 0 && <small className="battle-pick-stars" title={`각성 ★${stars}`}> ★{stars}</small>}
                 </span>
                 <div className="mini-xp-bar">
                   <i style={{ width: `${(progress.currentXp / progress.requiredXp) * 100}%` }} />

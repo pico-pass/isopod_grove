@@ -70,7 +70,7 @@ export function SurvivalView({
   onRetire: () => Promise<SurvivalResponse | null>;
   onRevive: () => Promise<SurvivalResponse | null>;
   onBuyAttempt: () => Promise<BuyAttemptResponse | null>;
-  onDuelAct: (action: DuelActionId) => Promise<SurvivalResponse | SurvivalDuelStepResponse | null>;
+  onDuelAct: (action: DuelActionId, rhythm?: number) => Promise<SurvivalResponse | SurvivalDuelStepResponse | null>;
   showToast: (message: string, isError?: boolean) => void;
 }) {
   const [info, setInfo] = useState<SurvivalInfo | null>(null);
@@ -158,10 +158,10 @@ export function SurvivalView({
 
   // 엘리트 직접 전투에서 한 턴 진행한다. 아직 안 끝났으면 전투 상태만 갱신하고(이전 구간 결과는 그대로 둔다),
   // 끝나면 보통의 구간 결과로 처리해서 방금 싸운 엘리트 전투를 다시 재생하지 않고 바로 보여준다.
-  const duelAct = async (action: DuelActionId) => {
+  const duelAct = async (action: DuelActionId, rhythm?: number) => {
     if (busy) return;
     setBusy(true);
-    const r = await onDuelAct(action);
+    const r = await onDuelAct(action, rhythm);
     if (r) {
       if ('step' in r) {
         setSegment((prev) => (prev ? { ...prev, run: r.run } : prev));
@@ -259,7 +259,7 @@ export function SurvivalView({
               enemyLevelLabel={`${run.duel.stage}스테이지`}
               enemyAttackLabel="엘리트 공격"
               busy={busy}
-              onAct={(a) => void duelAct(a)}
+              onAct={(a, rhythm) => void duelAct(a, rhythm)}
             />
           )}
           {run.dead && (

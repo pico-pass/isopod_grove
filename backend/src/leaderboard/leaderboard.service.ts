@@ -4,8 +4,12 @@ import { Model, Types } from 'mongoose';
 import { GameState, GameStateDocument } from '../game-state/schemas/game-state.schema';
 import { PuzzleRecord, PuzzleRecordDocument } from '../game-state/schemas/puzzle-record.schema';
 import { RunnerRecord, RunnerRecordDocument } from '../game-state/schemas/runner-record.schema';
+import { StackRecord, StackRecordDocument } from '../game-state/schemas/stack-record.schema';
+import { QuizRecord, QuizRecordDocument } from '../game-state/schemas/quiz-record.schema';
 import { PUZZLE_STAGES, getPuzzleDayKey, rankByLadder } from '../game-state/puzzle-engine';
 import { rankByDistance } from '../game-state/runner-engine';
+import { rankByHeight } from '../game-state/stack-engine';
+import { rankByStreak } from '../game-state/quiz-engine';
 import { describeDungeonScore, normalizeDungeonScore, rankDungeon } from '../game-state/dungeon-engine';
 import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import { UsersService, effectiveDisplayName } from '../users/users.service';
@@ -87,6 +91,12 @@ export class LeaderboardService {
     // 사육장 좋아요 순위 전용(역시 끝자리).
     @InjectModel(TerrariumLike.name)
     private terrariumLikeModel?: Model<TerrariumLikeDocument>,
+    // 콩 쌓기 순위 전용(역시 끝자리).
+    @InjectModel(StackRecord.name)
+    private stackRecordModel?: Model<StackRecordDocument>,
+    // 이 콩 누구? 순위 전용(역시 끝자리).
+    @InjectModel(QuizRecord.name)
+    private quizRecordModel?: Model<QuizRecordDocument>,
   ) {}
 
   async getLevelLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
@@ -151,6 +161,48 @@ export class LeaderboardService {
     );
   }
 
+  // 이 콩 누구?: 오늘 가장 길게 이어서 맞힌 순. 같은 개수는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다.
+  async getQuizLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
+    if (!this.quizRecordModel) throw new Error('QuizRecord 모델이 연결되지 않았어요.');
+    const dayKey = getPuzzleDayKey();
+    const records = await this.quizRecordModel
+      .find({ dayKey }, { userId: 1, bestStreak: 1 })
+      .sort({ bestStreak: -1, bestAt: 1 })
+      .lean<{ userId: Types.ObjectId; bestStreak: number }[]>();
+    const ranks = rankByStreak(records.map((r) => r.bestStreak));
+    return this.buildResult(
+      records.map((r, i) => ({ userId: r.userId, value: r.bestStreak, rank: ranks[i], label: `${r.bestStreak.toLocaleString('ko-KR')}연속` })),
+      requesterId,
+      limit,
+    );
+  }
+
+  // 콩 쌓기: 오늘 가장 높이 쌓은 순. 같은 높이는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 달성한 사람이 위에 보인다.
+  async getStackLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
+    if (!this.stackRecordModel) throw new Error('StackRecord 모델이 연결되지 않았어요.');
+    const dayKey = getPuzzleDayKey();
+    const records = await this.stackRecordModel
+      .find({ dayKey }, { userId: 1, bestHeight: 1, speciesId: 1 })
+      .sort({ bestHeight: -1, bestAt: 1 })
+      .lean<{ userId: Types.ObjectId; bestHeight: number; speciesId?: string }[]>();
+    const ranks = rankByHeight(records.map((r) => r.bestHeight));
+    const speciesById = new Map((await this.speciesService.findAll()).map((s) => [s.speciesId, s]));
+    return this.buildResult(
+      records.map((r, i) => {
+        const sp = r.speciesId ? speciesById.get(r.speciesId) : undefined;
+        return {
+          userId: r.userId,
+          value: r.bestHeight,
+          rank: ranks[i],
+          label: `${r.bestHeight.toLocaleString('ko-KR')}칸`,
+          ...(sp ? { species: { speciesId: sp.speciesId, name: sp.name, image: sp.image, filter: sp.filter, rarity: sp.rarity } } : {}),
+        };
+      }),
+      requesterId,
+      limit,
+    );
+  }
+
   // 인기 사육장: 받은 좋아요(모든 사육장 합계)가 많은 순. 같은 개수는 같은 순위(1, 1, 3)이고, 같은 순위 안에서는 먼저 그 개수에
   // 닿은 사람이 위에 보인다. 사육장을 비공개로 해 둔 유저는 순위에서 뺀다(눌러도 방문할 수 없으므로).
   async getLikesLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
@@ -185,6 +237,23 @@ export class LeaderboardService {
     const ranks = rankDungeon(rows);
     return this.buildResult(
       rows.map((r, i) => ({ userId: r.userId, value: r.bestScore, rank: ranks[i], label: `${describeDungeonScore(r.bestScore)}${r.clears > 0 ? ` · 완주 ${r.clears}회` : ''}` })),
+      requesterId,
+      limit,
+    );
+  }
+
+  // 표본 전시관: 진열한 표본의 전시 점수 순(같은 점수는 같은 순위). 점수가 0이거나 사육장을 비공개로 한 유저는 순위에 올리지 않는다.
+  async getExhibitionLeaderboard(requesterId: string, limit = DEFAULT_LEADERBOARD_LIMIT): Promise<LeaderboardResult> {
+    const states = await this.gameStateModel
+      .find({ 'exhibit.score': { $gt: 0 }, terrariumPublic: { $ne: false } }, { userId: 1, 'exhibit.score': 1, 'exhibit.shown': 1 })
+      .lean<{ userId: Types.ObjectId; exhibit?: { score?: number; shown?: string[] } }[]>();
+    const rows = states
+      .map((s) => ({ userId: s.userId, score: s.exhibit?.score ?? 0, shown: (s.exhibit?.shown ?? []).length }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || b.shown - a.shown || a.userId.toString().localeCompare(b.userId.toString()));
+    const ranks = rankByDistance(rows.map((r) => r.score));
+    return this.buildResult(
+      rows.map((r, i) => ({ userId: r.userId, value: r.score, rank: ranks[i], label: `🏺 ${r.score.toLocaleString('ko-KR')}점 · 진열 ${r.shown}개` })),
       requesterId,
       limit,
     );

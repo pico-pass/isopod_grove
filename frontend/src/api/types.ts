@@ -128,6 +128,10 @@ export interface DecorItem {
   breedBonusPercent: number;
   description: string;
   tint?: [string, string]; // 배경만: 사육장 사진 위에 덮는 그라데이션 색
+  // 절기·명절 한정 장식이면 이벤트 id·이름과, 지금 살 수 있는지(기간 중인지). 산 뒤에는 기간과 상관없이 놓을 수 있다.
+  eventId?: string;
+  eventName?: string;
+  available?: boolean;
 }
 
 export interface DecorCatalog {
@@ -165,11 +169,22 @@ export interface VisitLiker {
   at: number;
 }
 
+// 방문 화면에 보이는 표본 전시관(진열한 표본이 없으면 null)
+export interface VisitExhibition {
+  likeId: string; // 좋아요를 누를 때 terrariumId 자리에 쓰는 값('exhibition')
+  slots: number;
+  score: number;
+  specimens: { speciesId: string; name: string; image?: string; filter: string; rarity: number; family: SpeciesFamily; tier: number; tierName: string; tierIcon: string; score: number }[];
+  likes: number;
+  likedByMe: boolean;
+}
+
 export interface VisitResult {
   owner: { userId: string; displayName: string; avatarUrl?: string; profileMessage?: string; level: number };
   isMe: boolean;
   isPublic: boolean;
   terrariums: VisitTerrarium[];
+  exhibition?: VisitExhibition | null;
   totalLikes: number;
   recentLikers: VisitLiker[];
 }
@@ -209,6 +224,7 @@ export interface GameState {
   xp: number;
   // 야생 배틀 전투 경험치. key: speciesId. 레벨은 getBattleLevelProgress로 계산한다.
   battleXp: Record<string, number>;
+  battleStars?: Record<string, number>; // 전투 레벨 각성 ★ 개수(종 id → 개수). 예전 계정은 없을 수 있다.
   // 투기장(PvP) 방어 식구로 지정한 종. 지정 전엔 null.
   pvpDefenseSpeciesId: string | null;
   pvpRating: number;
@@ -1250,6 +1266,704 @@ export interface RunnerFinishResponse {
   milestones: RunnerMilestoneInfo[];
 }
 
+// ---- 숲 신문 ----
+export interface NewsArticleView {
+  id: string;
+  section: '날씨' | '발견' | '도전' | '랭킹' | '소식';
+  icon: string;
+  headline: string;
+  body: string;
+}
+
+export interface NewsEditionView {
+  dayKey: string;
+  yesterday: string;
+  headline: NewsArticleView | null;
+  articles: NewsArticleView[];
+}
+
+// ---- 전투 레벨 각성 ★ ----
+export interface AwakenSpeciesView {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+  family: SpeciesFamily;
+  owned: boolean;
+  level: number;
+  xp: { current: number; required: number };
+  stars: number;
+  bonus: number; // ★로 늘어난 능력치 비율(0.4면 +40%)
+  next: { gold: number; diamonds: number } | null; // 다음 ★ 비용(최고면 null)
+  ready: boolean; // 지금 각성할 수 있는지(키우는 중 + 레벨 충족 + ★ 여유)
+  afford: boolean; // 골드·다이아가 충분한지
+}
+
+export interface AwakenStatus {
+  coins: number;
+  diamonds: number;
+  requiredLevel: number;
+  maxStars: number;
+  starBonus: number;
+  species: AwakenSpeciesView[];
+}
+
+export interface AwakenResponse extends ActionResult {
+  status: AwakenStatus;
+}
+
+// ---- 떠돌이 상인 ----
+export interface MerchantItemView {
+  id: 'ticket' | 'shard' | 'boost' | 'decor';
+  kind: 'ticket' | 'shard' | 'boost' | 'decor';
+  name: string;
+  icon: string;
+  desc: string;
+  tag: string;
+  amount: number;
+  limit: number; // 하루에 살 수 있는 개수
+  bought: number;
+  left: number; // 오늘 더 살 수 있는 개수(이미 가진 장식은 0)
+  alreadyOwned: boolean;
+  base: number; // 기준 가격
+  multiplier: number; // 달·날씨 배율
+  price: number; // 오늘 가격(특가 반영)
+  sale: boolean;
+  verdict: 'sale' | 'cheap' | 'normal' | 'pricey';
+}
+
+export interface MerchantStatus {
+  day: string;
+  resetsInMs: number;
+  coins: number;
+  moon: { name: string; icon: string; fraction: number };
+  weather: { name: string; icon: string } | null;
+  items: MerchantItemView[];
+}
+
+export interface MerchantResponse extends ActionResult {
+  status: MerchantStatus;
+}
+
+// ---- 표본 전시관 ----
+export interface ExhibitSpeciesView {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+  family: SpeciesFamily;
+  owned: boolean; // 지금 키우고 있는지(표본을 만들려면 키우고 있어야 한다)
+  tier: number; // 0이면 표본 없음, 1~4
+  tierName: string;
+  score: number;
+  shown: boolean;
+  next: { tier: number; tierName: string; gold: number } | null; // 다음 등급을 만드는 값(최고 등급이면 null)
+}
+
+export interface ExhibitStatus {
+  coins: number;
+  tiers: { tier: number; id: string; name: string; icon: string; points: number }[];
+  slots: number;
+  used: number;
+  shelfLevel: number;
+  maxShelfLevel: number;
+  shelfNext: { slots: number; gold: number } | null;
+  score: number;
+  shownIds: string[];
+  species: ExhibitSpeciesView[];
+}
+
+export interface ExhibitResponse extends ActionResult {
+  status: ExhibitStatus;
+}
+
+// ---- 사육장 관리인 ----
+export interface ManagerGradeView {
+  id: string;
+  name: string;
+  icon: string;
+  wage: number; // 하루 월급(골드)
+  incomeBonus: number; // 자동 수익 +비율
+}
+
+export interface ManagerStatus {
+  today: string;
+  coins: number;
+  hourlyIncome: number;
+  maxCatchupDays: number;
+  grades: ManagerGradeView[];
+  current: { grade: string; name: string; icon: string; incomeBonus: number; wage: number; paidThrough: string; owedDays: number; totalPaid: number; hiredAt: number } | null;
+  totalPaid: number;
+}
+
+export interface ManagerResponse extends ActionResult {
+  status: ManagerStatus;
+}
+
+// ---- 장비 각인 재련소 ----
+export interface EngraveInfoView {
+  kind: string;
+  name: string;
+  icon: string;
+  grade: number;
+  gradeName: string;
+  value: number;
+  unit: string;
+  text: string;
+}
+
+export interface EngraveItemView {
+  itemId: string;
+  name: string;
+  icon: string;
+  rarity: number;
+  category: 'weapon' | 'armor' | 'charm';
+  equipped: boolean;
+  current: EngraveInfoView | null;
+  pending: EngraveInfoView | null; // 굴려서 나왔지만 아직 고르지 않은 새 각인
+  cost: { gold: number; shards: number };
+}
+
+export interface EngraveStatus {
+  shards: number;
+  kinds: { id: string; name: string; icon: string; desc: string; unit: string; values: number[]; cap: number }[];
+  grades: { id: string; name: string; rate: number }[];
+  totals: { matchup: number; skillCd: number; postHeal: number; xp: number };
+  items: EngraveItemView[];
+}
+
+export interface EngraveResponse extends ActionResult {
+  status: EngraveStatus;
+  rolled?: EngraveInfoView | null;
+}
+
+// ---- 계열 기술 연구소 ----
+export interface SkillLabNodeView {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  max: number;
+  level: number;
+  next: { gold: number; diamonds: number } | null; // 최고 단계면 null
+}
+
+export interface SkillLabFamilyView {
+  family: SpeciesFamily;
+  name: string;
+  icon: string;
+  skillName: string;
+  nodes: SkillLabNodeView[];
+}
+
+export interface SkillLabStatus {
+  families: SkillLabFamilyView[];
+}
+
+export interface SkillLabResponse extends ActionResult {
+  status: SkillLabStatus;
+}
+
+// ---- 매일 경매 ----
+export interface AuctionItemInfo {
+  name: string;
+  icon: string;
+  description: string;
+  tag: string;
+}
+
+export interface AuctionLotView extends AuctionItemInfo {
+  lot: number;
+  kind: 'equipment' | 'decor' | 'boost';
+  minBid: number;
+  nextMin: number;
+  top: { amount: number; displayName: string; isMe: boolean } | null;
+  bids: number;
+  mine: 'leading' | 'outbid' | 'none';
+  myBid: number;
+  alreadyOwned: boolean;
+  history: { displayName: string; amount: number; at: number; isMe: boolean }[];
+}
+
+export interface AuctionStatus {
+  day: string;
+  closesAt: number;
+  endsInMs: number;
+  coins: number;
+  lots: AuctionLotView[];
+  yesterday: { day: string; lots: (AuctionItemInfo & { lot: number; winner: { displayName: string; amount: number; isMe: boolean } | null })[] } | null;
+  pending: { refund: number; won: (AuctionItemInfo & { day: string; lot: number; amount: number })[] };
+  rules: { minIncrement: number; incrementRate: number };
+}
+
+export interface AuctionResponse extends ActionResult {
+  status: AuctionStatus;
+}
+
+// ---- 오늘의 운세 ----
+export interface FortuneView {
+  grade: { id: string; name: string; icon: string };
+  family: SpeciesFamily;
+  familyName: string;
+  familyIcon: string;
+  color: { name: string; icon: string };
+  number: number;
+  line: string;
+  reward: { gold: number; diamonds: number; tickets: number };
+  rewardText: string;
+  effects: { breedPercent: number; exploreMult: number };
+}
+
+export interface FortuneStatus {
+  today: string;
+  drawn: boolean;
+  resetsInMs: number;
+  fortune: FortuneView | null;
+  streak: number;
+  best: number;
+  nextBonusIn: number;
+  streakEvery: number;
+  streakBonusText: string;
+  grades: { id: string; name: string; icon: string; rate: number; rewardText: string; breedPercent: number; exploreMult: number }[];
+}
+
+export interface FortuneDrawResponse extends ActionResult {
+  status: FortuneStatus;
+}
+
+// ---- 계절 이벤트 ----
+export interface SeasonalDecorView {
+  decorId: string;
+  name: string;
+  icon: string;
+  kind: DecorKind;
+  tier: 0 | 1 | 2;
+  price: number;
+  description: string;
+  owned: boolean;
+}
+
+export interface SeasonalEventBase {
+  id: string;
+  name: string;
+  icon: string;
+  family: SpeciesFamily;
+  from: string;
+  to: string;
+}
+
+export interface SeasonalActiveEvent extends SeasonalEventBase {
+  flavor: string;
+  daysLeft: number;
+  exploreWeight: number;
+  giftId: string;
+  giftClaimed: boolean;
+  gift: { gold: number; diamonds: number; tickets: number };
+  giftText: string;
+  decor: SeasonalDecorView[];
+}
+
+export interface SeasonalStatus {
+  today: string;
+  active: SeasonalActiveEvent[];
+  upcoming: (SeasonalEventBase & { flavor: string; daysUntil: number })[];
+  calendar: (SeasonalEventBase & { state: 'past' | 'active' | 'upcoming' })[];
+  ownedLimited: number;
+  totalLimited: number;
+}
+
+export interface SeasonalGiftResponse extends ActionResult {
+  status: SeasonalStatus;
+}
+
+// ---- 숲 복원 프로젝트 ----
+export interface RestorationRewardView {
+  gold: number;
+  diamonds: number;
+  tickets: number;
+}
+
+export interface RestorationMilestoneView {
+  id: string;
+  percent: number;
+  points: number;
+  reward: RestorationRewardView;
+  rewardText: string;
+  reached: boolean;
+  claimed: boolean;
+  claimable: boolean;
+}
+
+export interface RestorationPersonalView {
+  id: string;
+  points: number;
+  reward: RestorationRewardView;
+  rewardText: string;
+  reached: boolean;
+  claimed: boolean;
+  claimable: boolean;
+}
+
+export interface RestorationStatus {
+  week: string;
+  endsInMs: number;
+  goal: number;
+  points: number;
+  ratio: number;
+  stage: { id: string; icon: string; name: string; desc: string };
+  contributors: number;
+  counts: { explores: number; expeditions: number; battles: number; dungeons: number };
+  my: { points: number; dayPoints: number; dayCap: number; todayLeft: number };
+  milestones: RestorationMilestoneView[];
+  personal: RestorationPersonalView[];
+  claimable: number;
+  board: { rank: number; displayName: string; points: number; isMe: boolean }[];
+  lastWeek: {
+    week: string;
+    goal: number;
+    points: number;
+    ratio: number;
+    myPoints: number;
+    milestones: RestorationMilestoneView[];
+    personal: RestorationPersonalView[];
+    claimable: number;
+  } | null;
+  rules: { explore: number; expedition: number; battleWin: number; battleLose: number; dungeonPerFiveFloors: number; dungeonMax: number; dailyCap: number };
+}
+
+export interface RestorationClaimResponse extends ActionResult {
+  reward: RestorationRewardView;
+  status: RestorationStatus;
+}
+
+// ---- 이 콩 누구? ----
+export interface QuizQuestionView {
+  index: number;
+  mode: 'silhouette' | 'zoom' | 'zoomShadow';
+  zoom: { scale: number; x: number; y: number };
+  choices: { speciesId: string; name: string }[];
+  limitMs: number;
+  imageUrl: string;
+}
+
+export interface QuizInfo {
+  dayKey: string;
+  today: { bestStreak: number; rank: number; participants: number } | null;
+  bestStreak: number;
+  milestoneReached: number;
+  resetsAt: number;
+  run: { streak: number; question: QuizQuestionView | null; remainingMs: number } | null;
+  rules: { startMs: number; stepMs: number; minMs: number; graceMs: number; milestones: { streak: number; reward: { explorationTickets: number; diamonds: number } }[] };
+}
+
+export interface QuizStartResponse {
+  streak: number;
+  question: QuizQuestionView | null;
+}
+
+export interface QuizAnswerResponse extends ActionResult {
+  correct: boolean;
+  over: boolean;
+  timedOut?: boolean;
+  streak: number;
+  answer: { speciesId: string; name: string; image?: string; filter: string };
+  next: QuizQuestionView | null;
+  ended: {
+    streak: number;
+    rank: number | null;
+    participants: number | null;
+    reward: { explorationTickets: number; diamonds: number };
+    milestones: { streak: number; reward: { explorationTickets: number; diamonds: number } }[];
+    bestStreak: number;
+    newAllTimeBest: boolean;
+    improved: boolean;
+  } | null;
+}
+
+// ---- 버섯 가게 운영 ----
+export type ShopProductId = 'shiitake' | 'oyster' | 'matsutake';
+
+export interface ShopProductInfo {
+  id: ShopProductId;
+  name: string;
+  icon: string;
+  cost: number;
+  basePrice: number;
+  minPrice: number;
+  maxPrice: number;
+  sensitivity: string;
+  weatherMult: number;
+  expectedCustomers: number;
+}
+
+export interface ShopPlanItem {
+  productId: ShopProductId;
+  stock: number;
+  price: number;
+}
+
+export interface ShopLine extends ShopPlanItem {
+  customers: number;
+  sold: number;
+  wasted: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+}
+
+export interface ShopSimInfo {
+  dayKey: string;
+  resetsAt: number;
+  weather: { type: string; name: string; icon: string; flavor: string };
+  budget: number;
+  maxStock: number;
+  products: ShopProductInfo[];
+  today: { played: false } | { played: true; efficiency: number; profit: number; rank: number | null; plan: ShopPlanItem[] };
+  participants: number;
+  board: { rank: number; userId: string; displayName: string; isMe: boolean; efficiency: number; profit: number }[];
+  rewards: { efficiency: number; gold: number; explorationTickets: number; diamonds: number }[];
+}
+
+export interface ShopSimRunResponse extends ActionResult {
+  practice: boolean;
+  weather: { type: string; name: string; icon: string };
+  result: { lines: ShopLine[]; revenue: number; cost: number; profit: number };
+  efficiency: number;
+  optimum: { plan: ShopPlanItem[]; profit: number };
+  reward: { gold: number; explorationTickets: number; diamonds: number } | null;
+  rank: number | null;
+  participants: number | null;
+}
+
+// ---- 콩 쌓기 ----
+export interface StackRewardInfo {
+  explorationTickets: number;
+  equipmentShards: number;
+  diamonds: number;
+}
+
+export interface StackInfo {
+  dayKey: string;
+  today: { bestHeight: number; rank: number; participants: number } | null;
+  bestHeight: number;
+  milestoneReached: number;
+  resetsAt: number;
+  rules: {
+    tps: number;
+    range: number;
+    startWidth: number;
+    maxHeight: number;
+    minDelay: number;
+    maxDelay: number;
+    speedStart: number;
+    speedMax: number;
+    speedEvery: number;
+    grow: number;
+    growStreak: number;
+    toleranceByRarity: number[];
+    milestones: { height: number; reward: StackRewardInfo }[];
+  };
+}
+
+export interface StackStartResponse {
+  seed: number;
+  speciesId: string;
+  rarity: number;
+}
+
+export interface StackFinishResponse extends ActionResult {
+  height: number;
+  perfects: number;
+  ticks: number;
+  completed: boolean;
+  speciesId: string;
+  rarity: number;
+  improved: boolean;
+  bestToday: number;
+  bestHeight: number;
+  newAllTimeBest: boolean;
+  rank: number;
+  participants: number;
+  reward: StackRewardInfo;
+  milestones: { height: number; reward: StackRewardInfo }[];
+}
+
+// ---- 하극상 대회(희귀도 '일반' 전용 주간 대회) ----
+export interface UnderdogFighterOption {
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  family?: SpeciesFamily;
+  level: number;
+}
+
+export interface UnderdogMe {
+  speciesId: string;
+  points: number;
+  wins: number;
+  losses: number;
+  matches: number;
+  matchesLeft: number;
+  rank: number | null;
+}
+
+export interface UnderdogBoardRow {
+  rank: number;
+  userId: string;
+  displayName: string;
+  isMe: boolean;
+  points: number;
+  wins: number;
+  losses: number;
+  speciesId: string;
+  speciesName: string;
+  image?: string;
+  filter: string;
+}
+
+export interface UnderdogReward {
+  rank?: number;
+  gold: number;
+  diamonds: number;
+  label: string;
+}
+
+export interface UnderdogStatus {
+  week: string;
+  weekEndsInMs: number;
+  rules: {
+    dailyMatches: number;
+    winPoints: number;
+    winLevelBonusMax: number;
+    lossPoints: number;
+    npcRate: number;
+    winGold: number;
+    minMatchesForReward: number;
+    rewards: UnderdogReward[];
+  };
+  me: UnderdogMe | null;
+  eligible: UnderdogFighterOption[];
+  board: UnderdogBoardRow[];
+  participants: number;
+  lastWeek: {
+    week: string;
+    rank: number | null;
+    participants: number;
+    points: number;
+    wins: number;
+    losses: number;
+    matches: number;
+    reward: UnderdogReward | null;
+    claimed: boolean;
+    claimable: boolean;
+  } | null;
+}
+
+export interface UnderdogOpponent {
+  userId: string; // 야생 선수면 빈 문자열
+  npc: boolean;
+  displayName: string;
+  speciesId: string;
+  speciesName: string;
+  image?: string;
+  filter: string;
+  level: number;
+  points: number;
+}
+
+export interface UnderdogMatchResponse extends ActionResult {
+  result: {
+    won: boolean;
+    vsNpc: boolean;
+    pointsDelta: number;
+    gold: number;
+    log: BattleTurn[];
+    mine: BattleFighter;
+    opponent: BattleFighter & { displayName: string; speciesName: string };
+  };
+  status: UnderdogStatus;
+}
+
+export interface UnderdogStatusResponse extends ActionResult {
+  status: UnderdogStatus;
+}
+
+// ---- 현상수배 보스 ----
+export type WantedTierId = 'bronze' | 'silver' | 'gold';
+
+export interface WantedConditionView {
+  kind: 'family' | 'rarityMax' | 'noEquipment' | 'levelCap' | 'ban';
+  text: string;
+}
+
+export interface WantedTierView {
+  id: WantedTierId;
+  name: string;
+  icon: string;
+  stage: number;
+  gold: number;
+  diamonds: number;
+  cleared: boolean;
+  stats: CombatStats;
+  patterns: BossPatternInfo[];
+}
+
+export interface WantedFighterView {
+  speciesId: string;
+  eligible: boolean;
+  reason: string | null;
+  level: number;
+  effectiveLevel: number;
+}
+
+export interface WantedPosterEntry {
+  day: string;
+  tier: WantedTierId;
+  speciesId: string;
+  name: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+}
+
+export interface WantedStatus {
+  poster: {
+    day: string;
+    boss: { speciesId: string; name: string; image?: string; filter: string; rarity: number; family: SpeciesFamily } | null;
+    environment: 'plain' | 'volcano' | 'jungle' | 'tundra';
+    conditions: WantedConditionView[];
+    tiers: WantedTierView[];
+  };
+  attempts: { used: number; limit: number; left: number };
+  fighters: WantedFighterView[];
+  duel: (DuelCoreView & { tier: WantedTierId }) | null;
+  collection: {
+    total: number;
+    posters: WantedPosterEntry[];
+    milestones: { count: number; diamonds: number; claimed: boolean; reached: boolean }[];
+  };
+}
+
+export interface WantedResult {
+  won: boolean;
+  tier: WantedTierId;
+  gold: number;
+  diamonds: number;
+  milestoneDiamonds: number;
+  newPoster: boolean;
+}
+
+export interface WantedResponse extends ActionResult {
+  status: WantedStatus | null;
+  step?: boolean; // 전투가 이어지는 중간 응답
+  turns?: BattleTurn[];
+  battleLog?: BattleTurn[];
+  result: WantedResult | null;
+}
+
 // ---- 썩은 통나무 던전(로그라이크) ----
 export type DungeonDifficultyId = 'easy' | 'normal' | 'hard' | 'harder' | 'extreme';
 export type DungeonRoomType = 'battle' | 'elite' | 'rest' | 'shop' | 'event' | 'treasure' | 'boss';
@@ -1266,6 +1980,16 @@ export interface DungeonRelicView {
   owned?: number; // 제안·상점: 이미 가진 개수
 }
 
+// 엘리트 층을 지키는 다른 유저의 문지기
+export interface DungeonGuardianSlot {
+  ownerName: string;
+  speciesId: string;
+  speciesName: string;
+  image?: string;
+  filter: string;
+  rarity: number;
+}
+
 export interface DungeonRoomOption {
   index: number;
   type: DungeonRoomType;
@@ -1274,6 +1998,7 @@ export interface DungeonRoomOption {
   description: string;
   family?: SpeciesFamily; // 전투·엘리트·보스 방: 적 계열
   environment?: 'plain' | 'volcano' | 'jungle' | 'tundra';
+  guardian?: DungeonGuardianSlot; // 다른 유저의 문지기가 지키는 엘리트 방
 }
 
 export interface DungeonEventView {
@@ -1307,13 +2032,49 @@ export interface DungeonRunView {
   skillCooldownReduce: number;
   log: string[];
   options?: DungeonRoomOption[];
+  // 출정 준비물: 남은 정찰 지도·방 새로고침, 정찰로 미리 본 마지막 층, 미리 본 앞쪽 층의 방 구성
+  supplies?: { scout: number; reroll: number; scoutUntil: number };
+  preview?: { floor: number; rooms: { type: DungeonRoomType; name: string; icon: string; description: string; family?: SpeciesFamily }[] }[];
   offer?: DungeonRelicView[];
   offerKind?: string;
   skipGold?: number;
   event?: DungeonEventView;
   shop?: DungeonShopView;
   rest?: { healRate: number; trainBonus: number };
-  duel?: DuelCoreView & { kind: 'battle' | 'elite' | 'boss'; isBoss: boolean };
+  duel?: DuelCoreView & { kind: 'battle' | 'elite' | 'boss'; isBoss: boolean; guardian: { ownerName: string } | null };
+}
+
+// 내가 던전에 세운 문지기 현황과 규칙
+export interface DungeonGuardianInfo {
+  speciesId: string; // 빈 문자열이면 문지기가 없다
+  registeredAt: number;
+  blocked: number;
+  breached: number;
+  tollTotal: number;
+  pendingToll: number;
+  tollLeftToday: number;
+  bountyDiamondsLeftToday: number;
+  rules: {
+    chance: number;
+    tollPerFloor: number;
+    tollDailyLimit: number;
+    bountyGoldPerFloor: number;
+    bountyDiamonds: number;
+    bountyDailyDiamonds: number;
+  };
+}
+
+// 입장하기 전에 골드나 다이아로 사는 일회용 출정 준비물
+export type DungeonSupplyId = 'relic' | 'mushrooms' | 'scout' | 'reroll';
+export type DungeonSupplyChoice = Record<DungeonSupplyId, number>;
+export interface DungeonSupplyInfo {
+  id: DungeonSupplyId;
+  name: string;
+  icon: string;
+  desc: string;
+  max: number;
+  diamonds: number;
+  gold: Record<DungeonDifficultyId, number>; // 난이도별 골드 가격
 }
 
 export interface DungeonInfo {
@@ -1330,6 +2091,24 @@ export interface DungeonInfo {
   bestLabel: string | null;
   clears: number;
   rooms: Record<DungeonRoomType, { name: string; icon: string; description: string }>;
+  guardian: DungeonGuardianInfo;
+  supplies?: DungeonSupplyInfo[];
+  lab?: DungeonLabInfo[];
+}
+
+// 던전 연구소: 골드와 다이아로 올리는 영구 강화(다음 입장부터 적용)
+export interface DungeonLabInfo {
+  id: 'offer' | 'shop' | 'hp' | 'rest' | 'gold' | 'discount';
+  name: string;
+  icon: string;
+  desc: string;
+  max: number;
+  level: number;
+  next: { gold: number; diamonds: number } | null; // 최고 단계면 null
+}
+
+export interface DungeonGuardianResponse extends ActionResult {
+  info: DungeonInfo;
 }
 
 export interface DungeonEnded {

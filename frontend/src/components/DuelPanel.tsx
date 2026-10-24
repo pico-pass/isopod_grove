@@ -1,10 +1,12 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { DuelActionId, DuelCoreView } from '../api/types';
 import { battleLogLabel, battleLogValue } from '../utils/battleLog';
 import { FAMILY_LABELS } from '../utils/decor';
 import { formatNumber } from '../utils/gameCalc';
 import { BattleRulesBanner } from './BattleRulesBanner';
 import { FighterCard } from './FighterCard';
+import { RhythmBar } from './RhythmBar';
+import { loadRhythmEnabled, saveRhythmEnabled } from '../utils/rhythmStrike';
 
 // 계열 기술(skill)의 아이콘은 내 식구의 계열을 따른다(🔥/🌿/❄️).
 const ACTION_ICONS: Record<Exclude<DuelActionId, 'skill'>, string> = { attack: '⚔️', guard: '🛡️', strike: '💥', heal: '💚' };
@@ -28,12 +30,20 @@ export function DuelPanel({
   enemyLevelLabel: string; // 상대 카드에 표시할 레벨 문구
   enemyAttackLabel: string; // 로그에서 상대 행동을 부르는 말
   busy: boolean;
-  onAct: (action: DuelActionId) => void;
+  // rhythm: 리듬 일격으로 쏜 일격의 정확도(0~1). 일격이 아니거나 리듬을 끄면 없다.
+  onAct: (action: DuelActionId, rhythm?: number) => void;
   onForfeit?: () => void;
   forfeitLabel?: string;
 }) {
   const { state, intent, log } = duel;
   const logRef = useRef<HTMLDivElement>(null);
+  const [rhythmOn, setRhythmOn] = useState(loadRhythmEnabled);
+  const [rhythmOpen, setRhythmOpen] = useState(false);
+  const toggleRhythm = () => {
+    setRhythmOn(!rhythmOn);
+    saveRhythmEnabled(!rhythmOn);
+    setRhythmOpen(false);
+  };
   const lastTurn = log[log.length - 1];
 
   useEffect(() => {
@@ -82,13 +92,23 @@ export function DuelPanel({
         </div>
       )}
 
+      {rhythmOpen && (
+        <RhythmBar
+          onStop={(accuracy) => {
+            setRhythmOpen(false);
+            onAct('strike', accuracy);
+          }}
+          onCancel={() => setRhythmOpen(false)}
+        />
+      )}
+
       <div className="duel-actions">
         {duel.actions.map((a) => (
           <button
             key={a.id}
             className={`duel-action${a.available ? '' : ' unavailable'}`}
-            disabled={busy || !a.available}
-            onClick={() => onAct(a.id)}
+            disabled={busy || !a.available || rhythmOpen}
+            onClick={() => (a.id === 'strike' && rhythmOn ? setRhythmOpen(true) : onAct(a.id))}
           >
             <strong>
               {a.id === 'skill' ? FAMILY_LABELS[a.family ?? duel.mine.family ?? 'forest'].icon : ACTION_ICONS[a.id]} {a.name}
@@ -96,6 +116,13 @@ export function DuelPanel({
             <small>{a.available ? a.description : (a.reason ?? '지금은 쓸 수 없어요')}</small>
           </button>
         ))}
+      </div>
+
+      <div className="rhythm-toggle">
+        <button className={`filter${rhythmOn ? ' active' : ''}`} onClick={toggleRhythm} disabled={busy} aria-pressed={rhythmOn}>
+          🎵 리듬 일격 {rhythmOn ? '켬' : '끔'}
+        </button>
+        <small>{rhythmOn ? '강력한 일격을 타이밍 바로 쏴요(피해 ±30%).' : '일격이 바로 나가요.'}</small>
       </div>
 
       <div className="battle-log" ref={logRef}>

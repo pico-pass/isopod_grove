@@ -1,9 +1,11 @@
 import type { GameState, Species, SpeciesFamily } from '../api/types';
 import {
   applyStatBonuses,
+  combineBonuses,
   getBattleLevelProgress,
   getCombatBaseStats,
   getFamilyMatchup,
+  starBonuses,
   type StatBonuses,
 } from '../utils/gameCalc';
 import { FamilyBadge } from './FamilyBadge';
@@ -31,7 +33,8 @@ export function SpeciesPickGrid({
     <div className="battle-picker">
       {species.map((sp) => {
         const progress = getBattleLevelProgress(gameState.battleXp[sp.speciesId] || 0);
-        const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), bonuses);
+        const stars = gameState.battleStars?.[sp.speciesId] ?? 0;
+        const stats = applyStatBonuses(getCombatBaseStats(sp.rarity, progress.level), combineBonuses(bonuses, starBonuses(stars)));
         return (
           <button
             key={sp.speciesId}
@@ -42,6 +45,7 @@ export function SpeciesPickGrid({
             <SpeciesImage species={sp} style={{ filter: sp.filter }} />
             <span className="battle-pick-name">
               {sp.name} <small className="battle-pick-level">Lv.{progress.level}</small>
+              {stars > 0 && <small className="battle-pick-stars" title={`각성 ★${stars}`}> ★{stars}</small>}
             </span>
             <div className="mini-xp-bar">
               <i style={{ width: `${(progress.currentXp / progress.requiredXp) * 100}%` }} />

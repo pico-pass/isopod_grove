@@ -94,8 +94,9 @@ function pickType(random: () => number, pool: readonly DungeonRoomType[]): Dunge
 
 // 이 층에서 고를 수 있는 방. 한 장의 5층은 엘리트, 10층은 보스 하나뿐이다. 1층에는 상점·휴식·엘리트가 없고,
 // 한 장의 4·9층(엘리트·보스 바로 앞)에는 휴식처가 반드시 하나 있다. 같은 종류의 방은 한 층에 둘 나오지 않는다.
-export function generateRoomOptions(seed: number, floor: number): DungeonRoom[] {
-  const random = seededRandom(seed, floor, 1);
+// variant가 0이 아니면 같은 층의 방을 다시 굴린 것이다(출정 준비물 '방 새로고침'). 엘리트·보스 층은 방이 정해져 있어서 굴려도 같다.
+export function generateRoomOptions(seed: number, floor: number, variant = 0): DungeonRoom[] {
+  const random = variant > 0 ? seededRandom(seed, floor, 1, 1000 + variant) : seededRandom(seed, floor, 1);
   const withEnemy = (type: DungeonRoomType): DungeonRoom => {
     const family = SPECIES_FAMILIES[Math.floor(random() * SPECIES_FAMILIES.length)];
     return { type, family, environment: rollWildEnvironment(random()) };
@@ -122,17 +123,101 @@ export function generateRoomOptions(seed: number, floor: number): DungeonRoom[] 
   return types.map((t) => (t === 'battle' || t === 'elite' ? withEnemy(t) : { type: t }));
 }
 
+// ---- 출정 준비물 ----
+// 입장하기 전에 골드나 다이아로 사는 일회용 보급품이다(그 런에서만 쓰고, 런이 끝나면 사라진다). 영구 효과가 아니라서 입장할 때마다 돈이 나간다.
+// 골드 가격은 난이도의 보상 배율만큼 비싸진다(보상이 큰 난이도일수록 준비물도 비싸다). 다이아 가격은 난이도와 상관없다.
+export type DungeonSupplyId = 'relic' | 'mushrooms' | 'scout' | 'reroll';
+export interface DungeonSupply {
+  id: DungeonSupplyId;
+  name: string;
+  icon: string;
+  desc: string;
+  max: number; // 한 번 입장할 때 살 수 있는 최대 개수
+  gold: number; // 기본 골드 가격(난이도 배율 전)
+  diamonds: number;
+}
+export const DUNGEON_SUPPLY_MUSHROOMS = 40; // 버섯조각 주머니 하나가 주는 시작 버섯조각
+export const DUNGEON_SCOUT_FLOORS = 3; // 정찰 지도 한 장이 미리 보여 주는 층 수
+export const DUNGEON_SUPPLIES: readonly DungeonSupply[] = [
+  { id: 'relic', name: '유물 상자', icon: '🎁', desc: '입장하자마자 보물 상자급 유물 3개 중 하나를 골라 가져가요.', max: 1, gold: 400_000, diamonds: 3 },
+  { id: 'mushrooms', name: '버섯조각 주머니', icon: '🍄', desc: `시작 버섯조각 +${DUNGEON_SUPPLY_MUSHROOMS}개(주머니 하나당).`, max: 3, gold: 80_000, diamonds: 1 },
+  { id: 'scout', name: '정찰 지도', icon: '🗺️', desc: `쓰면 앞으로 ${DUNGEON_SCOUT_FLOORS}개 층의 방 구성을 미리 볼 수 있어요.`, max: 3, gold: 60_000, diamonds: 1 },
+  { id: 'reroll', name: '방 새로고침', icon: '🔄', desc: '이번 층의 방 3개를 다시 굴려요(엘리트·보스 층은 안 돼요).', max: 3, gold: 50_000, diamonds: 1 },
+];
+export type DungeonSupplyChoice = Partial<Record<DungeonSupplyId, number>>;
+
+export const dungeonSupplyGoldPrice = (supply: DungeonSupply, difficulty: DungeonDifficultyId): number =>
+  Math.round(supply.gold * (findDungeonDifficulty(difficulty) ?? DUNGEON_DIFFICULTIES[0]).rewardMult);
+
+// 요청받은 준비물 개수를 정리한다(모르는 id·음수·소수는 버리고 최대 개수로 자른다)
+export function normalizeDungeonSupplies(raw: unknown): Record<DungeonSupplyId, number> {
+  const out = { relic: 0, mushrooms: 0, scout: 0, reroll: 0 } as Record<DungeonSupplyId, number>;
+  if (raw && typeof raw === 'object') {
+    for (const s of DUNGEON_SUPPLIES) {
+      const n = Number((raw as Record<string, unknown>)[s.id]);
+      out[s.id] = Number.isFinite(n) ? Math.max(0, Math.min(s.max, Math.floor(n))) : 0;
+    }
+  }
+  return out;
+}
+
+// 고른 준비물의 총 가격
+export function dungeonSuppliesCost(choice: Record<DungeonSupplyId, number>, difficulty: DungeonDifficultyId): { gold: number; diamonds: number } {
+  let gold = 0;
+  let diamonds = 0;
+  for (const s of DUNGEON_SUPPLIES) {
+    gold += dungeonSupplyGoldPrice(s, difficulty) * (choice[s.id] ?? 0);
+    diamonds += s.diamonds * (choice[s.id] ?? 0);
+  }
+  return { gold, diamonds };
+}
+
+// ---- 문지기 ----
+// 다른 유저가 세워 둔 문지기가 엘리트 층(5·15·…·95층)을 지킬 수 있다. 문지기는 그 층 엘리트와 같은 능력치·패턴으로 싸우고,
+// 이기면 도전자가 현상금(골드·다이아)을 받고, 지면 문지기 주인이 통행료를 받는다. 통행료와 현상금은 시스템이 주는 돈이다
+// (도전자가 잃는 것은 없고, 서로 짜고 돈을 옮길 수도 없다).
+export const DUNGEON_GUARDIAN_CHANCE = 0.4; // 문지기가 있을 때 엘리트 층마다 문지기가 서 있을 확률
+export const DUNGEON_GUARDIAN_TOLL_PER_FLOOR = 2000; // 통행료 = 도전자가 쓰러진 층 × 이 값 × 난이도 보상 배율
+export const DUNGEON_GUARDIAN_TOLL_DAILY_LIMIT = 10; // 문지기 주인이 하루에 통행료를 받을 수 있는 횟수
+export const DUNGEON_GUARDIAN_BOUNTY_GOLD_PER_FLOOR = 300; // 현상금(골드) = 이긴 층 × 이 값 × 난이도 보상 배율
+export const DUNGEON_GUARDIAN_BOUNTY_DIAMONDS = 1;
+export const DUNGEON_GUARDIAN_BOUNTY_DAILY_DIAMONDS = 5; // 하루에 문지기 현상금으로 받을 수 있는 다이아
+
+export const dungeonGuardianToll = (floor: number, difficulty: DungeonDifficultyId): number =>
+  Math.round(floor * DUNGEON_GUARDIAN_TOLL_PER_FLOOR * (findDungeonDifficulty(difficulty) ?? DUNGEON_DIFFICULTIES[0]).rewardMult);
+export const dungeonGuardianBountyGold = (floor: number, difficulty: DungeonDifficultyId): number =>
+  Math.round(floor * DUNGEON_GUARDIAN_BOUNTY_GOLD_PER_FLOOR * (findDungeonDifficulty(difficulty) ?? DUNGEON_DIFFICULTIES[0]).rewardMult);
+
+// 이 런의 엘리트 층 중 문지기가 서는 층과 문지기 후보 번호를 정한다(같은 시드면 같은 결과). 후보가 여럿이면 서로 다른 후보를 먼저 쓴다.
+export function rollGuardianSlots(seed: number, poolSize: number): { floor: number; poolIndex: number }[] {
+  if (poolSize <= 0) return [];
+  const order = Array.from({ length: poolSize }, (_, i) => i);
+  const shuffle = seededRandom(seed, 0, 33);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(shuffle() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const slots: { floor: number; poolIndex: number }[] = [];
+  for (let floor = 1; floor <= DUNGEON_FLOORS; floor++) {
+    if (!isDungeonEliteFloor(floor)) continue;
+    if (seededRandom(seed, floor, 31)() >= DUNGEON_GUARDIAN_CHANCE) continue;
+    slots.push({ floor, poolIndex: order[slots.length % order.length] });
+  }
+  return slots;
+}
+
 // ---- 적 ----
 // 적 능력치(공격·방어·HP 모두 같은 비율): 1층의 일반 적은 서바이벌 startStage 스테이지의 적과 같고(`기본 × 1.08^(startStage-1)`),
 // 층이 하나 오를 때마다 모든 난이도에서 똑같이 6.5%씩(복리) 늘어난다. 그 층의 엘리트는 그 층 일반 적의 1.4배, 보스는 1.8배다.
-// 난이도끼리는 1층의 시작 강함(startStage)과 보상 배율만 다르다. 식구의 힘(희귀도·레벨·장비)이 크게 달라서 난이도를 골라 입장한다.
+// 난이도끼리는 1층의 시작 강함(startStage)과 보상 배율만 다르다. 시작 스테이지는 8씩 벌렸다(1.08^8≈1.85배 ≈ 층으로 약 10층 = 한 장 차이).
+// 시뮬레이션상 최상위 식구가 쉬움 약 69층·보통 59·어려움 49·매우 어려움 39·지옥 29층까지 오르고, 약한 식구는 쉬움·보통에서만 오래 버틴다. 식구의 힘(희귀도·레벨·장비)이 크게 달라서 난이도를 골라 입장한다.
 export type DungeonDifficultyId = 'easy' | 'normal' | 'hard' | 'harder' | 'extreme';
 export const DUNGEON_DIFFICULTIES: readonly { id: DungeonDifficultyId; name: string; startStage: number; rewardMult: number }[] = [
-  { id: 'easy', name: '쉬움', startStage: 3, rewardMult: 1 },
-  { id: 'normal', name: '보통', startStage: 4, rewardMult: 1.5 },
-  { id: 'hard', name: '어려움', startStage: 6, rewardMult: 2 },
-  { id: 'harder', name: '매우 어려움', startStage: 8, rewardMult: 3 },
-  { id: 'extreme', name: '지옥', startStage: 10, rewardMult: 4 },
+  { id: 'easy', name: '쉬움', startStage: 1, rewardMult: 1 },
+  { id: 'normal', name: '보통', startStage: 9, rewardMult: 1.5 },
+  { id: 'hard', name: '어려움', startStage: 17, rewardMult: 2 },
+  { id: 'harder', name: '매우 어려움', startStage: 25, rewardMult: 3 },
+  { id: 'extreme', name: '지옥', startStage: 33, rewardMult: 4 },
 ];
 export const DUNGEON_DIFFICULTY_IDS: readonly DungeonDifficultyId[] = DUNGEON_DIFFICULTIES.map((d) => d.id);
 export const findDungeonDifficulty = (id: string) => DUNGEON_DIFFICULTIES.find((d) => d.id === id);
@@ -263,6 +348,9 @@ export interface DungeonRunStatsInput {
   baseDef: number;
   relics: readonly string[];
   bonus?: Partial<DungeonBonus> | null;
+  // 입장할 때의 던전 연구소 레벨(유물 제안 +n·휴식 회복 +n단계·상점 할인 +n단계). 없으면 연구 효과가 없다.
+  // engPostHeal은 장비 각인 '회복 각인'(전투 후 회복 +비율), engMatchup은 '상성 연마'(상성 유리 보정 +비율)로 입장할 때 같이 저장한다.
+  lab?: Partial<Record<'offer' | 'rest' | 'discount' | 'engPostHeal' | 'engMatchup', number>> | null;
 }
 
 export interface DungeonStats {
@@ -316,14 +404,59 @@ export function getDungeonStats(run: DungeonRunStatsInput): DungeonStats {
     maxHp: Math.max(1, Math.round(run.baseHp * (1 + t.hp + (b.hp ?? 0)))),
     atk: Math.max(1, Math.round(run.baseAtk * (1 + t.atk + (b.atk ?? 0)))),
     def: Math.max(1, Math.round(run.baseDef * (1 + t.def + (b.def ?? 0)))),
-    postHeal: DUNGEON_BASE_HEAL_RATE + t.postHeal,
+    postHeal: DUNGEON_BASE_HEAL_RATE + t.postHeal + (run.lab?.engPostHeal ?? 0),
     goldMult: 1 + t.gold,
-    shopDiscount: Math.min(0.9, t.shopDiscount),
-    restBonus: t.restBonus,
+    shopDiscount: Math.min(0.9, t.shopDiscount + (run.lab?.discount ?? 0) * DUNGEON_LAB_DISCOUNT_PER_LEVEL),
+    restBonus: t.restBonus + (run.lab?.rest ?? 0) * DUNGEON_LAB_REST_PER_LEVEL,
     skillCd: t.skillCd,
     hasRevive: t.revive,
-    offerCount: DUNGEON_OFFER_COUNT + t.offerExtra,
+    offerCount: DUNGEON_OFFER_COUNT + t.offerExtra + (run.lab?.offer ?? 0),
   };
+}
+
+// ---- 던전 연구소 ----
+// 런이 끝나면 사라지는 버섯조각과 달리, 골드와 다이아로 던전을 영구히 강화한다. 레벨마다 값이 기하급수로 오르고 상한이 있다.
+// 효과는 "입장할 때" 정해져서 그 런이 끝날 때까지 유지된다(런 도중에 올려도 다음 입장부터 적용된다).
+export type DungeonLabId = 'offer' | 'shop' | 'hp' | 'rest' | 'gold' | 'discount';
+export const DUNGEON_LAB_HP_PER_LEVEL = 0.02; // 시작 HP +2%
+export const DUNGEON_LAB_REST_PER_LEVEL = 0.02; // 휴식 회복량 +2%p
+export const DUNGEON_LAB_GOLD_PER_LEVEL = 10; // 시작 버섯조각 +10개
+export const DUNGEON_LAB_DISCOUNT_PER_LEVEL = 0.05; // 상점 가격 −5%
+export interface DungeonLabItem {
+  id: DungeonLabId;
+  name: string;
+  icon: string;
+  desc: string;
+  max: number;
+  gold: number; // 1레벨의 골드 값
+  growth: number; // 레벨마다 곱해지는 값(1이면 일정)
+  diamonds: number; // 1레벨의 다이아 값. 레벨 n은 이 값 × n
+}
+export const DUNGEON_LAB: readonly DungeonLabItem[] = [
+  { id: 'offer', name: '유물 감정실', icon: '🔎', desc: '유물을 고를 때 제안되는 유물이 1개 늘어요.', max: 1, gold: 8_000_000, growth: 1, diamonds: 40 },
+  { id: 'shop', name: '상점 창고', icon: '🏪', desc: '떠돌이 상점의 유물 재고가 1개 늘어요.', max: 1, gold: 5_000_000, growth: 1, diamonds: 25 },
+  { id: 'hp', name: '체력 단련장', icon: '❤️', desc: `입장할 때 HP가 레벨마다 +${DUNGEON_LAB_HP_PER_LEVEL * 100}%.`, max: 5, gold: 300_000, growth: 1.9, diamonds: 2 },
+  { id: 'rest', name: '야영 장비', icon: '🏕️', desc: `휴식 회복량이 레벨마다 +${DUNGEON_LAB_REST_PER_LEVEL * 100}%p.`, max: 5, gold: 250_000, growth: 1.9, diamonds: 2 },
+  { id: 'gold', name: '보급 창고', icon: '🍄', desc: `시작 버섯조각이 레벨마다 +${DUNGEON_LAB_GOLD_PER_LEVEL}개.`, max: 5, gold: 200_000, growth: 1.8, diamonds: 1 },
+  { id: 'discount', name: '단골 거래처', icon: '🏷️', desc: `떠돌이 상점 가격이 레벨마다 −${DUNGEON_LAB_DISCOUNT_PER_LEVEL * 100}%.`, max: 5, gold: 200_000, growth: 1.9, diamonds: 1 },
+];
+export const findDungeonLab = (id: string): DungeonLabItem | undefined => DUNGEON_LAB.find((l) => l.id === id);
+
+// 그 연구를 level 레벨로 올리는 데 드는 값(1부터). 골드는 천 단위로 반올림한다.
+export function dungeonLabCost(item: DungeonLabItem, level: number): { gold: number; diamonds: number } {
+  return { gold: Math.round((item.gold * Math.pow(item.growth, level - 1)) / 1000) * 1000, diamonds: item.diamonds * level };
+}
+
+// 연구 레벨(누락은 0)을 정리한다
+export function normalizeDungeonLab(raw: ReadonlyMap<string, number> | Record<string, number> | null | undefined): Record<DungeonLabId, number> {
+  const get = (id: string): number => {
+    const v = raw instanceof Map ? raw.get(id) : (raw as Record<string, number> | null | undefined)?.[id];
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const out = {} as Record<DungeonLabId, number>;
+  for (const item of DUNGEON_LAB) out[item.id] = Math.max(0, Math.min(item.max, Math.floor(get(item.id))));
+  return out;
 }
 
 // 유물 제안 등급 확률(일반·희귀·에픽, 합계 100)
@@ -382,9 +515,9 @@ export interface DungeonShopStock {
   potionPrice: number;
 }
 
-export function rollShop(seed: number, floor: number, owned: readonly string[], discount: number): DungeonShopStock {
+export function rollShop(seed: number, floor: number, owned: readonly string[], discount: number, extraRelics = 0): DungeonShopStock {
   const random = seededRandom(seed, floor, 4);
-  const ids = rollRelicOffer(random, owned, 'shop', 3);
+  const ids = rollRelicOffer(random, owned, 'shop', 3 + extraRelics);
   const price = (base: number) => Math.max(1, Math.round(base * (1 - discount)));
   return {
     relics: ids.map((id) => ({ relicId: id, price: price(DUNGEON_RELIC_PRICE[findRelic(id)?.tier ?? 0]) })),

@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { GameState, GameStateDocument } from '../game-state/schemas/game-state.schema';
 import { getLevel } from '../game-state/game-engine';
+import { EXHIBIT_LIKE_ID, EXHIBIT_TIERS, exhibitScore, shelfSlots, specimenScore } from '../game-state/exhibit-engine';
 import { findDecor, normalizeDecorProps } from '../decor/decor.data';
 import { resolveFamily, type SpeciesFamily } from '../species/species.family';
 import { SpeciesService } from '../species/species.service';
@@ -49,6 +50,18 @@ interface LeanVisitState {
   xp: number;
   terrariumPublic?: boolean;
   terrariums?: LeanVisitTerrarium[];
+  // 표본 전시관(옛 문서에는 없을 수 있다)
+  exhibit?: { specimens?: Record<string, number>; shown?: string[]; shelfLevel?: number };
+}
+
+// 방문 화면에 보이는 표본 전시관. 진열한 표본이 없으면 만들지 않는다.
+export interface VisitExhibition {
+  likeId: string;
+  slots: number;
+  score: number;
+  specimens: { speciesId: string; name: string; image?: string; filter: string; rarity: number; family: SpeciesFamily; tier: number; tierName: string; tierIcon: string; score: number }[];
+  likes: number;
+  likedByMe: boolean;
 }
 
 const populationTotal = (population?: Record<string, number>) =>
@@ -90,6 +103,9 @@ export class VisitService {
           'terrariums.population': 1,
           'terrariums.decorBackdrop': 1,
           'terrariums.decorProps': 1,
+          'exhibit.specimens': 1,
+          'exhibit.shown': 1,
+          'exhibit.shelfLevel': 1,
         },
       )
       .lean<LeanVisitState>();
@@ -151,6 +167,27 @@ export class VisitService {
       };
     });
 
+    // 표본 전시관: 진열 중인 표본(가진 종만, 점수는 지금 규칙으로 다시 계산)
+    const exhibitShown = [...new Set(state.exhibit?.shown ?? [])].filter((id) => (state.exhibit?.specimens?.[id] ?? 0) > 0 && speciesById.has(id));
+    const exhibition: VisitExhibition | null =
+      exhibitShown.length === 0
+        ? null
+        : {
+            likeId: EXHIBIT_LIKE_ID,
+            slots: shelfSlots(state.exhibit?.shelfLevel ?? 0),
+            score: exhibitScore(exhibitShown, state.exhibit?.specimens, (id) => speciesById.get(id)?.rarity),
+            specimens: exhibitShown
+              .map((id) => {
+                const sp = speciesById.get(id)!;
+                const tier = state.exhibit!.specimens![id];
+                const t = EXHIBIT_TIERS[Math.max(0, Math.min(EXHIBIT_TIERS.length - 1, tier - 1))];
+                return { speciesId: id, name: sp.name, image: sp.image, filter: sp.filter, rarity: sp.rarity, family: resolveFamily(sp), tier, tierName: t.name, tierIcon: t.icon, score: specimenScore(sp.rarity, tier) };
+              })
+              .sort((a, b) => b.score - a.score || b.rarity - a.rarity || a.speciesId.localeCompare(b.speciesId)),
+            likes: likesById.get(EXHIBIT_LIKE_ID) ?? 0,
+            likedByMe: likedIds.has(EXHIBIT_LIKE_ID),
+          };
+
     return {
       owner: {
         userId: ownerId,
@@ -162,7 +199,8 @@ export class VisitService {
       isMe,
       isPublic,
       terrariums,
-      totalLikes: terrariums.reduce((sum, t) => sum + t.likes, 0),
+      exhibition,
+      totalLikes: terrariums.reduce((sum, t) => sum + t.likes, 0) + (exhibition?.likes ?? 0),
       // 내 사육장을 볼 때만: 누가 좋아해 줬는지(최근 순)
       recentLikers: isMe ? await this.getRecentLikers(ownerOid, terrariums) : [],
     };
@@ -177,7 +215,7 @@ export class VisitService {
     if (likes.length === 0) return [];
     const users = await this.usersService.findByIds([...new Set(likes.map((l) => l.likerId.toString()))]);
     const userById = new Map(users.map((u) => [u._id.toString(), u]));
-    const nameById = new Map(terrariums.map((t) => [t.terrariumId, t.name]));
+    const nameById = new Map<string, string>([...terrariums.map((t): [string, string] => [t.terrariumId, t.name]), [EXHIBIT_LIKE_ID, '표본 전시관']]);
     return likes.map((l) => {
       const user = userById.get(l.likerId.toString());
       return {
@@ -205,8 +243,10 @@ export class VisitService {
       if (state.terrariumPublic === false) {
         throw new ForbiddenException('이 유저는 사육장을 비공개로 해 두었어요.');
       }
-      if (!(state.terrariums ?? []).some((t) => t.terrariumId === terrariumId)) {
-        throw new NotFoundException('존재하지 않는 사육장이에요.');
+      // 표본 전시관(terrariumId가 'exhibition')은 진열한 표본이 있을 때만 좋아요를 누를 수 있다
+      const isExhibition = terrariumId === EXHIBIT_LIKE_ID;
+      if (isExhibition ? !(state.exhibit?.shown ?? []).some((id) => (state.exhibit?.specimens?.[id] ?? 0) > 0) : !(state.terrariums ?? []).some((t) => t.terrariumId === terrariumId)) {
+        throw new NotFoundException(isExhibition ? '아직 진열한 표본이 없는 전시관이에요.' : '존재하지 않는 사육장이에요.');
       }
       let created = false;
       try {
@@ -222,7 +262,7 @@ export class VisitService {
       }
       // 새로 눌린 좋아요만 알린다(이미 눌려 있던 것을 또 보낸 요청은 알리지 않는다). 알림은 기다리지 않는다.
       if (created) {
-        const terrariumName = (state.terrariums ?? []).find((t) => t.terrariumId === terrariumId)?.name ?? '';
+        const terrariumName = isExhibition ? '표본 전시관' : (state.terrariums ?? []).find((t) => t.terrariumId === terrariumId)?.name ?? '';
         void this.notifyLike(requesterId, ownerId, terrariumName);
       }
     } else {

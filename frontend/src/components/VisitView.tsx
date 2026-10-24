@@ -106,6 +106,26 @@ export function VisitView({
     }
   };
 
+  // 표본 전시관에도 사육장 좋아요와 같은 방식으로 좋아요를 누른다(terrariumId 자리에 'exhibition')
+  const toggleExhibitLike = async () => {
+    if (!data?.exhibition || liking) return;
+    const e = data.exhibition;
+    setLiking(true);
+    try {
+      const r = await api.setTerrariumLike(data.owner.userId, e.likeId, !e.likedByMe);
+      setData((prev) => {
+        if (!prev?.exhibition) return prev;
+        const exhibition = { ...prev.exhibition, likedByMe: r.liked, likes: r.likes };
+        return { ...prev, exhibition, totalLikes: prev.terrariums.reduce((sum, x) => sum + x.likes, 0) + exhibition.likes };
+      });
+      onLikeChanged?.();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '좋아요를 처리하지 못했어요.', true);
+    } finally {
+      setLiking(false);
+    }
+  };
+
   const toggleLike = async (t: VisitTerrarium) => {
     if (!data || liking) return;
     setLiking(true);
@@ -114,7 +134,7 @@ export function VisitView({
       setData((prev) => {
         if (!prev) return prev;
         const terrariums = prev.terrariums.map((x) => (x.terrariumId === t.terrariumId ? { ...x, likedByMe: r.liked, likes: r.likes } : x));
-        return { ...prev, terrariums, totalLikes: terrariums.reduce((sum, x) => sum + x.likes, 0) };
+        return { ...prev, terrariums, totalLikes: terrariums.reduce((sum, x) => sum + x.likes, 0) + (prev.exhibition?.likes ?? 0) };
       });
       onLikeChanged?.();
     } catch (e) {
@@ -272,6 +292,42 @@ export function VisitView({
               );
             })}
           </div>
+
+          {data.exhibition && (
+            <div className="panel visit-exhibition">
+              <div className="panel-heading">
+                <h2>🏺 표본 전시관</h2>
+                <span>
+                  전시 점수 {data.exhibition.score} · 진열 {data.exhibition.specimens.length}/{data.exhibition.slots}칸
+                </span>
+              </div>
+              <div className="exhibit-shelf">
+                {data.exhibition.specimens.map((s) => {
+                  const sp = speciesById.get(s.speciesId);
+                  return (
+                    <div key={s.speciesId} className={`exhibit-card tier-${s.tier}`}>
+                      {sp && <SpeciesImage species={sp} style={{ filter: sp.filter }} />}
+                      <strong>{s.name}</strong>
+                      <small style={{ color: RARITIES[s.rarity]?.color }}>{RARITIES[s.rarity]?.name}</small>
+                      <span className="exhibit-tier">
+                        {s.tierIcon} {s.tierName}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="visit-actions">
+                <button
+                  className={`like-btn${data.exhibition.likedByMe ? ' liked' : ''}`}
+                  disabled={liking || data.isMe}
+                  onClick={() => void toggleExhibitLike()}
+                  title={data.isMe ? '내 전시관에는 좋아요를 누를 수 없어요' : undefined}
+                >
+                  {data.exhibition.likedByMe ? '❤️' : '🤍'} 전시관 좋아요 {data.exhibition.likes}
+                </button>
+              </div>
+            </div>
+          )}
 
           {data.isMe && (
             <div className="panel visit-likers">

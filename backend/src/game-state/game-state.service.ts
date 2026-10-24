@@ -13,6 +13,7 @@ import {
   SurvivalDuel,
   SurvivalRun,
   DungeonRun,
+  DungeonRunGuardian,
   DungeonDuel,
   Terrarium,
   WildDuel,
@@ -30,6 +31,12 @@ import {
   DUNGEON_DAILY_RUNS,
   DUNGEON_DIFFICULTIES,
   DUNGEON_FIRST_CLEAR_EQUIPMENT_RARITY,
+  DUNGEON_GUARDIAN_BOUNTY_DAILY_DIAMONDS,
+  DUNGEON_GUARDIAN_BOUNTY_DIAMONDS,
+  DUNGEON_GUARDIAN_BOUNTY_GOLD_PER_FLOOR,
+  DUNGEON_GUARDIAN_CHANCE,
+  DUNGEON_GUARDIAN_TOLL_DAILY_LIMIT,
+  DUNGEON_GUARDIAN_TOLL_PER_FLOOR,
   DUNGEON_FIRST_FLOOR_DIAMONDS,
   DUNGEON_FLOORS,
   DUNGEON_POTION_HEAL_RATE,
@@ -41,7 +48,22 @@ import {
   DUNGEON_SKIP_GOLD,
   DUNGEON_TRAIN_BONUS,
   describeDungeonScore,
+  dungeonGuardianBountyGold,
+  dungeonGuardianToll,
   dungeonScore,
+  dungeonSuppliesCost,
+  dungeonLabCost,
+  normalizeDungeonLab,
+  DUNGEON_LAB,
+  DUNGEON_LAB_GOLD_PER_LEVEL,
+  DUNGEON_LAB_HP_PER_LEVEL,
+  findDungeonLab,
+  dungeonSupplyGoldPrice,
+  DUNGEON_SCOUT_FLOORS,
+  DUNGEON_SUPPLIES,
+  DUNGEON_SUPPLY_MUSHROOMS,
+  normalizeDungeonSupplies,
+  type DungeonSupplyChoice,
   findDungeonDifficulty,
   findEvent,
   findRelic,
@@ -53,6 +75,7 @@ import {
   normalizeDungeonScore,
   resolveEvent,
   rollEventId,
+  rollGuardianSlots,
   rollRelicOffer,
   rollShop,
   seededRandom,
@@ -62,7 +85,17 @@ import {
 } from './dungeon-engine';
 import { TerrariumLike, TerrariumLikeDocument } from '../visit/schemas/terrarium-like.schema';
 import { WeatherService } from '../weather/weather.service';
-import { getWeatherEffects, pickWeightedByFamily } from '../weather/weather.data';
+import { ForestEvent, ForestEventDocument } from './schemas/forest-event.schema';
+import { RestorationLedger } from './restoration-ledger.service';
+import { RESTORATION_POINTS, dungeonRestorationPoints, type RestorationKind } from './restoration-engine';
+import { activeSeasonalEvents, exploreFamilyWeights, findSeasonalEvent, isSeasonalEventActive } from './event-engine';
+import { activeFortuneEffect, fortuneEffectOf } from './fortune-engine';
+import { normalizeSkillLab, skillLabEffects } from './skill-lab-engine';
+import { engraveTotals, type EngraveTotals } from './engrave-engine';
+import { combineBonuses, normalizeStars, starBonuses } from './awaken-engine';
+import { MANAGER_MAX_CATCHUP_DAYS, findManagerGrade, managerWage } from './manager-engine';
+import { daysBetween } from './event-engine';
+import { getWeatherEffects, pickWeightedByFamilyWeights } from '../weather/weather.data';
 import {
   RUNNER_ABILITIES_BY_RARITY,
   RUNNER_AIR_JUMP_PERCENT,
@@ -218,6 +251,7 @@ import {
   getDuelSkillInfo,
   getDuelIntent,
   playDuelTurn,
+  rhythmStrikeBonus,
   canBreedInEnvironment,
   clamp,
   computeEquipmentBonuses,
@@ -291,7 +325,7 @@ interface LegacyGameState {
   upgrades?: Record<string, number>;
 }
 
-const dayKey = (now = Date.now()) => {
+export const dayKey = (now = Date.now()) => {
   const d = new Date(now);
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 };
@@ -332,7 +366,46 @@ export class GameStateService {
     private terrariumLikeModel?: Model<TerrariumLikeDocument>,
     // 오늘의 숲 날씨(번식·탐색 보너스, 비 오는 날 습도). 없으면 날씨 효과 없이 동작한다(끝자리).
     private weatherService?: WeatherService,
+    // 숲 신문 기사거리 기록 전용(역시 끝자리). 없으면 기록하지 않는다.
+    @InjectModel(ForestEvent.name)
+    private forestEventModel?: Model<ForestEventDocument>,
+    // 숲 복원 프로젝트 점수 적립 전용(역시 끝자리). 없으면 점수를 쌓지 않는다.
+    private restorationLedger?: RestorationLedger,
   ) {}
+
+  // 숲 탐색·원정에서 계열마다 곱해지는 가중치: 오늘 날씨가 편드는 계열과 지금 열려 있는 계절 이벤트가 편드는 계열
+  exploreFamilyWeights(gameState?: { fortune?: { day?: string; gradeId?: string; family?: string } | null }) {
+    const lucky = activeFortuneEffect(gameState?.fortune);
+    return exploreFamilyWeights(getWeatherEffects(this.weatherService?.current()?.type).favored, activeSeasonalEvents(), lucky ? [{ family: lucky.family, mult: lucky.exploreMult }] : []);
+  }
+
+  // 숲 복원 게이지에 점수를 쌓는다. 못 쌓아도 게임에는 영향이 없어서 실패는 무시한다.
+  async contributeRestoration(userId: string, kind: RestorationKind, points: number): Promise<void> {
+    if (!this.restorationLedger) return;
+    try {
+      await this.restorationLedger.add(userId, kind, points);
+    } catch {
+      // 무시
+    }
+  }
+
+  // 숲 신문에 실릴 만한 일을 남긴다. 기사거리를 못 남겨도 게임에는 영향이 없어서 실패는 무시한다.
+  async recordForestEvent(type: string, userId: string, data: Record<string, unknown>): Promise<void> {
+    if (!this.forestEventModel) return;
+    try {
+      const now = Date.now();
+      await this.forestEventModel.create({
+        at: now,
+        day: getPuzzleDayKey(now),
+        type,
+        userId: new Types.ObjectId(userId),
+        data,
+        expireAt: new Date(now + 10 * 24 * 60 * 60 * 1000),
+      });
+    } catch {
+      // 무시
+    }
+  }
 
   // 보스 전투를 처리하는 중인 유저. 같은 유저의 요청이 동시에 두 번 들어와 첫 클리어 보상이나 하루 횟수를
   // 중복으로 받지 못하게 막는다(서버는 pm2 fork 한 프로세스라 메모리 집합으로 충분하다).
@@ -434,8 +507,10 @@ export class GameStateService {
     const speciesById = new Map(speciesList.map((s) => [s.speciesId, s]));
     const soilLevel = gameState.upgrades.get('soil') || 0;
     const nurseryLevel = gameState.upgrades.get('nursery') || 0;
-    const hasFeeder = (gameState.upgrades.get('feeder') || 0) > 0;
-    const hasMister = (gameState.upgrades.get('mister') || 0) > 0;
+    // 사육장 관리인이 일하는 중이면 자동 급식·분무가 켜지고 수익이 늘며, 틱이 끝날 때 모아 둔 수익을 대신 받는다(월급은 여기서 정산한다)
+    const managerFx = this.settleManager(gameState, speciesList, Date.now());
+    const hasFeeder = (gameState.upgrades.get('feeder') || 0) > 0 || managerFx.active;
+    const hasMister = (gameState.upgrades.get('mister') || 0) > 0 || managerFx.active;
 
     const totalSeconds = clamp(seconds, 0, MAX_ADVANCE_SECONDS);
     // 서버 시계로 잰, 지난 틱 이후 흐른 시간. 8시간을 넘게 자리를 비웠다면 넘는 시간은 전설·신화 번식에 한해 인정한다.
@@ -464,14 +539,17 @@ export class GameStateService {
     let earned = 0;
     const babies = new Map<string, number>();
 
+    const fortuneFx = fortuneEffectOf(gameState.fortune);
     while (remaining > 0) {
       const step = Math.min(remaining, STEP_SECONDS);
       const stepStartMs = windowStartMs + (totalSeconds - remaining) * 1000;
       remaining -= step;
-      const incomeFactor = getBoostFactor(activeBoosts, 'income', stepStartMs, stepStartMs + step * 1000);
+      const incomeFactor = getBoostFactor(activeBoosts, 'income', stepStartMs, stepStartMs + step * 1000) * managerFx.incomeFactor;
       const breedFactor = getBoostFactor(activeBoosts, 'breed', stepStartMs, stepStartMs + step * 1000);
       // 그 시각의 숲 날씨(관측 기록이 없으면 효과 없음). 8시간을 넘는 자리 비움 구간에는 적용하지 않는다.
       const weatherFx = getWeatherEffects(this.weatherService?.typeAt(stepStartMs));
+      // 오늘의 운세: 뽑은 그 한국 날짜 안의 구간에만 행운 계열 번식이 빨라진다
+      const luckyNow = fortuneFx && stepStartMs >= fortuneFx.from && stepStartMs < fortuneFx.to ? fortuneFx : null;
 
       gameState.stats.played += step;
       const ambient = 24 + Math.sin(gameState.stats.played / 700) * 2.7;
@@ -531,9 +609,10 @@ export class GameStateService {
           const speciesFamily = resolveFamily(species);
           const decorFactor = decorFactors.get(terrarium.terrariumId)?.[speciesFamily] ?? 1;
           const weatherFactor = weatherFx.favored === speciesFamily ? weatherFx.breedFactor : 1;
+          const fortuneFactor = luckyNow && luckyNow.family === speciesFamily ? luckyNow.breedFactor : 1;
           const progressed = Math.min(
             limit,
-            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor * decorFactor * weatherFactor,
+            (terrarium.breeding.get(species.speciesId) || 0) + step * breedFactor * decorFactor * weatherFactor * fortuneFactor,
           );
           terrarium.breeding.set(species.speciesId, progressed);
           if (progressed >= limit && capacityLeft > 0) {
@@ -594,8 +673,48 @@ export class GameStateService {
       this.pushLog(gameState, 'heart', text);
     }
 
+    if (managerFx.active) this.managerCollect(gameState);
     await gameState.save();
     return { gameState, births: totalBirths, earned };
+  }
+
+  // 모아 둔 수익(pending)의 정수 부분을 골드로 받는다(수동 수령과 같다). 받은 골드를 돌려준다.
+  managerCollect(gameState: GameStateDocument): number {
+    const amount = Math.floor(gameState.pending);
+    if (amount < 1) return 0;
+    gameState.pending -= amount;
+    gameState.coins += amount;
+    gameState.stats.earned += amount;
+    return amount;
+  }
+
+  // 관리인 월급을 정산한다. 마지막으로 낸 날 다음 날부터 오늘까지 하루씩 나가고(최대 MANAGER_MAX_CATCHUP_DAYS일), 골드가 모자라면 낼 수 있는 만큼만 내고 관리인이 떠난다.
+  // 모아 둔 수익을 먼저 받아서 월급에 쓴다. 일하는 중이면 active와 수익 배율을 돌려준다.
+  settleManager(gameState: GameStateDocument, speciesList: Species[], now: number): { active: boolean; incomeFactor: number } {
+    const m = gameState.manager;
+    const grade = findManagerGrade(m?.grade);
+    if (!m || !grade) return { active: false, incomeFactor: 1 };
+    const today = getPuzzleDayKey(now);
+    const owedDays = Math.max(0, m.paidThrough ? daysBetween(m.paidThrough, today) : 0);
+    // 오래 비워도 월급은 최대 MANAGER_MAX_CATCHUP_DAYS일치까지만 나가고, 그보다 오래된 날은 없던 일로 한다
+    const owed = Math.min(MANAGER_MAX_CATCHUP_DAYS, owedDays);
+    if (owed > 0) {
+      this.managerCollect(gameState);
+      const wage = managerWage(grade, this.hourlyIncomePotential(gameState, speciesList));
+      const paidDays = Math.min(owed, Math.floor(gameState.coins / wage));
+      if (paidDays > 0) {
+        gameState.coins -= wage * paidDays;
+        m.totalPaid = (m.totalPaid ?? 0) + wage * paidDays;
+        this.pushLog(gameState, 'coins', `${grade.icon} ${grade.name}에게 월급 ${(wage * paidDays).toLocaleString('ko-KR')} G를 줬어요. (${paidDays}일치)`);
+      }
+      if (paidDays < owed) {
+        this.pushLog(gameState, 'leaf', `${grade.icon} 월급을 받지 못한 ${grade.name}이(가) 떠났어요. 다시 고용할 수 있어요.`);
+        gameState.manager = { grade: '', hiredAt: 0, paidThrough: '', totalPaid: m.totalPaid ?? 0 };
+        return { active: false, incomeFactor: 1 };
+      }
+      m.paidThrough = today;
+    }
+    return { active: true, incomeFactor: 1 + grade.incomeBonus };
   }
 
   // 이름을 정하지 않고 만든 사육장의 기본 이름. 이름을 바꾼 사육장과 겹치지 않는 가장 작은 "사육장 N"을 쓴다.
@@ -832,18 +951,13 @@ export class GameStateService {
     // 난이도 = 상대 희귀도를 그대로 고른다. 어떤 종이 나올지만 그 등급 안에서 무작위다.
     const enemySpecies = pickRandomOfRarity(speciesList, difficulty, Math.random());
     const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
-    const mine = rollCombatStats(
-      mySpecies.rarity,
-      level,
-      Math.random,
-      computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
-    );
+    const mine = rollCombatStats(mySpecies.rarity, level, Math.random, this.battleBonuses(gameState, speciesId));
     // 야생 개체 레벨은 내 종 레벨 기준 ±1. 내가 키울수록 상대도 같이 세진다.
     const enemyLevel = rollEnemyLevel(level);
     const enemy = rollCombatStats(enemySpecies.rarity, enemyLevel);
     // 환경은 전투마다 무작위다. 계열 상성과 환경 보정은 여기서 한 번 능력치에 곱하고, 이후(자동·직접 전투 모두)는 그 값을 쓴다.
     const environmentId = rollWildEnvironment(Math.random());
-    const applied = applyBattleRules(mine, enemy, resolveFamily(mySpecies), resolveFamily(enemySpecies), environmentId);
+    const applied = applyBattleRules(mine, enemy, resolveFamily(mySpecies), resolveFamily(enemySpecies), environmentId, this.engraveEffects(gameState).matchup);
     return {
       speciesId,
       mySpecies,
@@ -919,6 +1033,7 @@ export class GameStateService {
     this.pushLog(gameState, won ? 'trophy' : 'leaf', `${myDisplayName} 배틀 - ${message}`);
 
     await gameState.save();
+    await this.contributeRestoration(gameState.userId.toString(), 'battle', won ? RESTORATION_POINTS.battleWin : RESTORATION_POINTS.battleLose);
     const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
     return {
       gameState,
@@ -989,7 +1104,7 @@ export class GameStateService {
     };
   }
 
-  private wildDuelContext(duel: WildDuel, speciesList: Species[]) {
+  private wildDuelContext(duel: WildDuel, speciesList: Species[], matchupExtra = 0) {
     const mySpecies = speciesList.find((s) => s.speciesId === duel.speciesId);
     const enemySpecies = speciesList.find((s) => s.speciesId === duel.enemySpeciesId);
     if (!mySpecies || !enemySpecies) {
@@ -1006,7 +1121,7 @@ export class GameStateService {
       enemy: { hp: duel.enemyHpMax, atk: duel.enemyAtk, def: duel.enemyDef } as CombatStats,
       // 환경이 없는 전투(계열 규칙이 생기기 전에 시작한 전투)는 규칙 없이 이어서 한다. 저장된 능력치에 보정이 없기 때문이다.
       rules: duel.environment
-        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(enemySpecies), duel.environment as BattleEnvironmentId)
+        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(enemySpecies), duel.environment as BattleEnvironmentId, matchupExtra)
         : null,
     };
   }
@@ -1031,6 +1146,7 @@ export class GameStateService {
         [],
         this.toWildDuelState(duel),
         duel.log as unknown as BattleTurn[],
+        this.duelSkillOf(ctx.mySpecies, gameState),
       ),
     };
   }
@@ -1040,7 +1156,7 @@ export class GameStateService {
     const duel = gameState.battleDuel;
     if (!duel) return { duel: null };
     const speciesList = await this.speciesService.findAll();
-    return { duel: this.toWildDuelView(gameState, duel, this.wildDuelContext(duel, speciesList)) };
+    return { duel: this.toWildDuelView(gameState, duel, this.wildDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup)) };
   }
 
   async battleDuelStart(userId: string, speciesId: string, difficulty: number) {
@@ -1086,7 +1202,7 @@ export class GameStateService {
   }
 
   // 한 턴 진행한다. 이긴 쪽이 정해지면 자동 전투와 같은 보상 응답에 finished: true를 붙여 돌려준다.
-  async battleDuelAct(userId: string, action: string) {
+  async battleDuelAct(userId: string, action: string, rhythm?: number) {
     if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
       throw new BadRequestException('알 수 없는 행동이에요.');
     }
@@ -1096,7 +1212,7 @@ export class GameStateService {
       const duel = gameState.battleDuel;
       if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
       const speciesList = await this.speciesService.findAll();
-      const ctx = this.wildDuelContext(duel, speciesList);
+      const ctx = this.wildDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup);
       const state = this.toWildDuelState(duel);
       const status = getDuelActionStates(state).find((a) => a.id === action)!;
       if (!status.available) {
@@ -1105,7 +1221,8 @@ export class GameStateService {
       }
 
       const r = playDuelTurn(ctx.mine, ctx.enemy, [], state, action as DuelAction, Math.random, {
-        skill: this.duelSkillOf(ctx.mySpecies),
+        skill: this.duelSkillOf(ctx.mySpecies, gameState),
+        strikeBonus: this.rhythmOf(action, rhythm),
       });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       if (r.winner) {
@@ -1139,7 +1256,7 @@ export class GameStateService {
       const duel = gameState.battleDuel;
       if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
       const speciesList = await this.speciesService.findAll();
-      const ctx = this.wildDuelContext(duel, speciesList);
+      const ctx = this.wildDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup);
       const result = await this.concludeWildBattle(gameState, ctx, false, duel.log as unknown as BattleTurn[]);
       return { ...result, finished: true as const, duel: null, turns: [] as BattleTurn[] };
     });
@@ -1501,6 +1618,7 @@ export class GameStateService {
     this.pushLog(gameState, won ? 'trophy' : 'leaf', `투기장 - ${message}`);
 
     await gameState.save();
+    await this.contributeRestoration(gameState.userId.toString(), 'battle', won ? RESTORATION_POINTS.battleWin : RESTORATION_POINTS.battleLose);
     const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
     return {
       gameState,
@@ -1632,17 +1750,12 @@ export class GameStateService {
     gameState.daily.bossAttempts = attemptsUsed + 1;
 
     const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
-    const mine = rollCombatStats(
-      mySpecies.rarity,
-      level,
-      Math.random,
-      computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
-    );
+    const mine = rollCombatStats(mySpecies.rarity, level, Math.random, this.battleBonuses(gameState, speciesId));
     // 난이도 배율은 보스의 기준 능력치에 먼저 곱하고, 개체 편차(±15%)는 그 위에 붙는다.
     const rolledBoss = rollBossStats(scaleBossStats(floor.stats, difficulty.multiplier));
     // 층의 환경과 계열 상성은 굴린 능력치 위에 곱한다(공격력·방어력만). 이후(자동·직접 전투 모두)는 보정된 값을 쓴다.
     const environmentId = getBossEnvironment(floor.floor);
-    const applied = applyBattleRules(mine, rolledBoss, resolveFamily(mySpecies), resolveFamily(bossSpecies), environmentId);
+    const applied = applyBattleRules(mine, rolledBoss, resolveFamily(mySpecies), resolveFamily(bossSpecies), environmentId, this.engraveEffects(gameState).matchup);
     return {
       speciesId,
       mySpecies,
@@ -1764,6 +1877,7 @@ export class GameStateService {
     this.pushLog(gameState, won ? 'trophy' : 'leaf', `보스 타워 - ${message}`);
 
     await gameState.save();
+    await this.contributeRestoration(gameState.userId.toString(), 'battle', won ? RESTORATION_POINTS.battleWin : RESTORATION_POINTS.battleLose);
     const afterProgress = getBattleLevelProgress(beforeXp + speciesXpGain);
     return {
       gameState,
@@ -1828,7 +1942,7 @@ export class GameStateService {
   }
 
   // 저장된 직접 전투에서 양쪽 종·층·능력치를 되살린다. 저장된 값이 더는 유효하지 않으면(층·종이 사라진 경우) 포기하게 안내한다.
-  private bossDuelContext(duel: BossDuel, speciesList: Species[]) {
+  private bossDuelContext(duel: BossDuel, speciesList: Species[], matchupExtra = 0) {
     const floor = getBossFloor(duel.floor);
     const difficulty = getBossDifficulty(duel.difficulty);
     const mySpecies = speciesList.find((s) => s.speciesId === duel.speciesId);
@@ -1847,24 +1961,35 @@ export class GameStateService {
       bossStats: { hp: duel.bossHpMax, atk: duel.bossAtk, def: duel.bossDef } as CombatStats,
       // 환경이 없는 전투(계열 규칙이 생기기 전에 시작한 전투)는 규칙 없이 이어서 한다. 저장된 능력치에 보정이 없기 때문이다.
       rules: duel.environment
-        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(bossSpecies), duel.environment as BattleEnvironmentId)
+        ? describeBattleRules(resolveFamily(mySpecies), resolveFamily(bossSpecies), duel.environment as BattleEnvironmentId, matchupExtra)
         : null,
     };
   }
 
   // 내 식구의 계열 기술(직접 전투 행동). 계열은 종의 계열, 위력은 희귀도로 정해진다.
-  private duelSkillOf(species: { speciesId: string; family?: string; rarity: number }): DuelSkillContext {
-    return { family: resolveFamily(species), rarity: species.rarity };
+  // 리듬 일격: 강력한 일격이고 정확도가 왔을 때만 보정을 준다(없으면 undefined = 예전처럼 보정 없음, 노트도 없음).
+  private rhythmOf(action: string, rhythm: number | undefined): number | undefined {
+    return action === 'strike' && typeof rhythm === 'number' && Number.isFinite(rhythm) ? rhythmStrikeBonus(rhythm) : undefined;
+  }
+
+  // 계열 기술 연구소(gameState.familyLab)를 주면 그 계열의 연구 효과와 쉬는 시간 감소가 함께 들어간다. extraCooldownReduce는 던전 유물 등 다른 감소분.
+  duelSkillOf(species: { speciesId: string; family?: string; rarity: number }, gameState?: { familyLab?: ReadonlyMap<string, number> | null; equipmentSlots?: readonly string[]; equipment?: readonly { itemId: string; engraveKind?: string; engraveGrade?: number }[] }, extraCooldownReduce = 0): DuelSkillContext {
+    const family = resolveFamily(species);
+    const fx = skillLabEffects(family, normalizeSkillLab(gameState?.familyLab));
+    const engraved = gameState ? this.engraveEffects(gameState as Parameters<GameStateService['engraveEffects']>[0]).skillCd : 0;
+    const cooldownReduce = fx.cooldownReduce + extraCooldownReduce + engraved;
+    return { family, rarity: species.rarity, lab: fx.lab, ...(cooldownReduce > 0 ? { cooldownReduce } : {}) };
   }
 
   // 직접 전투 화면에 공통으로 필요한 부분(양쪽 정보, 상태, 예고, 행동 목록, 기록). 보스·야생·서바이벌이 같이 쓴다.
   // state.bossHp는 보스뿐 아니라 상대(야생 개체·엘리트)의 현재 HP를 뜻한다.
-  private duelCoreView(
+  duelCoreView(
     mine: DuelFighterView,
     enemy: DuelFighterView,
     patterns: readonly BossPattern[],
     state: BossDuelState,
     log: BattleTurn[],
+    skill?: DuelSkillContext,
   ) {
     const states = getDuelActionStates(state);
     return {
@@ -1887,7 +2012,7 @@ export class GameStateService {
       intent: getDuelIntent(patterns, state.turn),
       // 계열 기술의 이름·설명은 내 식구의 계열·희귀도에 따라 달라서 여기서 채운다
       actions: DUEL_ACTION_INFO.map((info) => ({
-        ...(info.id === 'skill' ? getDuelSkillInfo({ family: mine.family ?? DEFAULT_FAMILY, rarity: mine.rarity }) : info),
+        ...(info.id === 'skill' ? getDuelSkillInfo(skill ?? { family: mine.family ?? DEFAULT_FAMILY, rarity: mine.rarity }) : info),
         ...states.find((a) => a.id === info.id)!,
       })),
       log,
@@ -1916,6 +2041,7 @@ export class GameStateService {
         ctx.floor.patterns,
         this.toDuelState(duel),
         duel.log as unknown as BattleTurn[],
+        this.duelSkillOf(ctx.mySpecies, gameState),
       ),
     };
   }
@@ -1925,7 +2051,7 @@ export class GameStateService {
     const duel = gameState.bossDuel;
     if (!duel) return { duel: null };
     const speciesList = await this.speciesService.findAll();
-    return { duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList)) };
+    return { duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup)) };
   }
 
   async bossDuelStart(
@@ -1972,7 +2098,7 @@ export class GameStateService {
       return {
         gameState,
         message: `직접 전투를 시작했어요! 행동을 골라 주세요.`,
-        duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList)),
+        duel: this.toBossDuelView(gameState, duel, this.bossDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup)),
         turns: [] as BattleTurn[],
         finished: false as const,
       };
@@ -1980,7 +2106,7 @@ export class GameStateService {
   }
 
   // 한 턴 진행한다. 이긴 쪽이 정해지면 자동 전투와 같은 보상 응답에 finished: true를 붙여 돌려준다.
-  async bossDuelAct(userId: string, action: string) {
+  async bossDuelAct(userId: string, action: string, rhythm?: number) {
     if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
       throw new BadRequestException('알 수 없는 행동이에요.');
     }
@@ -1990,7 +2116,7 @@ export class GameStateService {
       const duel = gameState.bossDuel;
       if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
       const speciesList = await this.speciesService.findAll();
-      const ctx = this.bossDuelContext(duel, speciesList);
+      const ctx = this.bossDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup);
       const state = this.toDuelState(duel);
       const status = getDuelActionStates(state).find((a) => a.id === action)!;
       if (!status.available) {
@@ -1999,7 +2125,8 @@ export class GameStateService {
       }
 
       const r = playDuelTurn(ctx.mine, ctx.bossStats, ctx.floor.patterns, state, action as DuelAction, Math.random, {
-        skill: this.duelSkillOf(ctx.mySpecies),
+        skill: this.duelSkillOf(ctx.mySpecies, gameState),
+        strikeBonus: this.rhythmOf(action, rhythm),
       });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       if (r.winner) {
@@ -2034,7 +2161,7 @@ export class GameStateService {
       const duel = gameState.bossDuel;
       if (!duel) throw new BadRequestException('진행 중인 직접 전투가 없어요.');
       const speciesList = await this.speciesService.findAll();
-      const ctx = this.bossDuelContext(duel, speciesList);
+      const ctx = this.bossDuelContext(duel, speciesList, this.engraveEffects(gameState).matchup);
       const result = await this.concludeBossBattle(gameState, ctx, false, duel.log as unknown as BattleTurn[]);
       return { ...result, finished: true as const, duel: null, turns: [] as BattleTurn[] };
     });
@@ -2049,11 +2176,34 @@ export class GameStateService {
 
   // 전투 경험치 부스트가 켜져 있으면 경험치를 배율만큼 늘린다.
   private boostXp(gameState: GameStateDocument, xp: number): number {
-    return this.activeBoostUntil(gameState, 'battleXp') > 0 ? Math.round(xp * BOOST_MULTIPLIER) : xp;
+    const boosted = this.activeBoostUntil(gameState, 'battleXp') > 0 ? Math.round(xp * BOOST_MULTIPLIER) : xp;
+    // 장비 각인 '경험 각인': 장착한 장비의 각인만큼 전투 경험치가 늘어난다
+    const bonus = this.engraveEffects(gameState).xp;
+    return bonus > 0 ? Math.round(boosted * (1 + bonus)) : boosted;
+  }
+
+  // 이 종이 전투에서 받는 능력치 보너스: 장착한 장비 보너스 × 전투 레벨 각성 ★ 보너스. (투기장·하극상 대회는 쓰지 않는다)
+  battleBonuses(
+    gameState: { equipmentSlots?: readonly string[]; equipment?: Parameters<typeof computeEquipmentBonuses>[1]; battleStars?: ReadonlyMap<string, number> | null },
+    speciesId: string,
+    useStars = true,
+  ) {
+    const equip = computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment);
+    return useStars ? combineBonuses(equip, starBonuses(gameState.battleStars?.get(speciesId))) : equip;
+  }
+
+  // 이 종의 ★ 개수(0~5)
+  starsOf(gameState: { battleStars?: ReadonlyMap<string, number> | null }, speciesId: string): number {
+    return normalizeStars(gameState.battleStars?.get(speciesId));
+  }
+
+  // 장착한 장비의 각인 합계(장비 각인 재련소). 상성 연마·기술 단련·회복 각인·경험 각인.
+  engraveEffects(gameState: { equipmentSlots?: readonly string[]; equipment?: readonly { itemId: string; engraveKind?: string; engraveGrade?: number }[] }): EngraveTotals {
+    return engraveTotals(gameState.equipmentSlots, gameState.equipment);
   }
 
   // 지금 사육 중인 식구로 쾌적한 환경에서 1시간 동안 버는 최대 수익. 부스트 가격의 기준이 된다.
-  private hourlyIncomePotential(gameState: GameStateDocument, speciesList: Species[]): number {
+  hourlyIncomePotential(gameState: GameStateDocument, speciesList: Species[]): number {
     const soilLevel = gameState.upgrades.get('soil') || 0;
     let perSecond = 0;
     for (const terrarium of gameState.terrariums) {
@@ -2140,6 +2290,10 @@ export class GameStateService {
       const owned = gameState.decorOwned ?? [];
       if (owned.includes(decorId)) {
         throw new BadRequestException('이미 가지고 있는 장식이에요.');
+      }
+      if (item.eventId && !isSeasonalEventActive(item.eventId)) {
+        const event = findSeasonalEvent(item.eventId);
+        throw new BadRequestException(`${event?.name ?? '이벤트'} 기간에만 살 수 있는 한정 장식이에요. 계절 이벤트 화면에서 다음 일정을 확인해 보세요.`);
       }
       if (gameState.coins < item.price) {
         throw new BadRequestException(`골드가 부족해요. ${item.price.toLocaleString('ko-KR')} G가 필요해요.`);
@@ -2405,12 +2559,7 @@ export class GameStateService {
 
       // 입장할 때의 능력치(레벨·장비 반영, 개체 편차 포함)를 한 번만 굴려서 런이 끝날 때까지 쓴다.
       const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
-      const rolled = rollCombatStats(
-        species.rarity,
-        level,
-        Math.random,
-        computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment),
-      );
+      const rolled = rollCombatStats(species.rarity, level, Math.random, this.battleBonuses(gameState, speciesId));
       gameState.daily.survivalAttempts = used + 1;
       gameState.stats.survivalRuns = (gameState.stats.survivalRuns || 0) + 1;
       gameState.survivalRun = {
@@ -2846,13 +2995,14 @@ export class GameStateService {
         info.patterns,
         this.toSurvivalDuelState(duel),
         duel.log as unknown as BattleTurn[],
+        this.duelSkillOf(mySpecies, gameState),
       ),
     };
   }
 
   // 엘리트와의 직접 전투를 한 턴 진행한다. 이기면 자동 모드와 같은 보상을 지급하고 버프 선택으로 넘어가며(100스테이지면 완주),
   // 지면 쓰러진 채로 부활을 기다린다. 아직 끝나지 않았으면 status: 'duel'과 갱신된 전투 상태를 돌려준다.
-  async survivalDuelAct(userId: string, action: string) {
+  async survivalDuelAct(userId: string, action: string, rhythm?: number) {
     if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
       throw new BadRequestException('알 수 없는 행동이에요.');
     }
@@ -2881,7 +3031,8 @@ export class GameStateService {
 
       const r = playDuelTurn(mine, enemyStats, info.patterns, state, action as DuelAction, Math.random, {
         healCapHp: stats.maxHp,
-        skill: this.duelSkillOf(species),
+        skill: this.duelSkillOf(species, gameState),
+        strikeBonus: this.rhythmOf(action, rhythm),
       });
       const log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       const speciesList = await this.speciesService.findAll();
@@ -3382,7 +3533,7 @@ export class GameStateService {
   }
 
   // 장비 1개를 지급한다. 처음 얻으면 새로 만들고, 이미 있으면 복사본(copies)만 1 늘린다.
-  private grantEquipment(gameState: GameStateDocument, equipmentId: string) {
+  grantEquipment(gameState: GameStateDocument, equipmentId: string) {
     let item = gameState.equipment.find((e) => e.itemId === equipmentId);
     const isNew = !item;
     if (item) {
@@ -3395,6 +3546,10 @@ export class GameStateService {
         maxLevel: EQUIPMENT_BASE_MAX_LEVEL,
         awakenCount: 0,
         awakenFailures: 0,
+        engraveKind: '',
+        engraveGrade: 0,
+        pendingKind: '',
+        pendingGrade: 0,
       });
       item = gameState.equipment[gameState.equipment.length - 1];
     }
@@ -3693,9 +3848,9 @@ export class GameStateService {
     const speciesList = await this.speciesService.findAll();
     const rarity = rollRarity(Math.random(), RARITIES);
     // 오늘 날씨가 편드는 계열 종이 같은 등급 안에서 더 잘 나온다(날씨 정보가 없으면 균등).
-    const favored = getWeatherEffects(this.weatherService?.current()?.type).favored;
-    const species = favored
-      ? pickWeightedByFamily(speciesList.filter((s) => s.rarity === rarity), Math.random(), favored, (s) => resolveFamily(s))
+    const familyWeights = this.exploreFamilyWeights(gameState);
+    const species = Object.keys(familyWeights).length > 0
+      ? pickWeightedByFamilyWeights(speciesList.filter((s) => s.rarity === rarity), Math.random(), familyWeights, (s) => resolveFamily(s))
       : pickRandomOfRarity(speciesList, rarity, Math.random());
     const isNew = !gameState.discovered.includes(species.speciesId);
     terrarium.population.set(
@@ -3717,6 +3872,8 @@ export class GameStateService {
     );
 
     await gameState.save();
+    if (species.rarity >= 3) await this.recordForestEvent('rare', userId, { speciesId: species.speciesId, speciesName: species.name, rarity: species.rarity, via: 'explore' });
+    await this.contributeRestoration(userId, 'explore', RESTORATION_POINTS.explore);
     return {
       gameState,
       species,
@@ -3741,7 +3898,7 @@ export class GameStateService {
   }
 
   private dungeonStatsOf(run: DungeonRun) {
-    return getDungeonStats({ baseHp: run.baseHp, baseAtk: run.baseAtk, baseDef: run.baseDef, relics: run.relics ?? [], bonus: run.bonus });
+    return getDungeonStats({ baseHp: run.baseHp, baseAtk: run.baseAtk, baseDef: run.baseDef, relics: run.relics ?? [], bonus: run.bonus, lab: run.lab });
   }
 
   private dungeonLog(run: DungeonRun, text: string) {
@@ -3798,12 +3955,21 @@ export class GameStateService {
     run.shop = null;
   }
 
+  // 이 층을 지키는 다른 유저의 문지기(엘리트 층에만 있다). 없으면 undefined.
+  private dungeonGuardianAt(run: DungeonRun, floor: number): DungeonRunGuardian | undefined {
+    return (run.guardians ?? []).find((g) => g.floor === floor);
+  }
+
   private dungeonEnemyFor(run: DungeonRun, room: DungeonRoom, speciesList: Species[]) {
     const type = room.type === 'boss' ? 'boss' : room.type === 'elite' ? 'elite' : 'battle';
-    const enemy = getDungeonEnemy(run.seed, run.cleared + 1, type, run.difficulty as DungeonDifficultyId);
-    const family = room.family ?? 'forest';
-    const enemySpecies = pickRandomOfRarityAndFamily(speciesList, enemy.speciesRarity, family, Math.random());
-    return { enemy, family, environment: (room.environment ?? 'plain') as BattleEnvironmentId, enemySpecies, type };
+    const floor = run.cleared + 1;
+    const enemy = getDungeonEnemy(run.seed, floor, type, run.difficulty as DungeonDifficultyId);
+    const guardian = type === 'elite' ? this.dungeonGuardianAt(run, floor) : undefined;
+    const guardianSpecies = guardian ? speciesList.find((s) => s.speciesId === guardian.speciesId) : undefined;
+    // 문지기는 그 종의 계열로 싸운다(방 카드에 보이는 계열도 같다)
+    const family = guardianSpecies ? resolveFamily(guardianSpecies) : room.family ?? 'forest';
+    const enemySpecies = guardianSpecies ?? pickRandomOfRarityAndFamily(speciesList, enemy.speciesRarity, family, Math.random());
+    return { enemy, family, environment: (room.environment ?? 'plain') as BattleEnvironmentId, enemySpecies, type, guardian: guardianSpecies ? guardian : undefined };
   }
 
   // 두 번째 껍질로 되살아난다(런에서 한 번). 되살아나면 true.
@@ -3829,6 +3995,7 @@ export class GameStateService {
         resolveFamily(species),
         family,
         environment,
+        run.lab?.engMatchup ?? 0,
       );
       const sim = simulateBossBattle(applied.mine, applied.enemy, enemy.patterns, Math.random);
       return { applied, sim, hpBefore: run.hp };
@@ -3867,7 +4034,7 @@ export class GameStateService {
   }
 
   private dungeonStartDuel(run: DungeonRun, species: Species, room: DungeonRoom, speciesList: Species[]) {
-    const { enemy, family, environment, enemySpecies, type } = this.dungeonEnemyFor(run, room, speciesList);
+    const { enemy, family, environment, enemySpecies, type, guardian } = this.dungeonEnemyFor(run, room, speciesList);
     const stats = this.dungeonStatsOf(run);
     const applied = applyBattleRules(
       { hp: run.hp, atk: stats.atk, def: stats.def },
@@ -3875,6 +4042,7 @@ export class GameStateService {
       resolveFamily(species),
       family,
       environment,
+      run.lab?.engMatchup ?? 0,
     );
     run.duel = {
       kind: type,
@@ -3899,6 +4067,8 @@ export class GameStateService {
       rootTurns: 0,
       healUsed: false,
       log: [],
+      guardianOwnerId: guardian?.ownerId ?? '',
+      guardianOwnerName: guardian?.ownerName ?? '',
     } as DungeonDuel;
     run.phase = 'duel';
   }
@@ -3960,6 +4130,70 @@ export class GameStateService {
       bestLabel: best > 0 ? describeDungeonScore(best) : null,
       clears: gameState.stats.dungeonClears ?? 0,
       rooms: DUNGEON_ROOM_INFO,
+      guardian: this.dungeonGuardianView(gameState),
+      lab: this.dungeonLabView(gameState),
+      supplies: DUNGEON_SUPPLIES.map((s) => ({ id: s.id, name: s.name, icon: s.icon, desc: s.desc, max: s.max, diamonds: s.diamonds, gold: Object.fromEntries(DUNGEON_DIFFICULTIES.map((d) => [d.id, dungeonSupplyGoldPrice(s, d.id)])) })),
+    };
+  }
+
+  // 던전 연구소 현황(화면용): 연구마다 지금 레벨과 다음 레벨의 값
+  private dungeonLabView(gameState: GameStateDocument) {
+    const levels = normalizeDungeonLab(gameState.dungeonLab);
+    return DUNGEON_LAB.map((item) => ({
+      id: item.id,
+      name: item.name,
+      icon: item.icon,
+      desc: item.desc,
+      max: item.max,
+      level: levels[item.id],
+      next: levels[item.id] >= item.max ? null : dungeonLabCost(item, levels[item.id] + 1),
+    }));
+  }
+
+  // 던전 연구를 한 단계 올린다(골드+다이아). 던전 도중에도 살 수 있고, 효과는 다음 입장부터 적용된다.
+  async dungeonLabUpgrade(userId: string, labId: string) {
+    const item = findDungeonLab(labId);
+    if (!item) throw new BadRequestException('존재하지 않는 연구예요.');
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const level = normalizeDungeonLab(gameState.dungeonLab)[item.id];
+      if (level >= item.max) throw new BadRequestException('이미 최고 단계예요.');
+      const cost = dungeonLabCost(item, level + 1);
+      if (gameState.coins < cost.gold) throw new BadRequestException(`골드가 부족해요. ${cost.gold.toLocaleString('ko-KR')} G가 필요해요.`);
+      if (gameState.diamonds < cost.diamonds) throw new BadRequestException(`다이아가 부족해요. 💎 ${cost.diamonds}개가 필요해요.`);
+      gameState.coins -= cost.gold;
+      gameState.diamonds -= cost.diamonds;
+      if (!gameState.dungeonLab) gameState.dungeonLab = new Map();
+      gameState.dungeonLab.set(item.id, level + 1);
+      const message = `${item.icon} ${item.name}을(를) ${level + 1}단계로 올렸어요! (-${cost.gold.toLocaleString('ko-KR')} G · 💎 ${cost.diamonds}개) 다음 입장부터 적용돼요.`;
+      this.pushLog(gameState, 'coins', message);
+      await gameState.save();
+      return { gameState, message, info: this.dungeonInfo(gameState) };
+    });
+  }
+
+  // 내 문지기 현황과 규칙(화면용)
+  private dungeonGuardianView(gameState: GameStateDocument) {
+    const post = gameState.dungeonGuardian;
+    const today = dayKey();
+    return {
+      speciesId: post?.speciesId ?? '',
+      registeredAt: post?.registeredAt ?? 0,
+      blocked: post?.blocked ?? 0,
+      breached: post?.breached ?? 0,
+      tollTotal: post?.tollTotal ?? 0,
+      pendingToll: post?.pendingToll ?? 0,
+      tollLeftToday: Math.max(0, DUNGEON_GUARDIAN_TOLL_DAILY_LIMIT - (post?.tollDay === today ? post.tollToday ?? 0 : 0)),
+      bountyDiamondsLeftToday: Math.max(0, DUNGEON_GUARDIAN_BOUNTY_DAILY_DIAMONDS - (gameState.daily?.day === today ? gameState.daily.guardianBounty ?? 0 : 0)),
+      rules: {
+        chance: DUNGEON_GUARDIAN_CHANCE,
+        tollPerFloor: DUNGEON_GUARDIAN_TOLL_PER_FLOOR,
+        tollDailyLimit: DUNGEON_GUARDIAN_TOLL_DAILY_LIMIT,
+        bountyGoldPerFloor: DUNGEON_GUARDIAN_BOUNTY_GOLD_PER_FLOOR,
+        bountyDiamonds: DUNGEON_GUARDIAN_BOUNTY_DIAMONDS,
+        bountyDailyDiamonds: DUNGEON_GUARDIAN_BOUNTY_DAILY_DIAMONDS,
+      },
     };
   }
 
@@ -3993,14 +4227,28 @@ export class GameStateService {
       revived: run.revived ?? false,
       skillCooldownReduce: stats.skillCd,
       log: run.log ?? [],
+      supplies: { scout: run.scoutCharges ?? 0, reroll: run.rerollCharges ?? 0, scoutUntil: run.scoutUntil ?? 0 },
     };
+    // 정찰 지도로 미리 본 앞쪽 층의 방 구성(지금 층은 방 고르기에 그대로 나오므로 그 다음 층부터)
+    if ((run.scoutUntil ?? 0) > floor) {
+      const preview: unknown[] = [];
+      for (let f = floor + 1; f <= Math.min(run.scoutUntil, DUNGEON_FLOORS); f++) {
+        preview.push({ floor: f, rooms: generateRoomOptions(run.seed, f).map((room) => ({ type: room.type, ...DUNGEON_ROOM_INFO[room.type], family: room.family })) });
+      }
+      view.preview = preview;
+    }
     if (run.phase === 'choose') {
-      view.options = generateRoomOptions(run.seed, floor).map((room, index) => ({
+      const guardian = this.dungeonGuardianAt(run, floor);
+      const guardianSpecies = guardian ? speciesList.find((s) => s.speciesId === guardian.speciesId) : undefined;
+      view.options = generateRoomOptions(run.seed, floor, this.dungeonRoomVariant(run, floor)).map((room, index) => ({
         index,
         type: room.type,
         ...DUNGEON_ROOM_INFO[room.type],
-        family: room.family,
+        family: room.type === 'elite' && guardianSpecies ? resolveFamily(guardianSpecies) : room.family,
         environment: room.environment,
+        ...(room.type === 'elite' && guardian && guardianSpecies
+          ? { guardian: { ownerName: guardian.ownerName, speciesId: guardianSpecies.speciesId, speciesName: guardianSpecies.name, image: guardianSpecies.image, filter: guardianSpecies.filter, rarity: guardianSpecies.rarity } }
+          : {}),
       }));
     } else if (run.phase === 'reward') {
       const have = countRelics(run.relics ?? []);
@@ -4044,11 +4292,12 @@ export class GameStateService {
         family: resolveFamily(s),
       });
       const rules = duel.enemyFamily
-        ? describeBattleRules(resolveFamily(species), duel.enemyFamily as SpeciesFamily, (duel.environment || null) as BattleEnvironmentId | null)
+        ? describeBattleRules(resolveFamily(species), duel.enemyFamily as SpeciesFamily, (duel.environment || null) as BattleEnvironmentId | null, run.lab?.engMatchup ?? 0)
         : null;
       view.duel = {
         kind: duel.kind,
         isBoss: duel.kind === 'boss',
+        guardian: duel.guardianOwnerId ? { ownerName: duel.guardianOwnerName } : null,
         rules,
         ...this.duelCoreView(
           fighter(species, this.displayNameFor(gameState, species.speciesId, species.name), { hp: stats.maxHp, atk: duel.mineAtk, def: duel.mineDef }, run.level),
@@ -4056,6 +4305,7 @@ export class GameStateService {
           (duel.enemyPatterns ?? []) as BossPattern[],
           this.toDungeonDuelState(duel),
           duel.log as unknown as BattleTurn[],
+          this.duelSkillOf(species, gameState, stats.skillCd),
         ),
       };
     }
@@ -4073,7 +4323,12 @@ export class GameStateService {
     return { run: this.toDungeonRunView(gameState, run, species, speciesList), info };
   }
 
-  async dungeonStart(userId: string, speciesId: string, difficultyId: string) {
+  // 이 층의 방을 다시 굴린 횟수(출정 준비물 '방 새로고침'). 굴린 층에만 적용된다.
+  private dungeonRoomVariant(run: DungeonRun, floor: number): number {
+    return (run.rerollFloor ?? 0) === floor ? run.rerollVariant ?? 0 : 0;
+  }
+
+  async dungeonStart(userId: string, speciesId: string, difficultyId: string, suppliesRaw?: DungeonSupplyChoice, pay: 'gold' | 'diamond' = 'gold') {
     const difficulty = findDungeonDifficulty(difficultyId);
     if (!difficulty) throw new BadRequestException('알 수 없는 난이도예요.');
     return this.withDungeonLock(userId, async () => {
@@ -4093,39 +4348,75 @@ export class GameStateService {
       const species = await this.speciesService.findOne(speciesId);
       if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
 
+      // 출정 준비물: 값을 치르고 이 런에서만 쓴다(저장하기 전까지는 차감이 반영되지 않는다)
+      const supplies = normalizeDungeonSupplies(suppliesRaw);
+      const hasSupplies = DUNGEON_SUPPLIES.some((s) => supplies[s.id] > 0);
+      const supplyCost = dungeonSuppliesCost(supplies, difficulty.id);
+      if (hasSupplies) {
+        if (pay === 'diamond') {
+          if (gameState.diamonds < supplyCost.diamonds) throw new BadRequestException(`다이아가 부족해요. 준비물에 💎 ${supplyCost.diamonds}개가 필요해요.`);
+          gameState.diamonds -= supplyCost.diamonds;
+        } else {
+          if (gameState.coins < supplyCost.gold) throw new BadRequestException(`골드가 부족해요. 준비물에 ${supplyCost.gold.toLocaleString('ko-KR')} G가 필요해요.`);
+          gameState.coins -= supplyCost.gold;
+        }
+      }
+
       // 입장할 때의 능력치(레벨·장비 반영, 개체 편차 포함)를 한 번만 굴려서 런이 끝날 때까지 쓴다.
       const level = getBattleLevel(gameState.battleXp.get(speciesId) || 0);
-      const rolled = rollCombatStats(species.rarity, level, Math.random, computeEquipmentBonuses(gameState.equipmentSlots, gameState.equipment));
+      const rolled = rollCombatStats(species.rarity, level, Math.random, this.battleBonuses(gameState, speciesId));
+      // 던전 연구소: 시작 HP와 시작 버섯조각은 지금 적용하고, 나머지 레벨은 이 런에 고정해서 들고 간다
+      const lab = normalizeDungeonLab(gameState.dungeonLab);
+      const engraved = this.engraveEffects(gameState); // 장비 각인(상성 연마·회복 각인)은 입장할 때의 장착 상태로 이 런에 고정한다
+      const startHp = Math.max(1, Math.round(rolled.hp * (1 + lab.hp * DUNGEON_LAB_HP_PER_LEVEL)));
       gameState.daily.dungeonRuns = used + 1;
       gameState.stats.dungeonRuns = (gameState.stats.dungeonRuns || 0) + 1;
+      const runSeed = Math.floor(Math.random() * 2_147_483_647);
+      const guardians = await this.pickDungeonGuardians(userId, runSeed);
       gameState.dungeonRun = {
         speciesId,
         level,
         difficulty: difficulty.id,
-        seed: Math.floor(Math.random() * 2_147_483_647),
+        seed: runSeed,
+        guardians,
         cleared: 0,
         phase: 'choose',
-        hp: rolled.hp,
-        baseHp: rolled.hp,
+        hp: startHp,
+        baseHp: startHp,
         baseAtk: rolled.atk,
         baseDef: rolled.def,
         relics: [],
         bonus: { atk: 0, def: 0, hp: 0 },
-        gold: 0,
+        gold: supplies.mushrooms * DUNGEON_SUPPLY_MUSHROOMS + lab.gold * DUNGEON_LAB_GOLD_PER_LEVEL,
         revived: false,
         offer: [],
         offerKind: '',
         eventId: '',
         shop: null,
         duel: null,
+        scoutCharges: supplies.scout,
+        rerollCharges: supplies.reroll,
+        scoutUntil: 0,
+        rerollFloor: 0,
+        rerollVariant: 0,
+        lab: { offer: lab.offer, shop: lab.shop, rest: lab.rest, discount: lab.discount, engMatchup: engraved.matchup, engPostHeal: engraved.postHeal },
         log: [`🪵 ${difficulty.name} 던전에 들어왔어요.`],
         startedAt: Date.now(),
       } as DungeonRun;
+      let supplyText = '';
+      if (hasSupplies) {
+        const parts = DUNGEON_SUPPLIES.filter((s) => supplies[s.id] > 0).map((s) => `${s.icon} ${s.name}${s.max > 1 ? ` ×${supplies[s.id]}` : ''}`);
+        supplyText = ` 준비물: ${parts.join(', ')} (-${pay === 'diamond' ? `💎 ${supplyCost.diamonds}개` : `${supplyCost.gold.toLocaleString('ko-KR')} G`})`;
+        this.dungeonLog(gameState.dungeonRun as DungeonRun, `🎒${supplyText}`);
+        this.pushLog(gameState, 'coins', `던전 출정 준비물을 샀어요.${supplyText}`);
+        // 유물 상자: 입장하자마자 보물 상자급 유물을 고른다
+        if (supplies.relic > 0) this.dungeonOpenReward(gameState.dungeonRun as DungeonRun, 'treasure');
+      }
       await gameState.save();
       const speciesList = await this.speciesService.findAll();
       return {
         gameState,
-        message: `${difficulty.name} 던전에 입장했어요! 올라갈 방을 골라 주세요.`,
+        message: `${difficulty.name} 던전에 입장했어요! ${supplies.relic > 0 ? '유물을 하나 골라 주세요.' : '올라갈 방을 골라 주세요.'}${supplyText}`,
         run: this.toDungeonRunView(gameState, gameState.dungeonRun as DungeonRun, species, speciesList),
         info: this.dungeonInfo(gameState),
         ended: null,
@@ -4249,7 +4540,7 @@ export class GameStateService {
 
   // 방 하나에 들어간다. 일반 전투는 바로 결과가 나오고, 엘리트·보스는 직접 전투가 시작된다.
   private dungeonEnterRoom(gameState: GameStateDocument, run: DungeonRun, species: Species, speciesList: Species[], choice: string) {
-    const options = generateRoomOptions(run.seed, run.cleared + 1);
+    const options = generateRoomOptions(run.seed, run.cleared + 1, this.dungeonRoomVariant(run, run.cleared + 1));
     // 방 번호 뒤에 ':manual'을 붙이면 일반 전투도 직접 전투로 한다(':auto'나 생략은 자동 전투, 전투가 아닌 방에서는 무시).
     const parsed = /^(\d+)(?::(auto|manual))?$/.exec(choice);
     const index = parsed ? Number(parsed[1]) : -1;
@@ -4287,7 +4578,7 @@ export class GameStateService {
     }
     if (room.type === 'shop') {
       const stats = this.dungeonStatsOf(run);
-      const stock = rollShop(run.seed, run.cleared, run.relics ?? [], stats.shopDiscount);
+      const stock = rollShop(run.seed, run.cleared, run.relics ?? [], stats.shopDiscount, run.lab?.shop ?? 0);
       run.shop = { relics: stock.relics.map((s) => ({ ...s, sold: false })), potionPrice: stock.potionPrice, potionSold: false };
       run.phase = 'shop';
       return { message: '🛒 떠돌이 상점이에요. 버섯조각으로 살 수 있어요.' };
@@ -4318,7 +4609,7 @@ export class GameStateService {
   }
 
   // 직접 전투(일반 전투를 직접 하기로 한 경우·엘리트·보스)를 한 턴 진행한다.
-  async dungeonDuelAct(userId: string, action: string) {
+  async dungeonDuelAct(userId: string, action: string, rhythm?: number) {
     if (!(DUEL_ACTIONS as readonly string[]).includes(action)) {
       throw new BadRequestException('알 수 없는 행동이에요.');
     }
@@ -4345,7 +4636,8 @@ export class GameStateService {
 
       const r = playDuelTurn(mine, enemyStats, patterns, state, action as DuelAction, Math.random, {
         healCapHp: stats.maxHp,
-        skill: { ...this.duelSkillOf(species), cooldownReduce: stats.skillCd },
+        skill: this.duelSkillOf(species, gameState, stats.skillCd),
+        strikeBonus: this.rhythmOf(action, rhythm),
       });
       let log = [...(duel.log as unknown as BattleTurn[]), ...r.turns];
       let winner = r.winner;
@@ -4386,12 +4678,21 @@ export class GameStateService {
       const floor = run.cleared + 1;
       const isBoss = duel.kind === 'boss';
       const isBattle = duel.kind === 'battle';
+      const guardianOwnerId = duel.guardianOwnerId || '';
+      const guardianOwnerName = duel.guardianOwnerName || '';
       run.duel = null;
       if (!won) {
         run.hp = 0;
-        this.dungeonLog(run, isBattle ? `${floor}층 전투에서 쓰러졌어요.` : `${floor}층 ${isBoss ? '보스' : '엘리트'}에게 쓰러졌어요.`);
+        let lossMessage = `${floor}층에서 쓰러졌어요…`;
+        if (guardianOwnerId) {
+          const toll = await this.guardianBlocked(guardianOwnerId, floor, run.difficulty as DungeonDifficultyId);
+          this.dungeonLog(run, `${floor}층 ${guardianOwnerName}의 문지기에게 쓰러졌어요.`);
+          lossMessage = `${floor}층 ${guardianOwnerName}의 문지기에게 쓰러졌어요…${toll > 0 ? ` (통행료 ${toll.toLocaleString('ko-KR')} G는 문지기 주인에게 가요)` : ''}`;
+        } else {
+          this.dungeonLog(run, isBattle ? `${floor}층 전투에서 쓰러졌어요.` : `${floor}층 ${isBoss ? '보스' : '엘리트'}에게 쓰러졌어요.`);
+        }
         const ended = this.dungeonFinalize(gameState, run, species, 'dead');
-        return this.dungeonRespond(gameState, run, species, speciesList, `${floor}층에서 쓰러졌어요…`, { log, won: false }, ended, r.turns);
+        return this.dungeonRespond(gameState, run, species, speciesList, lossMessage, { log, won: false }, ended, r.turns);
       }
       if (isBattle) {
         const message = this.dungeonBattleWon(run, floor, nextState.myHp, log.some((t) => /두 번째 껍질/.test(t.note ?? '')));
@@ -4420,10 +4721,159 @@ export class GameStateService {
         this.dungeonOpenReward(run, 'boss');
         return this.dungeonRespond(gameState, run, species, speciesList, message, { log, won: true }, null, r.turns);
       }
-      const message = `💀 ${floor}층 엘리트를 쓰러뜨렸어요! 버섯조각 ${gained}개`;
+      let message = `💀 ${floor}층 엘리트를 쓰러뜨렸어요! 버섯조각 ${gained}개`;
+      if (guardianOwnerId) {
+        const bounty = await this.guardianBreached(gameState, guardianOwnerId, floor, run.difficulty as DungeonDifficultyId);
+        message = `🛡️ ${floor}층 ${guardianOwnerName}의 문지기를 쓰러뜨렸어요! 버섯조각 ${gained}개 · 현상금 ${bounty.gold.toLocaleString('ko-KR')} G${bounty.diamonds > 0 ? ` · 💎 ${bounty.diamonds}개` : ''}`;
+      }
       this.dungeonLog(run, message);
       this.dungeonOpenReward(run, 'elite');
       return this.dungeonRespond(gameState, run, species, speciesList, message, { log, won: true }, null, r.turns);
+    });
+  }
+
+  // ---- 던전 문지기 ----
+  // 이 런에서 엘리트 층을 지킬 다른 유저의 문지기를 시드로 정해 둔다(문지기를 세운 유저가 없으면 빈 목록).
+  private async pickDungeonGuardians(userId: string, seed: number): Promise<DungeonRunGuardian[]> {
+    const rows = await this.gameStateModel
+      .find({ userId: { $ne: new Types.ObjectId(userId) }, 'dungeonGuardian.speciesId': { $gt: '' } }, { userId: 1, 'dungeonGuardian.speciesId': 1 })
+      .sort({ userId: 1 })
+      .limit(500)
+      .lean<{ userId: Types.ObjectId; dungeonGuardian?: { speciesId?: string } }[]>();
+    const slots = rollGuardianSlots(seed, rows.length);
+    if (slots.length === 0) return [];
+    const ownerIds = [...new Set(slots.map((s) => rows[s.poolIndex].userId.toString()))];
+    const users = await this.usersService.findByIds(ownerIds);
+    const names = new Map(users.map((u) => [u._id.toString(), effectiveDisplayName(u)]));
+    return slots.map((slot) => {
+      const row = rows[slot.poolIndex];
+      const ownerId = row.userId.toString();
+      return { floor: slot.floor, ownerId, ownerName: names.get(ownerId) ?? '이름 모를 콩벌레', speciesId: row.dungeonGuardian?.speciesId ?? '' };
+    });
+  }
+
+  // 도전자가 문지기에게 졌다: 문지기 주인의 막은 횟수를 올리고 통행료를 쌓는다(주인의 하루 한도 안에서). 쌓은 통행료를 돌려준다.
+  // 다른 유저의 문서에 쓰는 일이라 주인이 자기 문서를 저장해도 덮어쓰지 않도록 원자적 갱신으로, 이 필드들만 건드린다.
+  private async guardianBlocked(ownerId: string, floor: number, difficulty: DungeonDifficultyId): Promise<number> {
+    const owner = new Types.ObjectId(ownerId);
+    const toll = dungeonGuardianToll(floor, difficulty);
+    const today = dayKey();
+    const standing = { userId: owner, 'dungeonGuardian.speciesId': { $gt: '' } };
+    const inc = { 'dungeonGuardian.blocked': 1, 'dungeonGuardian.pendingToll': toll, 'dungeonGuardian.tollTotal': toll };
+    const sameDay = await this.gameStateModel.updateOne(
+      { ...standing, 'dungeonGuardian.tollDay': today, 'dungeonGuardian.tollToday': { $lt: DUNGEON_GUARDIAN_TOLL_DAILY_LIMIT } },
+      { $inc: { ...inc, 'dungeonGuardian.tollToday': 1 } },
+    );
+    if (sameDay.modifiedCount > 0) return toll;
+    const newDay = await this.gameStateModel.updateOne(
+      { ...standing, 'dungeonGuardian.tollDay': { $ne: today } },
+      { $set: { 'dungeonGuardian.tollDay': today, 'dungeonGuardian.tollToday': 1 }, $inc: inc },
+    );
+    if (newDay.modifiedCount > 0) return toll;
+    // 오늘 한도를 다 채웠다: 막은 횟수만 올린다
+    await this.gameStateModel.updateOne(standing, { $inc: { 'dungeonGuardian.blocked': 1 } });
+    return 0;
+  }
+
+  // 도전자가 문지기를 이겼다: 도전자에게 현상금(골드, 다이아는 하루 한도)을 주고 문지기 주인의 뚫린 횟수를 올린다.
+  private async guardianBreached(gameState: GameStateDocument, ownerId: string, floor: number, difficulty: DungeonDifficultyId) {
+    const gold = dungeonGuardianBountyGold(floor, difficulty);
+    gameState.coins += gold;
+    gameState.stats.earned += gold;
+    const today = dayKey();
+    const given = gameState.daily.day === today ? gameState.daily.guardianBounty ?? 0 : 0;
+    const diamonds = Math.max(0, Math.min(DUNGEON_GUARDIAN_BOUNTY_DIAMONDS, DUNGEON_GUARDIAN_BOUNTY_DAILY_DIAMONDS - given));
+    if (diamonds > 0) {
+      gameState.diamonds += diamonds;
+      gameState.daily.guardianBounty = given + diamonds;
+    }
+    await this.gameStateModel.updateOne({ userId: new Types.ObjectId(ownerId), 'dungeonGuardian.speciesId': { $gt: '' } }, { $inc: { 'dungeonGuardian.breached': 1 } });
+    return { gold, diamonds };
+  }
+
+  // 내 문지기를 세우거나(식구 id) 내린다(빈 문자열).
+  async setDungeonGuardian(userId: string, speciesId: string) {
+    const gameState = await this.getOrThrow(userId);
+    this.guardPaused(gameState);
+    if (speciesId !== '') {
+      if (!(this.totalOf(gameState, speciesId) > 0)) throw new BadRequestException('가지고 있는 식구만 문지기로 세울 수 있어요.');
+      const species = await this.speciesService.findOne(speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+    }
+    // 막은·뚫린 횟수와 쌓인 통행료는 그대로 두고 등록한 식구만 바꾼다(원자적 갱신)
+    await this.gameStateModel.updateOne(
+      { userId: new Types.ObjectId(userId) },
+      { $set: { 'dungeonGuardian.speciesId': speciesId, 'dungeonGuardian.registeredAt': speciesId === '' ? 0 : Date.now() } },
+    );
+    const fresh = await this.getOrThrow(userId);
+    return {
+      gameState: fresh,
+      message: speciesId === '' ? '문지기를 내렸어요.' : '문지기를 세웠어요! 다른 유저의 던전 엘리트 층에서 도전자를 기다려요.',
+      info: this.dungeonInfo(fresh),
+    };
+  }
+
+  // 쌓인 통행료를 받는다.
+  async claimDungeonToll(userId: string) {
+    // 쌓인 값을 원자적으로 0으로 돌리면서 읽어 와서, 동시에 두 번 눌러도 한 번만 받는다
+    const before = await this.gameStateModel.findOneAndUpdate(
+      { userId: new Types.ObjectId(userId), 'dungeonGuardian.pendingToll': { $gt: 0 } },
+      { $set: { 'dungeonGuardian.pendingToll': 0 } },
+      { returnDocument: 'before', projection: { 'dungeonGuardian.pendingToll': 1 } },
+    );
+    const amount = (before as unknown as { dungeonGuardian?: { pendingToll?: number } } | null)?.dungeonGuardian?.pendingToll ?? 0;
+    if (!before || amount <= 0) throw new BadRequestException('받을 통행료가 없어요.');
+    const gameState = await this.getOrThrow(userId);
+    gameState.coins += amount;
+    gameState.stats.earned += amount;
+    this.pushLog(gameState, 'coins', `문지기 통행료 ${amount.toLocaleString('ko-KR')} G를 받았어요.`);
+    await gameState.save();
+    return { gameState, message: `문지기 통행료 +${amount.toLocaleString('ko-KR')} G`, coins: amount, info: this.dungeonInfo(gameState) };
+  }
+
+  // 정찰 지도를 쓴다: 앞으로 DUNGEON_SCOUT_FLOORS개 층의 방 구성을 미리 볼 수 있다(이미 그만큼 봤으면 쓰지 않는다).
+  async dungeonScout(userId: string) {
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.dungeonRun;
+      if (!run) throw new BadRequestException('진행 중인 던전이 없어요.');
+      if (run.phase === 'duel') throw new BadRequestException('직접 전투 중에는 정찰할 수 없어요.');
+      if ((run.scoutCharges ?? 0) < 1) throw new BadRequestException('정찰 지도가 없어요. 입장하기 전에 출정 준비물로 살 수 있어요.');
+      const until = Math.min(DUNGEON_FLOORS, run.cleared + DUNGEON_SCOUT_FLOORS);
+      if ((run.scoutUntil ?? 0) >= until) throw new BadRequestException('이미 그 층까지 정찰했어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      const speciesList = await this.speciesService.findAll();
+      run.scoutCharges -= 1;
+      run.scoutUntil = until;
+      const message = `🗺️ 정찰 지도를 펼쳤어요. ${run.cleared + 2}층부터 ${until}층까지 방 구성을 미리 볼 수 있어요.`;
+      this.dungeonLog(run, message);
+      return this.dungeonRespond(gameState, run, species, speciesList, message, null, null);
+    });
+  }
+
+  // 방 새로고침을 쓴다: 이번 층의 방 3개를 다시 굴린다(방을 고르는 중이고, 엘리트·보스 층이 아닐 때).
+  async dungeonReroll(userId: string) {
+    return this.withDungeonLock(userId, async () => {
+      const gameState = await this.getOrThrow(userId);
+      this.guardPaused(gameState);
+      const run = gameState.dungeonRun;
+      if (!run) throw new BadRequestException('진행 중인 던전이 없어요.');
+      if (run.phase !== 'choose') throw new BadRequestException('방을 고르는 중에만 새로고침할 수 있어요.');
+      if ((run.rerollCharges ?? 0) < 1) throw new BadRequestException('방 새로고침이 없어요. 입장하기 전에 출정 준비물로 살 수 있어요.');
+      const floor = run.cleared + 1;
+      const current = generateRoomOptions(run.seed, floor, this.dungeonRoomVariant(run, floor));
+      if (current.length < 2) throw new BadRequestException('엘리트·보스 층의 방은 새로고침할 수 없어요.');
+      const species = await this.speciesService.findOne(run.speciesId);
+      if (!species) throw new BadRequestException('존재하지 않는 종이에요.');
+      const speciesList = await this.speciesService.findAll();
+      run.rerollCharges -= 1;
+      run.rerollVariant = this.dungeonRoomVariant(run, floor) + 1;
+      run.rerollFloor = floor;
+      const message = `🔄 ${floor}층의 방을 다시 굴렸어요.`;
+      this.dungeonLog(run, message);
+      return this.dungeonRespond(gameState, run, species, speciesList, message, null, null);
     });
   }
 
@@ -4477,6 +4927,8 @@ export class GameStateService {
     const relics = this.relicStacksView(run.relics ?? []);
     const text = `던전(${(findDungeonDifficulty(difficulty) ?? DUNGEON_DIFFICULTIES[0]).name}) ${floors}층까지 ${cleared ? '완주' : '도달'}: +${rewards.gold.toLocaleString('ko-KR')} G${diamonds ? ` · 💎 ${diamonds}개` : ''}`;
     this.pushLog(gameState, 'trophy', text);
+    if (floors >= 5) void this.recordForestEvent('dungeon', gameState.userId.toString(), { difficulty, floors, cleared });
+    if (floors >= 5) void this.contributeRestoration(gameState.userId.toString(), 'dungeon', dungeonRestorationPoints(floors));
     gameState.dungeonRun = null;
     return {
       reason,
@@ -4582,7 +5034,7 @@ export class GameStateService {
         rarity,
         gameState.discovered,
         Math.random(),
-        getWeatherEffects(this.weatherService?.current()?.type).favored,
+        this.exploreFamilyWeights(gameState),
       );
       if (!species) throw new BadRequestException('만날 수 있는 종이 없어요.');
 
@@ -4614,6 +5066,8 @@ export class GameStateService {
         ` (-${price.toLocaleString('ko-KR')} G)`;
       this.pushLog(gameState, 'search', message);
       await gameState.save();
+      if (species.rarity >= 3) await this.recordForestEvent('rare', userId, { speciesId: species.speciesId, speciesName: species.name, rarity: species.rarity, via: 'expedition' });
+      await this.contributeRestoration(userId, 'expedition', RESTORATION_POINTS.expedition);
       return {
         gameState,
         message,
@@ -4930,7 +5384,8 @@ export class GameStateService {
   }
 
   // 종 별명이 있으면 별명을, 없으면 기본 이름을 돌려준다. 전투·훈련 결과에 내 종 이름을 표시할 때 쓴다.
-  private displayNameFor(
+  // ↓ 아래 몇 개는 같은 모듈의 다른 기능 서비스(현상수배 등)도 쓰는 공용 도우미라 private가 아니다.
+  displayNameFor(
     gameState: GameStateDocument,
     speciesId: string,
     fallback: string,
@@ -4987,7 +5442,7 @@ export class GameStateService {
     }
   }
 
-  private resetDailyIfNeeded(gameState: GameStateDocument, now = Date.now()) {
+  resetDailyIfNeeded(gameState: GameStateDocument, now = Date.now()) {
     const today = dayKey(now);
     if (gameState.daily.day !== today) {
       gameState.daily = {
@@ -5004,6 +5459,7 @@ export class GameStateService {
         grandExpeditionCount: 0,
         dungeonRuns: 0,
         dungeonClears: 0,
+        guardianBounty: 0,
         claimed: [],
       };
       // 하루 한 장, 최대 보유 개수(MAX_FREE_EXPLORE_TICKETS)까지만 무료로 채워준다.
@@ -5014,13 +5470,13 @@ export class GameStateService {
     }
   }
 
-  private guardPaused(gameState: GameStateDocument) {
+  guardPaused(gameState: GameStateDocument) {
     if (gameState.paused) {
       throw new BadRequestException('일시정지를 해제하면 숲을 돌볼 수 있어요.');
     }
   }
 
-  private pushLog(
+  pushLog(
     gameState: GameStateDocument,
     type: string,
     text: string,
@@ -5047,7 +5503,7 @@ export class GameStateService {
     return terrarium;
   }
 
-  private totalOf(gameState: GameStateDocument, speciesId: string): number {
+  totalOf(gameState: GameStateDocument, speciesId: string): number {
     return gameState.terrariums.reduce(
       (sum, t) => sum + (t.population.get(speciesId) || 0),
       0,
@@ -5104,7 +5560,7 @@ export class GameStateService {
     return (await this.gameStateModel.findById(doc._id).exec()) ?? doc;
   }
 
-  private async getOrThrow(userId: string): Promise<GameStateDocument> {
+  async getOrThrow(userId: string): Promise<GameStateDocument> {
     const gameState = await this.getOrNull(userId);
     if (!gameState) {
       throw new NotFoundException(

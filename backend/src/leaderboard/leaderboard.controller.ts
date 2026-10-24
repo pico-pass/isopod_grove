@@ -29,6 +29,16 @@ export class LeaderboardController {
     return this.leaderboardService.getSurvivalLeaderboard(user.userId, parseLeaderboardLimit(limit));
   }
 
+  @Get('quiz')
+  quiz(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.leaderboardService.getQuizLeaderboard(user.userId, parseLeaderboardLimit(limit));
+  }
+
+  @Get('stack')
+  stack(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.leaderboardService.getStackLeaderboard(user.userId, parseLeaderboardLimit(limit));
+  }
+
   @Get('runner')
   runner(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
     return this.leaderboardService.getRunnerLeaderboard(user.userId, parseLeaderboardLimit(limit));
@@ -47,6 +57,11 @@ export class LeaderboardController {
   @Get('dungeon')
   dungeon(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
     return this.leaderboardService.getDungeonLeaderboard(user.userId, parseLeaderboardLimit(limit));
+  }
+
+  @Get('exhibition')
+  exhibition(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.leaderboardService.getExhibitionLeaderboard(user.userId, parseLeaderboardLimit(limit));
   }
 
   @Get('pvp')
